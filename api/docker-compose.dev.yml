@@ -1,0 +1,24 @@
+# Local Postgres only. Production uses the shared 3pandalabs-postgres instance
+# on the Hetzner box (see infra/postgres-setup.md) — nothing here is deployed.
+#
+# Port 5434, so it doesn't clash with a RentVault/ReceiptCash Postgres on 5432
+# or RsvpVault's on 5433 if several repos are checked out on the same machine.
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: advault
+      POSTGRES_PASSWORD: advault
+      POSTGRES_DB: advault
+    ports:
+      - "5434:5432"
+    volumes:
+      - advault_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U advault"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  advault_pgdata:

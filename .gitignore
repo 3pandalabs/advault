@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.next/
+.open-next/
+.wrangler/
+*.tsbuildinfo
+.env
+.env.local
+.DS_Store
