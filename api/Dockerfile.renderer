@@ -1,0 +1,38 @@
+# Renderer container (Coolify resource `advault-renderer`). Same workspace,
+# same build, different entrypoint — it polls `render_jobs` and shells out to
+# ffmpeg. Not an HTTP service: it EXPOSEs nothing and Coolify should leave
+# "Ports Exposes" empty, with no domain attached.
+#
+# In Coolify: Base Directory `api`, Dockerfile Location `Dockerfile.renderer`
+# (relative to the base directory, so NOT `api/Dockerfile.renderer`).
+FROM node:20-alpine AS build
+WORKDIR /app
+COPY package.json package-lock.json* ./
+RUN npm ci
+COPY . .
+RUN npm run build
+
+FROM node:20-alpine AS runtime
+WORKDIR /app
+ENV NODE_ENV=production
+
+# The one real difference from the API image. ffmpeg on alpine pulls in the
+# codecs needed for H.264/AAC MP4 output, which is what both YouTube and Shorts
+# ingest. ~80MB — acceptable for a container that exists to encode video.
+RUN apk add --no-cache ffmpeg
+
+COPY package.json package-lock.json* ./
+RUN npm ci --omit=dev
+COPY --from=build /app/dist ./dist
+
+RUN addgroup -S advault && adduser -S advault -G advault
+# Scratch space for frames and intermediate files. Created before dropping
+# privileges because /tmp on a read-only-ish container layer is not guaranteed
+# writable by an unprivileged user.
+RUN mkdir -p /tmp/advault-render && chown advault:advault /tmp/advault-render
+USER advault
+
+# No migration step here — the API container owns that (see Dockerfile). If
+# this container starts first against a fresh database it will simply find no
+# `render_jobs` table, log the error and retry on its next poll.
+CMD ["node", "dist/render/worker.js"]

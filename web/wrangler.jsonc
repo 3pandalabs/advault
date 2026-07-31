@@ -1,0 +1,40 @@
+{
+  // Build with `next build --webpack` (see package.json). Turbopack output is
+  // not fully supported by @opennextjs/cloudflare — the deploy succeeds and
+  // then every route 500s with "ChunkLoadError: Failed to load chunk ... from
+  // runtime" at request time. RentVault hit this in production 2026-07-21.
+  //
+  // Do NOT add a src/proxy.ts or middleware: the adapter can't bundle it
+  // (Node-only `async_hooks`). See CLAUDE.md.
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "advault-web",
+  "main": ".open-next/worker.js",
+  "compatibility_date": "2025-01-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "directory": ".open-next/assets",
+    "binding": "ASSETS"
+  },
+  // wrangler creates and maintains the DNS record for a custom_domain route
+  // itself — do NOT also add a manual record for this hostname in the
+  // Cloudflare dashboard. (The two api.* records are a different case: they
+  // point at the Hetzner box, not at a Worker, so they are managed by hand.)
+  "routes": [
+    {
+      "pattern": "advault.3pandalabs.com",
+      "custom_domain": true
+    }
+  ],
+  "vars": {
+    "NEXT_PUBLIC_API_URL": "https://api.advault.3pandalabs.com",
+    "NEXT_PUBLIC_SITE_URL": "https://advault.3pandalabs.com",
+    // DNS-only (grey cloud) hostname for the same origin. Server-side code in
+    // this Worker must use it instead of NEXT_PUBLIC_API_URL: Cloudflare blocks
+    // a same-account Worker fetching another proxied hostname
+    // ("orange-to-orange") at a layer before WAF rules, so the public host
+    // intermittently 403s from here. Deliberately not NEXT_PUBLIC_-prefixed, so
+    // Next.js inlines it as undefined in the browser bundle and real browser
+    // requests fall through to the public host.
+    "INTERNAL_API_URL": "https://api-internal.advault.3pandalabs.com"
+  }
+}
