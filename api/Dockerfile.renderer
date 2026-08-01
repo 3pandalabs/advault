@@ -19,7 +19,21 @@ ENV NODE_ENV=production
 # The one real difference from the API image. ffmpeg on alpine pulls in the
 # codecs needed for H.264/AAC MP4 output, which is what both YouTube and Shorts
 # ingest. ~80MB — acceptable for a container that exists to encode video.
-RUN apk add --no-cache ffmpeg
+#
+# font-dejavu and fontconfig are NOT optional and NOT incidental. `apk add
+# ffmpeg` installs zero fonts, and every creative this app renders burns a
+# caption in with the drawtext filter — so without them EVERY render fails with
+# "Cannot find a valid font for the family Sans", no matter how good the input
+# image is. Found by an end-to-end render test on 2026-08-01, after the two
+# containers were already deployed and healthy; nothing short of actually
+# encoding a file surfaces it.
+#
+# fontconfig is what makes `fc-match` resolve a family name; src/render/ffmpeg.ts
+# additionally pins an absolute fontfile path so a font that moves between
+# alpine releases fails loudly at build time rather than silently at encode time.
+RUN apk add --no-cache ffmpeg font-dejavu fontconfig \
+ && test -f /usr/share/fonts/dejavu/DejaVuSans.ttf \
+ && test -f /usr/share/fonts/dejavu/DejaVuSans-Bold.ttf
 
 COPY package.json package-lock.json* ./
 RUN npm ci --omit=dev

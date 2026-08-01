@@ -14,6 +14,22 @@ export const DIMENSIONS = {
 
 export type AspectRatio = keyof typeof DIMENSIONS;
 
+// Absolute font paths, not a family name.
+//
+// `drawtext` with `font=Sans` needs fontconfig to resolve the family, and on a
+// container with no font packages that resolution fails at ENCODE time with
+// "Cannot find a valid font for the family Sans" — after the queue has been
+// claimed and the job has burned its retries. Pinning the file means
+// Dockerfile.renderer's `test -f` catches a missing or relocated font at BUILD
+// time instead, where it is one red deploy rather than every creative failing.
+//
+// Overridable for local development, where the fonts live somewhere else
+// entirely (macOS, Debian and Alpine all differ).
+const FONT_REGULAR =
+  process.env.RENDER_FONT_REGULAR ?? "/usr/share/fonts/dejavu/DejaVuSans.ttf";
+const FONT_BOLD =
+  process.env.RENDER_FONT_BOLD ?? "/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf";
+
 // Every ffmpeg invocation goes through execFile with an argument ARRAY — never
 // a shell string. Captions come from a model and, upstream of that, from
 // advertiser-supplied text; interpolating either into a shell command is
@@ -78,7 +94,8 @@ async function renderScene(args: {
     // photos small businesses actually upload.
     `drawbox=x=0:y=ih*0.72:w=iw:h=ih*0.18:color=black@0.55:t=fill`,
     [
-      `drawtext=text='${escapeDrawText(args.caption)}'`,
+      `drawtext=fontfile=${FONT_REGULAR}`,
+      `text='${escapeDrawText(args.caption)}'`,
       `fontcolor=white`,
       `fontsize=${fontSize}`,
       `x=(w-text_w)/2`,
@@ -117,14 +134,16 @@ async function renderEndCard(args: {
 
   const filters = [
     [
-      `drawtext=text='${escapeDrawText(args.endCardText)}'`,
+      `drawtext=fontfile=${FONT_BOLD}`,
+      `text='${escapeDrawText(args.endCardText)}'`,
       `fontcolor=white`,
       `fontsize=${args.aspectRatio === "9:16" ? 72 : 84}`,
       `x=(w-text_w)/2`,
       `y=(h/2)-text_h`,
     ].join(":"),
     [
-      `drawtext=text='${escapeDrawText(args.callToAction)}'`,
+      `drawtext=fontfile=${FONT_REGULAR}`,
+      `text='${escapeDrawText(args.callToAction)}'`,
       `fontcolor=0xF5C242`,
       `fontsize=${args.aspectRatio === "9:16" ? 52 : 60}`,
       `x=(w-text_w)/2`,
