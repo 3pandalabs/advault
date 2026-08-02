@@ -6,6 +6,7 @@ import { db } from "../db/index.js";
 import { adAccounts, campaigns, creatives } from "../db/schema.js";
 import { decryptToken } from "../lib/crypto.js";
 import { isGoogleAdsConfigured } from "../lib/googleAds/env.js";
+import { mccAccessToken } from "../lib/googleAds/mcc.js";
 import { GoogleOAuthError, refreshAccessToken } from "../lib/googleAds/oauth.js";
 import {
   addLocationTargets,
@@ -14,6 +15,7 @@ import {
   resolveZipCriteria,
 } from "../lib/googleAds/campaigns.js";
 import { loadOwnedAdAccount, loadOwnedCampaign } from "../lib/ownership.js";
+import { canLaunch, MIN_FUNDED_DAYS } from "../lib/wallet/index.js";
 
 // ---------------------------------------------------------------------------
 // THE ONLY ROUTE IN THIS CODEBASE THAT SPENDS MONEY.
@@ -66,6 +68,32 @@ export async function launchRoutes(app: FastifyInstance) {
         return reply.code(409).send({ error: "ad_account_revoked" });
       }
 
+      // -------------------------------------------------------------------
+      // THE WALLET GUARD. Managed accounts only, and non-negotiable there.
+      //
+      // On a managed (MCC) account, Google bills 3PandaLabs, not the
+      // advertiser — so launching without funds means the org finances
+      // someone else's advertising. Requiring MIN_FUNDED_DAYS of cover rather
+      // than one day is deliberate: the spend sync runs nightly and Google
+      // keeps serving until we pause it, so the guard has to lead the spend
+      // rather than trail it.
+      //
+      // Unmanaged (own-OAuth) accounts skip this entirely — the advertiser's
+      // own card is charged and the org has no exposure to bound.
+      // -------------------------------------------------------------------
+      if (account.isManaged) {
+        const funds = await canLaunch(req.userId!, campaign.dailyBudgetCents);
+        if (!funds.ok) {
+          return reply.code(402).send({
+            error: "insufficient_funds",
+            balanceMinor: funds.balanceMinor,
+            requiredMinor: funds.requiredMinor,
+            currencyCode: campaign.currencyCode,
+            detail: `A managed campaign needs ${MIN_FUNDED_DAYS} days of budget on hand before it can go live.`,
+          });
+        }
+      }
+
       // At least one rendered creative. Launching with nothing to show would
       // produce a campaign that can never serve, and the advertiser would be
       // left with a budgeted shell in their Google Ads account.
@@ -88,7 +116,13 @@ export async function launchRoutes(app: FastifyInstance) {
 
       let accessToken: string;
       try {
-        accessToken = await refreshAccessToken(decryptToken(account.refreshTokenCiphertext));
+        // A managed account has no per-user grant — the MCC's own credential
+        // reaches it. An unmanaged one uses the advertiser's stored token. The
+        // CHECK constraint on ad_accounts guarantees exactly one of these is
+        // available, so the non-null assertion below cannot fire in practice.
+        accessToken = account.isManaged
+          ? await mccAccessToken()
+          : await refreshAccessToken(decryptToken(account.refreshTokenCiphertext!));
       } catch (err) {
         // invalid_grant is permanent — the advertiser revoked access or
         // changed their password. Marking the row revoked lets the dashboard
@@ -151,7 +185,7 @@ export async function launchRoutes(app: FastifyInstance) {
         // campaign in the advertiser's account with nothing pointing at it.
         await db
           .update(campaigns)
-          .set({ googleBudgetResourceName: budgetResourceName, googleCampaignResourceName: campaignResourceName })
+          .set({ googleBudgetResourceName: budgetResourceName, googleCampaignResourceName: campaignResourceName, googleCustomerId: account.customerId })
           .where(eq(campaigns.id, campaignId));
 
         await addLocationTargets({

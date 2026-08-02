@@ -1,24 +1,27 @@
 import Link from "next/link";
 import { Wordmark, WordmarkName, WordmarkTag } from "@/components/Wordmark";
 import { Card, CardDescription, CardTitle } from "@/components/ui/card";
+import { BudgetCalculator } from "@/components/BudgetCalculator";
 
-// Server-rendered and fully static — no API call, so this page is up even when
-// the backend is not, and it produces a real link preview.
+// Server-rendered. The calculator inside is the only client component, so the
+// page produces a real link preview and is up even when the API is not.
 
 const STEPS = [
   {
-    title: "Upload a few photos",
-    body: "Three to five shots of your storefront, your van, your work. Your logo if you have one. That is the whole asset list.",
+    title: "Tell us about your business",
+    body: "Name, what you do, and the neighbourhood you serve. Thirty seconds.",
   },
   {
-    title: "Pick your ZIP codes",
-    body: "The neighbourhoods you actually serve, plus a radius. No one outside it sees your ad, so none of your budget goes there.",
+    title: "Upload three photos",
+    body: "Your shop, your team, your work. That is the entire asset list — no camera crew, no agency.",
   },
   {
-    title: "Set a daily budget",
-    body: "Start at five dollars a day. AdVault writes the script, renders a 16:9 pre-roll and a 9:16 Shorts cut, and builds the campaign in your own Google Ads account.",
+    title: "Pick a budget and go live",
+    body: "We write the script, make the video in both YouTube formats, and run the campaign for you. You never open Google Ads.",
   },
 ];
+
+const FOR_WHOM = ["Salons", "Restaurants", "Tuition centres", "Gyms", "Plumbers", "Clinics"];
 
 export default function LandingPage() {
   return (
@@ -43,33 +46,37 @@ export default function LandingPage() {
         </nav>
       </header>
 
-      <section className="mx-auto w-full max-w-5xl px-6 pt-10 pb-16 sm:pt-20">
+      <section className="mx-auto w-full max-w-5xl px-6 pt-10 pb-14 sm:pt-16">
+        <p className="mb-4 inline-block rounded-full border border-amber-400/30 bg-amber-400/10 px-3 py-1 text-xs font-medium tracking-wide text-amber-200 uppercase">
+          Vocal for Local
+        </p>
         <h1 className="max-w-3xl text-4xl font-semibold tracking-tight text-balance sm:text-6xl">
-          YouTube ads for the five ZIP codes you actually serve.
+          The shop down the road is on YouTube. You should be too.
         </h1>
         <p className="mt-6 max-w-2xl text-lg text-zinc-400">
-          A plumber does not need an agency to run a video ad. Upload a few photos of your
-          work, tell us where your customers are, and set a daily budget. AdVault writes the
-          script, renders the video in both YouTube formats, and builds the geotargeted campaign
-          in your own Google Ads account.
+          A salon in Indiranagar does not need an agency, a video team, or a Google Ads
+          course. Upload three photos, tell us your pin code, pick a budget. We write it,
+          make the video, and run the campaign — you never touch Google Ads.
         </p>
-        <div className="mt-8 flex flex-wrap items-center gap-3">
-          <Link
-            href="/signup"
-            className="rounded-lg bg-amber-400 px-6 py-3 font-medium text-zinc-950 hover:bg-amber-300"
-          >
-            Create your first ad
-          </Link>
-          <Link
-            href="/login"
-            className="rounded-lg border border-white/15 px-6 py-3 font-medium text-zinc-200 hover:bg-white/10"
-          >
-            I already have an account
-          </Link>
+
+        <div className="mt-6 flex flex-wrap gap-2">
+          {FOR_WHOM.map((w) => (
+            <span
+              key={w}
+              className="rounded-full border border-white/10 bg-white/[0.03] px-3 py-1 text-sm text-zinc-400"
+            >
+              {w}
+            </span>
+          ))}
         </div>
       </section>
 
       <section className="mx-auto w-full max-w-5xl px-6 pb-16">
+        <BudgetCalculator />
+      </section>
+
+      <section className="mx-auto w-full max-w-5xl px-6 pb-16">
+        <h2 className="mb-5 text-2xl font-semibold tracking-tight">Three steps, one sitting</h2>
         <div className="grid gap-4 sm:grid-cols-3">
           {STEPS.map((step, i) => (
             <Card key={step.title}>
@@ -84,15 +91,25 @@ export default function LandingPage() {
       </section>
 
       <section className="mx-auto w-full max-w-5xl px-6 pb-24">
-        <Card className="border-amber-400/20 bg-amber-400/[0.04]">
-          <CardTitle>Your ad account stays yours</CardTitle>
-          <CardDescription>
-            AdVault connects to Google Ads through your own account and creates every campaign{" "}
-            <strong className="font-medium text-zinc-200">paused</strong>. You review it in
-            Google Ads and switch it on yourself — nothing here starts spending on its own, and
-            you can disconnect at any time.
-          </CardDescription>
-        </Card>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Card className="border-amber-400/20 bg-amber-400/[0.04]">
+            <CardTitle>You never open Google Ads</CardTitle>
+            <CardDescription>
+              We create and run your ad account for you under our Google partner account.
+              No billing setup, no campaign builder, no jargon. Top up a balance, and your
+              ads run until it is spent — never a rupee more.
+            </CardDescription>
+          </Card>
+          <Card>
+            <CardTitle>Or bring your own account</CardTitle>
+            <CardDescription>
+              Already running Google Ads? Connect your own account instead and we will build
+              campaigns into it, paused, for you to switch on yourself. Your account, your
+              card, your control.
+            </CardDescription>
+          </Card>
+        </div>
+
         <p className="mt-8 text-center text-sm text-zinc-500">
           <Wordmark />
         </p>

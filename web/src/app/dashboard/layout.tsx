@@ -64,6 +64,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               Campaigns
             </Link>
             <Link
+              href="/dashboard/wallet"
+              className="rounded-lg px-3 py-2 text-zinc-300 hover:bg-white/10"
+            >
+              Balance
+            </Link>
+            <Link
               href="/dashboard/settings"
               className="rounded-lg px-3 py-2 text-zinc-300 hover:bg-white/10"
             >

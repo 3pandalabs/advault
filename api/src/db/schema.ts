@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import {
+  boolean,
   check,
   index,
   integer,
@@ -35,9 +36,23 @@ export const users = pgTable(
     phone: text("phone"),
     // "admin" sees the internal ops view; "advertiser" only ever sees own rows.
     role: text("role").notNull().default("advertiser"),
+
+    // Market. Drives currency, plan and the Google Ads child account's own
+    // currency — which is IMMUTABLE at Google once the account exists, so this
+    // is effectively permanent from first provisioning.
+    countryCode: text("country_code").notNull().default("US"),
+    currencyCode: text("currency_code").notNull().default("USD"),
+    // 'standard' charges a platform fee; 'at_cost' passes Google's cost through
+    // at 0% margin. A real mode, not a coupon — see lib/pricing.
+    marginMode: text("margin_mode").notNull().default("standard"),
+
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [check("users_role_check", sql`${t.role} in ('advertiser','admin')`)],
+  (t) => [
+    check("users_role_check", sql`${t.role} in ('advertiser','admin')`),
+    check("users_currency_check", sql`${t.currencyCode} in ('INR','USD')`),
+    check("users_margin_mode_check", sql`${t.marginMode} in ('standard','at_cost')`),
+  ],
 );
 
 // Revocable refresh tokens. Only the bcrypt hash is stored, so a DB leak alone
@@ -58,13 +73,23 @@ export const sessions = pgTable(
 );
 
 // ---------------------------------------------------------------------------
-// Google Ads connections. The most sensitive table in this database: a refresh
-// token here authorises spending someone else's advertising budget.
+// Google Ads accounts. Two shapes live in this table, distinguished by
+// `isManaged`:
+//
+//   isManaged = true  — a CHILD account AdVault created under the 3PandaLabs
+//                       MCC via CustomerService.CreateCustomerClient. The
+//                       advertiser never sees Google Ads. Billing sits on the
+//                       MCC, which is why the wallet guard in lib/wallet exists
+//                       at all: the org fronts this spend.
+//   isManaged = false — the advertiser's OWN account, connected by OAuth. Zero
+//                       org liability. Retained deliberately: some advertisers
+//                       already run Google Ads and will not hand that over, and
+//                       the code path is already built and tested.
 //
 // `refreshTokenCiphertext` is AES-256-GCM output from lib/crypto.ts, never a
 // usable token — a database dump alone does not hand the reader an ad account.
-// Access tokens are NOT stored at all: they live ~1 hour and are cheaper to
-// re-mint from the refresh token than to keep in sync.
+// It is NULL for managed accounts, which need no per-user grant: the MCC's own
+// credentials reach them.
 // ---------------------------------------------------------------------------
 
 export const adAccounts = pgTable(
@@ -92,8 +117,22 @@ export const adAccounts = pgTable(
     // confusing API error into a clear one at launch time.
     isTestAccount: text("is_test_account").notNull().default("unknown"),
 
-    refreshTokenCiphertext: text("refresh_token_ciphertext").notNull(),
+    // Null for managed (MCC child) accounts — see the note above.
+    refreshTokenCiphertext: text("refresh_token_ciphertext"),
     scope: text("scope"),
+
+    // --- MCC-managed accounts -----------------------------------------------
+    isManaged: boolean("is_managed").notNull().default(false),
+    // The MCC this child hangs off. Recorded per-row rather than read from env
+    // at query time, so a future MCC migration doesn't silently reinterpret
+    // historical rows.
+    managerCustomerId: text("manager_customer_id"),
+    // pending -> active | failed. Provisioning is an API round trip that can
+    // fail (quota, unapproved developer token, currency mismatch), and the
+    // advertiser must see why rather than an empty dashboard.
+    provisionStatus: text("provision_status"),
+    provisionError: text("provision_error"),
+    provisionedAt: timestamp("provisioned_at", { withTimezone: true }),
 
     // 'active' | 'revoked' — set to 'revoked' when Google answers
     // invalid_grant, so the dashboard can prompt a reconnect instead of
@@ -110,10 +149,153 @@ export const adAccounts = pgTable(
     uniqueIndex("uq_ad_accounts_user_provider_customer").on(t.userId, t.provider, t.customerId),
     check("ad_accounts_provider_check", sql`${t.provider} in ('google_ads')`),
     check("ad_accounts_status_check", sql`${t.status} in ('active','revoked')`),
+    check(
+      "ad_accounts_provision_status_check",
+      sql`${t.provisionStatus} is null or ${t.provisionStatus} in ('pending','active','failed')`,
+    ),
+    // The invariant that keeps the two shapes from blurring: an unmanaged
+    // account is useless without its OAuth grant, and a managed one must never
+    // pretend to have a per-user token it does not have.
+    check(
+      "ad_accounts_managed_token_check",
+      sql`(${t.isManaged} = true and ${t.refreshTokenCiphertext} is null)
+          or (${t.isManaged} = false and ${t.refreshTokenCiphertext} is not null)`,
+    ),
     check("ad_accounts_test_check", sql`${t.isTestAccount} in ('yes','no','unknown')`),
     // Digits only. A customer id with dashes reaches Google as a 400 that reads
     // like an auth failure.
     check("ad_accounts_customer_id_check", sql`${t.customerId} ~ '^[0-9]{5,20}$'`),
+  ],
+);
+
+// ---------------------------------------------------------------------------
+// Money.
+//
+// Under the MCC model the org's payment method backs every child account, so
+// 3PandaLabs pays Google FIRST and recovers from the advertiser afterwards.
+// These three tables are what bounds that exposure: an advertiser must hold a
+// positive prepaid balance for a campaign to be live, and the nightly spend
+// sync pauses campaigns at Google the moment it hits zero. Worst case the org
+// is out roughly one day of that advertiser's daily budget — not a month of
+// uncapped spend.
+//
+// Every amount is an INTEGER in the currency's minor unit. Never a float.
+// ---------------------------------------------------------------------------
+
+export const wallets = pgTable(
+  "wallets",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" })
+      .unique(),
+    // Denormalised running total. The ledger is the source of truth; this is
+    // the value the launch guard reads on every request, and recomputing it
+    // from the ledger each time would put an aggregate on the hot path.
+    // lib/wallet/index.ts is the ONLY thing allowed to write it, always in the
+    // same transaction as the ledger row.
+    balanceMinor: integer("balance_minor").notNull().default(0),
+    currencyCode: text("currency_code").notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    check("wallets_currency_check", sql`${t.currencyCode} in ('INR','USD')`),
+    // A negative balance means the org is out of pocket beyond what it agreed
+    // to float. It should be impossible; the constraint is here so that if a
+    // bug ever makes it possible, the write fails loudly instead of quietly
+    // financing someone's ad spend.
+    check("wallets_balance_non_negative", sql`${t.balanceMinor} >= 0`),
+  ],
+);
+
+// Append-only. Nothing updates or deletes a ledger row — a correction is a new
+// row of type 'adjustment'. This is what makes the balance auditable and what
+// lets a disputed charge be reconstructed months later.
+export const ledgerEntries = pgTable(
+  "ledger_entries",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    walletId: uuid("wallet_id")
+      .notNull()
+      .references(() => wallets.id, { onDelete: "cascade" }),
+    // topup      — advertiser paid us (credit, positive)
+    // spend      — Google charged the child account (debit, negative)
+    // fee        — AdVault creation/platform fee (debit, negative)
+    // refund     — money returned (debit, negative)
+    // adjustment — manual correction, either sign
+    type: text("type").notNull(),
+    // Signed: positive credits the wallet, negative debits it. Storing the sign
+    // rather than a separate direction column means summing the column IS the
+    // balance, with no case statement to get wrong.
+    amountMinor: integer("amount_minor").notNull(),
+    currencyCode: text("currency_code").notNull(),
+    description: text("description"),
+    // Which campaign a spend/fee relates to, when it relates to one.
+    campaignId: uuid("campaign_id").references(() => campaigns.id, { onDelete: "set null" }),
+    // Provider reference (Razorpay payment id, Stripe payment intent) or, for
+    // spend rows, the Google date-segment key. Unique per wallet so a retried
+    // webhook or a re-run spend sync cannot double-credit or double-debit.
+    externalRef: text("external_ref"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("idx_ledger_wallet").on(t.walletId, t.createdAt),
+    uniqueIndex("uq_ledger_wallet_ref")
+      .on(t.walletId, t.externalRef)
+      .where(sql`external_ref is not null`),
+    check(
+      "ledger_type_check",
+      sql`${t.type} in ('topup','spend','fee','refund','adjustment')`,
+    ),
+    check("ledger_currency_check", sql`${t.currencyCode} in ('INR','USD')`),
+    // Sign must match intent, so a mis-signed spend can never credit a wallet.
+    check(
+      "ledger_sign_check",
+      sql`(${t.type} = 'topup' and ${t.amountMinor} > 0)
+          or (${t.type} in ('spend','fee','refund') and ${t.amountMinor} < 0)
+          or (${t.type} = 'adjustment' and ${t.amountMinor} <> 0)`,
+    ),
+  ],
+);
+
+// Checkout attempts. Written before the advertiser is sent to the provider, so
+// an abandoned checkout is visible rather than invisible, and a webhook that
+// arrives for an unknown reference is a red flag rather than a silent credit.
+export const payments = pgTable(
+  "payments",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    provider: text("provider").notNull(),
+    // Provider's own id. Unique per provider — this is the idempotency key that
+    // stops a replayed webhook crediting a wallet twice.
+    providerRef: text("provider_ref"),
+    amountMinor: integer("amount_minor").notNull(),
+    currencyCode: text("currency_code").notNull(),
+    // topup | creation_fee | subscription
+    purpose: text("purpose").notNull(),
+    // created -> paid | failed | cancelled
+    status: text("status").notNull().default("created"),
+    // Provider payload as received, for dispute reconstruction. Never trusted
+    // as a source of truth — the signature check in lib/payments decides.
+    providerPayload: jsonb("provider_payload"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("idx_payments_user").on(t.userId, t.createdAt),
+    uniqueIndex("uq_payments_provider_ref")
+      .on(t.provider, t.providerRef)
+      .where(sql`provider_ref is not null`),
+    check("payments_provider_check", sql`${t.provider} in ('razorpay','stripe','manual')`),
+    check("payments_currency_check", sql`${t.currencyCode} in ('INR','USD')`),
+    check("payments_purpose_check", sql`${t.purpose} in ('topup','creation_fee','subscription')`),
+    check("payments_status_check", sql`${t.status} in ('created','paid','failed','cancelled')`),
+    check("payments_amount_check", sql`${t.amountMinor} > 0`),
   ],
 );
 
@@ -199,6 +381,22 @@ export const campaigns = pgTable(
     launchError: text("launch_error"),
     launchedAt: timestamp("launched_at", { withTimezone: true }),
 
+    // Which Google customer this ran in. Denormalised from ad_accounts because
+    // ad_accounts.id is ON DELETE SET NULL — a disconnected account must not
+    // erase the record of where a live campaign's money went.
+    googleCustomerId: text("google_customer_id"),
+
+    // Spend recovered from Google by the nightly sync, in minor units. Drives
+    // the wallet debit and the auto-pause. `lastSpendSyncedDate` is the last
+    // Google *report date* consumed, not a timestamp — Google reports by day in
+    // the account's timezone, and keying on a date is what makes the sync
+    // idempotent when it re-runs.
+    spendMinorToDate: integer("spend_minor_to_date").notNull().default(0),
+    lastSpendSyncedDate: text("last_spend_synced_date"),
+    // Set when the wallet ran dry and the sync paused it at Google, so the
+    // dashboard can say why rather than showing an unexplained pause.
+    pausedForFundsAt: timestamp("paused_for_funds_at", { withTimezone: true }),
+
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -262,6 +460,19 @@ export const creatives = pgTable(
     durationSeconds: integer("duration_seconds"),
     sizeBytes: integer("size_bytes"),
 
+    // --- optional enrichment, each degrading to the still-image pipeline -----
+    // R2 keys of AI-generated image-to-video clips, one per scene, index-aligned
+    // with script.scenes. Empty when no motion provider is configured — the
+    // renderer then falls back to the Ken Burns pan on the still, which is the
+    // behaviour that shipped and works.
+    motionClipKeys: text("motion_clip_keys").array().notNull().default(sql`'{}'::text[]`),
+    // 'kling' | 'luma' | 'none'
+    motionSource: text("motion_source").notNull().default("none"),
+    // R2 key of the generated voiceover track. Null means a silent cut.
+    voiceoverKey: text("voiceover_key"),
+    // 'edge-tts' | 'elevenlabs' | 'none'
+    voiceSource: text("voice_source").notNull().default("none"),
+
     // Set once uploaded to YouTube as part of a launch. Google Ads video ads
     // reference a YouTube video id, not an arbitrary MP4 URL — see
     // infra/google-ads-setup.md.
@@ -273,6 +484,8 @@ export const creatives = pgTable(
   (t) => [
     index("idx_creatives_campaign").on(t.campaignId),
     check("creatives_aspect_check", sql`${t.aspectRatio} in ('16:9','9:16')`),
+    check("creatives_motion_source_check", sql`${t.motionSource} in ('none','kling','luma')`),
+    check("creatives_voice_source_check", sql`${t.voiceSource} in ('none','edge-tts','elevenlabs')`),
     check(
       "creatives_render_status_check",
       sql`${t.renderStatus} in ('queued','rendering','ready','failed')`,
