@@ -33,7 +33,7 @@ export default function SettingsPage() {
       // URI live in one place — Google compares the whole redirect string, and
       // a client-side copy is drift waiting to happen.
       const { url } = await googleAuthorizeUrl();
-      window.location.href = url;
+      window.location.assign(url);
     } catch {
       setError("Could not start the Google connection. Please try again.");
       setBusy(false);

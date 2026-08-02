@@ -1,9 +1,9 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { requireAuth } from "../auth/plugin.js";
 import { db } from "../db/index.js";
-import { adAccounts } from "../db/schema.js";
+import { adAccounts, users } from "../db/schema.js";
 import { encryptToken } from "../lib/crypto.js";
 import { isOAuthConfigured, isGoogleAdsConfigured } from "../lib/googleAds/env.js";
 import {
@@ -15,6 +15,8 @@ import { issueOAuthState, verifyOAuthState } from "../lib/googleAds/oauthState.j
 import { getCustomerDetails, listAccessibleCustomers } from "../lib/googleAds/client.js";
 import { decryptToken } from "../lib/crypto.js";
 import { loadOwnedAdAccount } from "../lib/ownership.js";
+import { createChildAccount, defaultTimeZone, isMccConfigured } from "../lib/googleAds/mcc.js";
+import type { Currency } from "../lib/pricing/index.js";
 
 // A stored Google Ads refresh token authorises spending an advertiser's money.
 // This serializer is the ONLY shape an ad_accounts row may leave the API in —
@@ -32,11 +34,117 @@ function toPublicAdAccount(row: typeof adAccounts.$inferSelect) {
     status: row.status,
     connectedAt: row.connectedAt,
     lastRefreshedAt: row.lastRefreshedAt,
+    // Which of the two shapes this is. The dashboard renders them very
+    // differently: a managed account has no Connect button and no "you will
+    // lose access to your own Google Ads" warning on disconnect.
+    isManaged: row.isManaged,
+    provisionStatus: row.provisionStatus,
+    provisionError: row.provisionError,
   };
 }
 
 export async function adAccountRoutes(app: FastifyInstance) {
   app.addHook("onRequest", requireAuth);
+
+  // ---------------------------------------------------------------------
+  // Managed (MCC) provisioning — the "never see Google Ads" path.
+  //
+  // Creates a child customer under the 3PandaLabs manager account. The
+  // advertiser gets an ad account without ever visiting Google, and billing
+  // sits on the MCC — which is exactly why the wallet guard in routes/launch.ts
+  // is not optional. This endpoint creates the account; it does not spend.
+  // ---------------------------------------------------------------------
+  app.post("/ad-accounts/managed", async (req, reply) => {
+    if (!isMccConfigured()) {
+      // Specific code so the dashboard says "not switched on yet" rather than
+      // rendering a bug. The MCC needs an approved developer token, which is a
+      // manual review — see infra/google-ads-setup.md.
+      return reply.code(503).send({ error: "google_ads_mcc_not_configured" });
+    }
+
+    const [user] = await db
+      .select({
+        businessName: users.businessName,
+        email: users.email,
+        currencyCode: users.currencyCode,
+      })
+      .from(users)
+      .where(eq(users.id, req.userId!))
+      .limit(1);
+
+    // One managed account per advertiser. A second would silently split their
+    // campaigns and their spend across two children, and only one of them
+    // would be visible on the dashboard.
+    const [existing] = await db
+      .select()
+      .from(adAccounts)
+      .where(and(eq(adAccounts.userId, req.userId!), eq(adAccounts.isManaged, true)))
+      .limit(1);
+    if (existing && existing.provisionStatus !== "failed") {
+      return reply.code(200).send(toPublicAdAccount(existing));
+    }
+
+    const currency = user.currencyCode as Currency;
+    try {
+      const result = await createChildAccount({
+        descriptiveName: user.businessName ?? user.email,
+        currency,
+        // Immutable at Google once set — derived from the market rather than a
+        // form field, because a wrong value means a whole new account.
+        timeZone: defaultTimeZone(currency),
+      });
+
+      const [row] = await db
+        .insert(adAccounts)
+        .values({
+          userId: req.userId!,
+          provider: "google_ads",
+          customerId: result.customerId,
+          descriptiveName: user.businessName ?? null,
+          currencyCode: currency,
+          timeZone: defaultTimeZone(currency),
+          loginCustomerId: result.managerCustomerId,
+          managerCustomerId: result.managerCustomerId,
+          isManaged: true,
+          // Null for managed accounts — no per-user grant exists or is needed.
+          // The CHECK constraint enforces this pairing.
+          refreshTokenCiphertext: null,
+          isTestAccount: "unknown",
+          status: "active",
+          provisionStatus: "active",
+          provisionedAt: new Date(),
+        })
+        .onConflictDoUpdate({
+          target: [adAccounts.userId, adAccounts.provider, adAccounts.customerId],
+          set: { provisionStatus: "active", provisionError: null, provisionedAt: new Date() },
+        })
+        .returning();
+
+      return reply.code(201).send(toPublicAdAccount(row));
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
+      req.log.error({ err }, "MCC child account provisioning failed");
+
+      // Recorded rather than swallowed: the advertiser sees why, and a retry is
+      // possible because the `failed` row is not treated as an existing account
+      // by the guard above.
+      await db
+        .insert(adAccounts)
+        .values({
+          userId: req.userId!,
+          provider: "google_ads",
+          customerId: `pending-${Date.now()}`.slice(0, 20).replace(/\D/g, "") || "00000",
+          isManaged: true,
+          refreshTokenCiphertext: null,
+          status: "revoked",
+          provisionStatus: "failed",
+          provisionError: detail.slice(0, 500),
+        })
+        .onConflictDoNothing();
+
+      return reply.code(502).send({ error: "provisioning_failed", detail });
+    }
+  });
 
   app.get("/ad-accounts", async (req) => {
     const rows = await db.select().from(adAccounts).where(eq(adAccounts.userId, req.userId!));
@@ -181,10 +289,15 @@ export async function adAccountRoutes(app: FastifyInstance) {
       // means the encryption key rotated — the local row still goes, which is
       // the part that matters, and the advertiser can revoke from their Google
       // account settings.
-      try {
-        await revokeRefreshToken(decryptToken(account.refreshTokenCiphertext));
-      } catch (err) {
-        req.log.warn({ err, adAccountId }, "failed to revoke the Google refresh token");
+      // Managed accounts have no grant to revoke — the MCC owns them, and the
+      // child account itself is not deleted here (Google keeps it under the
+      // manager; cancelling it is a separate, deliberate act).
+      if (!account.isManaged && account.refreshTokenCiphertext) {
+        try {
+          await revokeRefreshToken(decryptToken(account.refreshTokenCiphertext));
+        } catch (err) {
+          req.log.warn({ err, adAccountId }, "failed to revoke the Google refresh token");
+        }
       }
 
       await db.delete(adAccounts).where(eq(adAccounts.id, adAccountId));

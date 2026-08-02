@@ -116,6 +116,8 @@ export type Asset = {
 export type CampaignStatus = "draft" | "rendering" | "ready" | "live" | "paused" | "failed";
 
 export type Campaign = {
+  spendMinorToDate: number;
+  pausedForFundsAt: string | null;
   id: string;
   name: string;
   businessName: string;
@@ -157,6 +159,9 @@ export type Creative = {
 };
 
 export type AdAccount = {
+  isManaged: boolean;
+  provisionStatus: string | null;
+  provisionError: string | null;
   id: string;
   customerId: string;
   descriptiveName: string | null;
@@ -281,4 +286,56 @@ export async function uploadAsset(file: File, kind: "photo" | "logo" = "photo"):
       originalFilename: file.name,
     }),
   });
+}
+
+// --- billing ---------------------------------------------------------------
+
+export type LedgerEntry = {
+  id: string;
+  type: "topup" | "spend" | "fee" | "refund" | "adjustment";
+  amountMinor: number;
+  currencyCode: string;
+  description: string | null;
+  campaignId: string | null;
+  createdAt: string;
+};
+
+export type Wallet = {
+  balanceMinor: number;
+  currencyCode: "INR" | "USD";
+  display: string;
+  entries: LedgerEntry[];
+};
+
+export const getWallet = () => api<Wallet>("/wallet");
+
+export function topUp(amountMinor: number) {
+  return api<{
+    paymentId: string;
+    provider: "razorpay" | "stripe" | "manual";
+    redirectUrl: string | null;
+    clientPayload: Record<string, unknown>;
+  }>("/wallet/topup", { method: "POST", body: JSON.stringify({ amountMinor }) });
+}
+
+// Creates the managed (MCC) child account. The advertiser never sees Google.
+export const provisionManagedAccount = () =>
+  api<AdAccount>("/ad-accounts/managed", { method: "POST" });
+
+export type PricingEstimate = {
+  currency: "INR" | "USD";
+  adBudgetMinor: number;
+  creationFeeMinor: number;
+  upfrontTotalMinor: number;
+  reach: { low: number; high: number };
+  display: { adBudget: string; upfrontTotal: string };
+};
+
+export function pricingEstimate(currency: string, adBudgetMinor: number, atCost = false) {
+  const q = new URLSearchParams({
+    currency,
+    adBudgetMinor: String(adBudgetMinor),
+    marginMode: atCost ? "at_cost" : "standard",
+  });
+  return api<PricingEstimate>(`/pricing/estimate?${q}`);
 }

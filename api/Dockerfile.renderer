@@ -35,6 +35,22 @@ RUN apk add --no-cache ffmpeg font-dejavu fontconfig \
  && test -f /usr/share/fonts/dejavu/DejaVuSans.ttf \
  && test -f /usr/share/fonts/dejavu/DejaVuSans-Bold.ttf
 
+# edge-tts for voiceover. Python because that is what the package is; it drives
+# Microsoft Edge's online neural voices and needs no account, no API key and no
+# per-use cost — which is why it is the default voice provider rather than
+# ElevenLabs. A metered vendor in the render path would make voiceover a billing
+# decision instead of a feature everyone gets on day one.
+#
+# --break-system-packages is required on Alpine's externally-managed Python.
+# Safe here: this is a single-purpose container, not a shared system.
+#
+# Asserted at build time for the same reason as the fonts above — a missing
+# binary must fail the BUILD, not every render. That lesson cost a deploy on
+# 2026-08-01.
+RUN apk add --no-cache python3 py3-pip \
+ && pip3 install --no-cache-dir --break-system-packages edge-tts \
+ && edge-tts --list-voices > /dev/null
+
 COPY package.json package-lock.json* ./
 RUN npm ci --omit=dev
 COPY --from=build /app/dist ./dist

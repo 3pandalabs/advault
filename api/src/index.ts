@@ -7,6 +7,7 @@ import { recordRequest, startCpuSampler } from "./metrics/collector.js";
 import { adAccountRoutes } from "./routes/adAccounts.js";
 import { assetRoutes } from "./routes/assets.js";
 import { authRoutes } from "./routes/auth.js";
+import { billingRoutes } from "./routes/billing.js";
 import { campaignRoutes } from "./routes/campaigns.js";
 import { creativeRoutes } from "./routes/creatives.js";
 import { launchRoutes } from "./routes/launch.js";
@@ -22,6 +23,29 @@ const app = Fastify({
 
 app.setValidatorCompiler(validatorCompiler);
 app.setSerializerCompiler(serializerCompiler);
+
+// Payment webhooks are authenticated by an HMAC over the EXACT bytes received.
+// Fastify's default JSON parser would hand the route a parsed object, and an
+// HMAC recomputed over a re-serialised body never matches — different
+// whitespace, different key order. So keep the raw string alongside the parsed
+// body and let lib/payments verify against it.
+//
+// Scoped to routes that opt in via `config.rawBody`, so normal routes keep the
+// default parser and pay nothing for this.
+app.addContentTypeParser(
+  "application/json",
+  { parseAs: "string" },
+  (req, body: string, done) => {
+    if ((req.routeOptions?.config as { rawBody?: boolean } | undefined)?.rawBody) {
+      (req as unknown as { rawBody: string }).rawBody = body;
+    }
+    try {
+      done(null, body.length ? JSON.parse(body) : undefined);
+    } catch (err) {
+      done(err as Error, undefined);
+    }
+  },
+);
 
 await app.register(cors, { origin: env.CORS_ORIGINS, credentials: true });
 await app.register(authPlugin);
@@ -65,6 +89,10 @@ app.setErrorHandler((err: FastifyError & { code?: string }, req, reply) => {
 });
 
 await app.register(authRoutes);
+// Pricing + wallet + payment webhooks. The /pricing routes inside are
+// deliberately public — the landing-page calculator is the top of the funnel
+// and must work before signup.
+await app.register(billingRoutes);
 await app.register(assetRoutes);
 await app.register(campaignRoutes);
 await app.register(creativeRoutes);

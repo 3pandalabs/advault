@@ -21,6 +21,7 @@ import {
   type RenderJob,
 } from "./jobs.js";
 import { renderCreative, type AspectRatio } from "./ffmpeg.js";
+import { startSpendSync } from "./spendSync.js";
 import { adScriptSchema } from "../lib/script/schema.js";
 import {
   creativeThumbnailKey,
@@ -141,6 +142,10 @@ async function main(): Promise<void> {
 
   const reclaimed = await reclaimStalled().catch(() => 0);
   if (reclaimed > 0) log("reclaimed stalled jobs", { count: reclaimed });
+
+  // Runs here rather than in the API: this is already a long-lived process, so
+  // the job needs no new container, and the API would fire it once per replica.
+  startSpendSync();
 
   log("renderer started", { concurrency: CONCURRENCY, workRoot: WORK_ROOT });
   await Promise.all(Array.from({ length: CONCURRENCY }, (_, i) => runLoop(i)));
