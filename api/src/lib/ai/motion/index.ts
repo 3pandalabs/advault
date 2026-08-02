@@ -15,6 +15,15 @@ import "dotenv/config";
 export type MotionRequest = {
   imageBytes: Buffer;
   contentType: string;
+  /**
+   * A publicly-reachable URL for the same image. Luma takes a URL rather than
+   * bytes, so the renderer passes a short-lived R2 presigned GET alongside the
+   * bytes and each provider uses whichever form it wants. Optional because the
+   * Kling path never needs it — a caller with no URL to offer simply cannot use
+   * Luma, which `isConfigured()` cannot express and `generate()` therefore
+   * rejects explicitly.
+   */
+  imageUrl?: string;
   /** What should happen in the shot. Derived from the scene caption. */
   prompt: string;
   durationSeconds: number;
@@ -103,11 +112,13 @@ export const luma: MotionProvider = {
   isConfigured: () => Boolean(LUMA_KEY),
 
   async generate(req) {
-    // Luma takes an image URL rather than bytes, so this path needs a
-    // publicly-reachable source frame. The renderer passes a short-lived R2
-    // presigned URL via `prompt` metadata rather than uploading anywhere new —
-    // see render/worker.ts. Kept explicit because it is the one asymmetry
-    // between the two providers.
+    // Luma takes an image URL rather than bytes — the one asymmetry between the
+    // two providers. Without `keyframes.frame0` this endpoint is text-to-video:
+    // it would happily return a perfectly good clip of something that is not the
+    // advertiser's storefront, which is a worse failure than an error because
+    // nothing downstream can detect it.
+    if (!req.imageUrl) throw new Error("Luma requires imageUrl (a reachable source frame)");
+
     const create = await fetch(`${LUMA_BASE}/generations`, {
       method: "POST",
       headers: { authorization: `Bearer ${LUMA_KEY}`, "content-type": "application/json" },
@@ -116,6 +127,7 @@ export const luma: MotionProvider = {
         prompt: req.prompt,
         aspect_ratio: req.aspectRatio,
         duration: `${Math.min(req.durationSeconds, 5)}s`,
+        keyframes: { frame0: { type: "image", url: req.imageUrl } },
       }),
     });
     if (!create.ok) throw new Error(`Luma create failed: ${create.status}`);

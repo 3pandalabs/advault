@@ -73,6 +73,12 @@ function escapeDrawText(text: string): string {
 // same way.
 async function renderScene(args: {
   imagePath: string;
+  /**
+   * An AI-generated motion clip standing in for the still. When present the
+   * Ken Burns zoom is dropped — the clip already moves, and zooming a moving
+   * shot looks like a mistake rather than an effect.
+   */
+  clipPath?: string;
   outputPath: string;
   caption: string;
   durationSeconds: number;
@@ -88,7 +94,9 @@ async function renderScene(args: {
     `crop=${width}:${height}`,
     // Zoom to 1.08x across the scene. Subtle on purpose — a still photo that
     // visibly lurches reads as cheap, which is the opposite of the point.
-    `zoompan=z='min(zoom+0.0006,1.08)':d=${frames}:s=${width}x${height}:fps=${fps}`,
+    ...(args.clipPath
+      ? [`fps=${fps}`]
+      : [`zoompan=z='min(zoom+0.0006,1.08)':d=${frames}:s=${width}x${height}:fps=${fps}`]),
     // Scrim behind the caption so light text stays legible over a bright
     // storefront photo. Without it, captions disappear on roughly half of the
     // photos small businesses actually upload.
@@ -106,9 +114,17 @@ async function renderScene(args: {
     `format=yuv420p`,
   ].join(",");
 
+  // Input differs, everything downstream of it does not. A still is looped for
+  // the scene's duration; a clip is *also* looped (`-stream_loop -1`) because
+  // vendors cap a generation at 5s while a scene may run to 8. Looping shows a
+  // seam, but the alternative is a segment shorter than the timeline says it
+  // is, which desynchronises every caption after it and the voiceover with it.
+  const input = args.clipPath
+    ? ["-stream_loop", "-1", "-i", args.clipPath]
+    : ["-loop", "1", "-i", args.imagePath];
+
   await ffmpeg([
-    "-loop", "1",
-    "-i", args.imagePath,
+    ...input,
     "-t", String(args.durationSeconds),
     "-vf", filters,
     "-r", String(fps),
@@ -116,6 +132,12 @@ async function renderScene(args: {
     "-preset", "veryfast",
     "-crf", "23",
     "-pix_fmt", "yuv420p",
+    // Segments must be video-only. The concat demuxer below stream-copies, and
+    // that requires every segment to have an identical stream layout — a motion
+    // clip that arrives with an audio track (vendor-dependent, and not
+    // something to discover in production) would otherwise make the copy fail
+    // or, worse, silently produce a file with audio on some scenes only.
+    "-an",
     args.outputPath,
   ]);
 }
@@ -160,7 +182,44 @@ async function renderEndCard(args: {
     "-preset", "veryfast",
     "-crf", "23",
     "-pix_fmt", "yuv420p",
+    "-an",
     args.outputPath,
+  ]);
+}
+
+// Lays the voiceover over the finished cut.
+//
+// Done once at the end rather than per segment: the segments are stream-copied
+// together, so giving them audio would mean every one of them needed an
+// identically-encoded track, and a narration line would be chopped at every
+// scene boundary. One mux over the concatenated video keeps the read continuous.
+//
+// `-af apad -shortest` together, and BOTH are required — this pair was got
+// wrong once and the smoke test caught it.
+//
+// `-shortest` alone truncates the output to whichever input ends first, so a
+// 4.6-second narration over a 13.5-second ad produced a 4.6-second ad: two
+// thirds of the creative silently discarded, with a green render and a valid
+// MP4 to show for it. `apad` pads the audio with silence indefinitely, which
+// would otherwise never terminate; `-shortest` then cuts at the end of the
+// video. The video is authoritative in both directions — a short voiceover is
+// followed by silence, a long one is cut at the end card.
+async function muxVoiceover(
+  videoPath: string,
+  voicePath: string,
+  outputPath: string,
+): Promise<void> {
+  await ffmpeg([
+    "-i", videoPath,
+    "-i", voicePath,
+    "-c:v", "copy",
+    "-c:a", "aac",
+    "-b:a", "128k",
+    "-ac", "2",
+    "-af", "apad",
+    "-shortest",
+    "-movflags", "+faststart",
+    outputPath,
   ]);
 }
 
@@ -198,6 +257,13 @@ export type RenderInputs = {
   // Local paths of the downloaded source photos, in the same order as the
   // creative's sourceAssetKeys — so script.scenes[].assetIndex indexes here.
   imagePaths: string[];
+  // Optional AI motion clip per SCENE index (not per asset — two scenes may
+  // share a photo and still get different motion). A hole in this map is not an
+  // error: that scene falls back to the Ken Burns still, so a partial vendor
+  // failure costs polish on one scene instead of the whole render.
+  clipPaths?: Map<number, string>;
+  // Optional voiceover audio for the whole spot. Absent means a silent cut.
+  voicePath?: string;
 };
 
 export type RenderOutputs = {
@@ -224,6 +290,7 @@ export async function renderCreative(input: RenderInputs): Promise<RenderOutputs
     const segmentPath = join(input.workDir, `scene-${i}.mp4`);
     await renderScene({
       imagePath,
+      clipPath: input.clipPaths?.get(i),
       outputPath: segmentPath,
       caption: scene.caption,
       durationSeconds: scene.durationSeconds,
@@ -246,8 +313,14 @@ export async function renderCreative(input: RenderInputs): Promise<RenderOutputs
   const listPath = join(input.workDir, "segments.txt");
   await writeFile(listPath, segments.map((p) => `file '${p}'`).join("\n"), "utf8");
 
-  const videoPath = join(input.workDir, "output.mp4");
-  await concatSegments(listPath, videoPath);
+  const silentPath = join(input.workDir, "output-silent.mp4");
+  await concatSegments(listPath, silentPath);
+
+  let videoPath = silentPath;
+  if (input.voicePath) {
+    videoPath = join(input.workDir, "output.mp4");
+    await muxVoiceover(silentPath, input.voicePath, videoPath);
+  }
 
   const thumbnailPath = join(input.workDir, "thumbnail.jpg");
   await extractThumbnail(videoPath, thumbnailPath);
