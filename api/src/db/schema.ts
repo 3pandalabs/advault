@@ -11,6 +11,7 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
+import type { BillingMode } from "../lib/billing/policy.js";
 
 // Enum-ish columns are `text` + a CHECK constraint rather than pgEnum, matching
 // the RentVault and RsvpVault schemas. Adding a value to a pgEnum needs its own
@@ -134,6 +135,40 @@ export const adAccounts = pgTable(
     provisionError: text("provision_error"),
     provisionedAt: timestamp("provisioned_at", { withTimezone: true }),
 
+    // --- Who pays Google ----------------------------------------------------
+    // Orthogonal to isManaged, which only says whether *we* provisioned the
+    // account under our MCC. This says whose card Google charges:
+    //
+    //   'platform' — our MCC payments account backs the child. We front the
+    //                spend and recover it from the prepaid wallet. Only legal
+    //                when isManaged, and it is the only mode spendSync touches.
+    //   'customer' — the advertiser's own payment profile. We carry no float
+    //                and no chargeback exposure on ad spend.
+    //
+    // A brought-your-own-account connection (isManaged = false) is always
+    // 'customer' by construction — we could not bill it if we wanted to.
+    billingMode: text("billing_mode").$type<BillingMode>().notNull().default("customer"),
+
+    // Only meaningful for isManaged + 'customer': the child exists under our
+    // MCC but the advertiser has to accept an account invitation and then enter
+    // a card in Google's own UI, because the Ads API has no method that adds a
+    // payment instrument. Until this reaches 'active' the account cannot spend,
+    // so launch must refuse rather than create a campaign that will never serve.
+    //
+    // null -> pending -> invited -> active
+    //                          \-> failed
+    billingLinkStatus: text("billing_link_status").$type<
+      "pending" | "invited" | "active" | "failed"
+    >(),
+    billingInvitationResourceName: text("billing_invitation_resource_name"),
+    billingInvitedAt: timestamp("billing_invited_at", { withTimezone: true }),
+    billingConfirmedAt: timestamp("billing_confirmed_at", { withTimezone: true }),
+    billingCheckedAt: timestamp("billing_checked_at", { withTimezone: true }),
+    // Which MCC payments account was attached in 'platform' mode. Recorded for
+    // the same reason as managerCustomerId: a future billing migration must not
+    // silently reinterpret historical rows.
+    billingPaymentsAccountId: text("billing_payments_account_id"),
+
     // 'active' | 'revoked' — set to 'revoked' when Google answers
     // invalid_grant, so the dashboard can prompt a reconnect instead of
     // failing every launch with the same opaque error.
@@ -160,6 +195,27 @@ export const adAccounts = pgTable(
       "ad_accounts_managed_token_check",
       sql`(${t.isManaged} = true and ${t.refreshTokenCiphertext} is null)
           or (${t.isManaged} = false and ${t.refreshTokenCiphertext} is not null)`,
+    ),
+    check("ad_accounts_billing_mode_check", sql`${t.billingMode} in ('platform','customer')`),
+    // We can only put our own payments account behind an account we provisioned.
+    // Without this an operator could flip a brought-your-own connection to
+    // 'platform' and the wallet would start absorbing someone else's spend.
+    check(
+      "ad_accounts_platform_billing_managed_check",
+      sql`${t.billingMode} = 'customer' or ${t.isManaged} = true`,
+    ),
+    check(
+      "ad_accounts_billing_link_status_check",
+      sql`${t.billingLinkStatus} is null
+          or ${t.billingLinkStatus} in ('pending','invited','active','failed')`,
+    ),
+    // The invitation handshake only exists for managed accounts the customer
+    // pays for. Platform-billed and BYO accounts must leave it null so the
+    // launch guard can read it as "not applicable" rather than "not done".
+    check(
+      "ad_accounts_billing_link_applicability_check",
+      sql`${t.billingLinkStatus} is null
+          or (${t.isManaged} = true and ${t.billingMode} = 'customer')`,
     ),
     check("ad_accounts_test_check", sql`${t.isTestAccount} in ('yes','no','unknown')`),
     // Digits only. A customer id with dashes reaches Google as a 400 that reads

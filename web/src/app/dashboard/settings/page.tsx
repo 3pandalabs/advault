@@ -63,9 +63,9 @@ export default function SettingsPage() {
       <Card className="mt-6">
         <CardTitle>Google Ads</CardTitle>
         <CardDescription>
-          AdVault builds campaigns inside your own Google Ads account, so you keep the billing
-          relationship, the history and the data. Every campaign is created paused — nothing
-          spends until you enable it there.
+          AdVault builds every campaign inside a Google Ads account of your own, so you keep the
+          history and the data. Who Google bills depends on how the account is set up — each one
+          below says which. Every campaign is created paused; nothing spends until it is enabled.
         </CardDescription>
 
         {!data ? (
@@ -105,9 +105,31 @@ export default function SettingsPage() {
                   <p className="mt-0.5 text-xs text-zinc-500">
                     Connected {formatDate(account.connectedAt)}
                     {account.isTestAccount === "yes" && " · test account"}
+                    {account.billingMode === "platform"
+                      ? " · we pay Google, billed to your balance"
+                      : " · you pay Google directly"}
                   </p>
+                  {/* The one state an advertiser can act on: a managed account
+                      they pay for, where Google has no card yet. Campaigns
+                      cannot launch until this is finished, so it gets a link
+                      rather than only a badge. */}
+                  {account.isManaged &&
+                    account.billingMode === "customer" &&
+                    account.billingLinkStatus !== "active" && (
+                      <a
+                        className="mt-1 inline-block text-xs font-medium text-amber-300 underline underline-offset-2 hover:text-amber-200"
+                        href="/dashboard/onboarding"
+                      >
+                        Finish adding your payment method
+                      </a>
+                    )}
                 </div>
                 <div className="flex items-center gap-2">
+                  {account.isManaged &&
+                    account.billingMode === "customer" &&
+                    account.billingLinkStatus !== "active" && (
+                      <Badge tone="pending">Billing incomplete</Badge>
+                    )}
                   {account.status === "revoked" ? (
                     <>
                       <Badge tone="danger">Reconnect needed</Badge>

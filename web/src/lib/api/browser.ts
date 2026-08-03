@@ -158,6 +158,14 @@ export type Creative = {
   createdAt: string;
 };
 
+// Who pays Google. 'platform' means AdVault's card is behind the account and
+// the wallet is live; 'customer' means the advertiser's own card is, and the
+// wallet is irrelevant to them. Getting this wrong on screen shows someone a
+// balance that has nothing to do with their campaigns.
+export type BillingMode = "platform" | "customer";
+
+export type BillingLinkStatus = "pending" | "invited" | "active" | "failed" | null;
+
 export type AdAccount = {
   isManaged: boolean;
   provisionStatus: string | null;
@@ -169,6 +177,27 @@ export type AdAccount = {
   isTestAccount: "yes" | "no" | "unknown";
   status: "active" | "revoked";
   connectedAt: string;
+  billingMode: BillingMode;
+  billingLinkStatus: BillingLinkStatus;
+  billingConfirmedAt: string | null;
+  // Where the advertiser enters a card. Only set for managed accounts they pay
+  // for themselves — there is no API that adds a payment method, so this link
+  // is the whole of that step.
+  billingUrl: string | null;
+};
+
+export type BillingStatus = AdAccount & {
+  billingConfigured: boolean;
+  invitationState?: string;
+  polling: boolean;
+  billingDetail?: string;
+};
+
+export type BillingOptions = {
+  modes: BillingMode[];
+  /** True only when both modes are offered — otherwise there is nothing to ask. */
+  prompt: boolean;
+  mccConfigured: boolean;
 };
 
 // --- endpoint wrappers -----------------------------------------------------
@@ -318,9 +347,34 @@ export function topUp(amountMinor: number) {
   }>("/wallet/topup", { method: "POST", body: JSON.stringify({ amountMinor }) });
 }
 
-// Creates the managed (MCC) child account. The advertiser never sees Google.
-export const provisionManagedAccount = () =>
-  api<AdAccount>("/ad-accounts/managed", { method: "POST" });
+// Creates the managed (MCC) child account.
+//
+// `billingMode` is required whenever the deployment offers both — the API
+// refuses to guess, because defaulting would silently put an advertiser on
+// AdVault's credit card. Call billingOptions() first.
+export const provisionManagedAccount = (billingMode?: BillingMode) =>
+  api<AdAccount & { invitationSent?: boolean; billingWarning?: string; billingDetail?: string }>(
+    "/ad-accounts/managed",
+    { method: "POST", body: JSON.stringify(billingMode ? { billingMode } : {}) },
+  );
+
+export const billingOptions = () => api<BillingOptions>("/ad-accounts/billing-options");
+
+// Polled while the advertiser is off in Google accepting the invitation and
+// entering a card. Stop when `polling` goes false.
+export const adAccountBillingStatus = (id: string) =>
+  api<BillingStatus>(`/ad-accounts/${id}/billing-status`);
+
+export const resendBillingInvite = (id: string) =>
+  api<AdAccount & { invitationSent: boolean }>(`/ad-accounts/${id}/billing/resend-invite`, {
+    method: "POST",
+  });
+
+export const setBillingMode = (id: string, billingMode: BillingMode) =>
+  api<AdAccount & { invitationSent?: boolean }>(`/ad-accounts/${id}/billing-mode`, {
+    method: "POST",
+    body: JSON.stringify({ billingMode }),
+  });
 
 export type PricingEstimate = {
   currency: "INR" | "USD";
