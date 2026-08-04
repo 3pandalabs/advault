@@ -22,6 +22,7 @@ import {
 } from "./jobs.js";
 import { renderCreative, type AspectRatio } from "./ffmpeg.js";
 import { startSpendSync } from "./spendSync.js";
+import { startOfferScheduler } from "./offerCycles.js";
 import { adScriptSchema } from "../lib/script/schema.js";
 import {
   creativeThumbnailKey,
@@ -146,6 +147,10 @@ async function main(): Promise<void> {
   // Runs here rather than in the API: this is already a long-lived process, so
   // the job needs no new container, and the API would fire it once per replica.
   startSpendSync();
+  // Same reasoning: the monthly offer conversation, subscription renewals and
+  // offer expiry are all periodic work that needs a long-lived process and must
+  // fire exactly once, not once per API replica.
+  startOfferScheduler();
 
   log("renderer started", { concurrency: CONCURRENCY, workRoot: WORK_ROOT });
   await Promise.all(Array.from({ length: CONCURRENCY }, (_, i) => runLoop(i)));

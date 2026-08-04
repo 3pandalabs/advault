@@ -12,6 +12,8 @@ import { campaignRoutes } from "./routes/campaigns.js";
 import { creativeRoutes } from "./routes/creatives.js";
 import { launchRoutes } from "./routes/launch.js";
 import { metricsRoutes } from "./routes/metrics.js";
+import { subscriptionRoutes } from "./routes/subscriptions.js";
+import { offerRoutes } from "./routes/offers.js";
 
 const app = Fastify({
   logger: true,
@@ -93,6 +95,8 @@ await app.register(authRoutes);
 // deliberately public — the landing-page calculator is the top of the funnel
 // and must work before signup.
 await app.register(billingRoutes);
+await app.register(subscriptionRoutes);
+await app.register(offerRoutes);
 await app.register(assetRoutes);
 await app.register(campaignRoutes);
 await app.register(creativeRoutes);

@@ -379,11 +379,102 @@ export const setBillingMode = (id: string, billingMode: BillingMode) =>
 export type PricingEstimate = {
   currency: "INR" | "USD";
   adBudgetMinor: number;
-  creationFeeMinor: number;
-  upfrontTotalMinor: number;
+  /** The recurring platform fee. There is no one-off charge any more. */
+  monthlyFeeMinor: number;
+  monthlyTotalMinor: number;
   reach: { low: number; high: number };
-  display: { adBudget: string; upfrontTotal: string };
+  display: { adBudget: string; monthlyTotal: string };
 };
+
+export type Plan = {
+  key: string;
+  line: "offer" | "managed";
+  label: string;
+  blurb: string;
+  currency: "INR" | "USD";
+  monthlyFeeMinor: number;
+  includedCreativesPerMonth: number;
+  suggestedAdBudgetMinor: number;
+  minDailyBudgetMinor: number;
+  display: { monthlyFee: string; allIn: string };
+  reach: { low: number; high: number } | null;
+};
+
+export function listPlans(currency: string) {
+  return api<{ currency: string; plans: Plan[] }>(`/plans?currency=${encodeURIComponent(currency)}`);
+}
+
+export type SubscriptionView = {
+  subscription: {
+    id: string;
+    planKey: string;
+    line: "offer" | "managed";
+    status: string;
+    amountMinor: number;
+    currencyCode: string;
+    display: string;
+    currentPeriodStart: string | null;
+    currentPeriodEnd: string | null;
+    cancelAtPeriodEnd: boolean;
+    pastDue: boolean;
+  } | null;
+  entitled: boolean;
+  invoices?: {
+    id: string;
+    amountMinor: number;
+    currencyCode: string;
+    periodStart: string;
+    periodEnd: string;
+    status: string;
+    paidAt: string | null;
+  }[];
+};
+
+export function getSubscription() {
+  return api<SubscriptionView>("/subscription");
+}
+
+export function subscribe(planKey: string) {
+  return api<{
+    subscriptionId: string;
+    invoiceId: string;
+    provider: string;
+    redirectUrl: string | null;
+    clientPayload: Record<string, unknown>;
+  }>("/subscription", { method: "POST", body: JSON.stringify({ planKey }) });
+}
+
+export function cancelSubscription(immediate = false) {
+  return api<{ status: string; cancelAtPeriodEnd: boolean; servesUntil: string | null }>(
+    "/subscription/cancel",
+    { method: "POST", body: JSON.stringify({ immediate }) },
+  );
+}
+
+export type OfferCycle = {
+  id: string;
+  periodMonth: string;
+  status: "pending" | "prompted" | "answered" | "previewed" | "approved" | "skipped";
+  offerText: string | null;
+  offerExpiresAt: string | null;
+};
+
+export function currentOffer() {
+  return api<{ cycle: OfferCycle | null; whatsappEnabled: boolean }>("/offers/current");
+}
+
+export function submitOffer(offerText: string, expiresAt?: string) {
+  return api<{ cycleId: string; offerText: string; expiresAt: string; expiryInferred: boolean }>(
+    "/offers/current",
+    { method: "POST", body: JSON.stringify({ offerText, expiresAt }) },
+  );
+}
+
+export function approveOffer(cycleId: string) {
+  return api<{ status: string; expiresAt: string | null }>(`/offers/${cycleId}/approve`, {
+    method: "POST",
+  });
+}
 
 export function pricingEstimate(currency: string, adBudgetMinor: number, atCost = false) {
   const q = new URLSearchParams({

@@ -31,6 +31,14 @@ type CountsRow = {
   customer_funded_accounts: number;
   billing_link_incomplete: number;
   active_sessions: number;
+  paying_subscribers: number;
+  past_due_subscribers: number;
+  mrr_minor_inr: number;
+  mrr_minor_usd: number;
+  wallet_balance_minor_inr: number;
+  wallet_balance_minor_usd: number;
+  offers_awaiting_reply: number;
+  offers_approved_this_month: number;
 };
 
 type DatabaseRow = {
@@ -66,7 +74,22 @@ export async function metricsRoutes(app: FastifyInstance) {
         (select count(*) from ad_accounts where status = 'active' and billing_mode = 'platform')::int as platform_funded_accounts,
         (select count(*) from ad_accounts where status = 'active' and billing_mode = 'customer')::int as customer_funded_accounts,
         (select count(*) from ad_accounts where status = 'active' and billing_link_status in ('pending','invited'))::int as billing_link_incomplete,
-        (select count(*) from sessions where expires_at > now())::int as active_sessions
+        (select count(*) from sessions where expires_at > now())::int as active_sessions,
+        -- Revenue. Until subscriptions existed these were all structurally zero:
+        -- every plan carried a monthly fee of 0 and no 'fee' ledger row was ever
+        -- written, so "is this product earning anything" was unanswerable from
+        -- the admin page.
+        (select count(*) from subscriptions where status = 'active')::int as paying_subscribers,
+        (select count(*) from subscriptions where status = 'past_due')::int as past_due_subscribers,
+        (select coalesce(sum(amount_minor), 0) from subscriptions where status in ('active','past_due') and currency_code = 'INR')::int as mrr_minor_inr,
+        (select coalesce(sum(amount_minor), 0) from subscriptions where status in ('active','past_due') and currency_code = 'USD')::int as mrr_minor_usd,
+        -- Prepaid balances the org is holding against platform-funded ad spend.
+        -- This is money we owe as media, not revenue, and it was previously
+        -- invisible on the admin page — the outstanding exposure under MCC.
+        (select coalesce(sum(balance_minor), 0) from wallets where currency_code = 'INR')::int as wallet_balance_minor_inr,
+        (select coalesce(sum(balance_minor), 0) from wallets where currency_code = 'USD')::int as wallet_balance_minor_usd,
+        (select count(*) from offer_cycles where status in ('prompted','answered','previewed'))::int as offers_awaiting_reply,
+        (select count(*) from offer_cycles where status = 'approved' and period_month = date_trunc('month', now()))::int as offers_approved_this_month
     `);
 
     const database = await db.execute<DatabaseRow>(sql`
@@ -110,6 +133,23 @@ export async function metricsRoutes(app: FastifyInstance) {
         // link is broken.
         billingLinkIncomplete: c.billing_link_incomplete,
         activeSessions: c.active_sessions,
+        // Revenue. `payingSubscribers` is the single number that says whether
+        // this product is a business yet — it was structurally 0 before
+        // subscriptions existed, and nothing on the admin page said so.
+        payingSubscribers: c.paying_subscribers,
+        pastDueSubscribers: c.past_due_subscribers,
+        mrrMinorInr: c.mrr_minor_inr,
+        mrrMinorUsd: c.mrr_minor_usd,
+        // Prepaid ad balances held on behalf of platform-funded advertisers.
+        // Money owed as media, not revenue — and the org's outstanding exposure
+        // under the MCC, which had no representation here at all.
+        walletBalanceMinorInr: c.wallet_balance_minor_inr,
+        walletBalanceMinorUsd: c.wallet_balance_minor_usd,
+        // The offer loop's health. Awaiting-reply climbing while approved stays
+        // flat means the WhatsApp conversation is going out and landing nowhere,
+        // which no other number here would show.
+        offersAwaitingReply: c.offers_awaiting_reply,
+        offersApprovedThisMonth: c.offers_approved_this_month,
       },
       traffic: {
         // Rolling 60 minutes, in-process — see metrics/collector.ts. Resets on

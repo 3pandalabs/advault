@@ -64,6 +64,18 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               Campaigns
             </Link>
             <Link
+              href="/dashboard/offer"
+              className="rounded-lg px-3 py-2 text-zinc-300 hover:bg-white/10"
+            >
+              This month
+            </Link>
+            <Link
+              href="/dashboard/subscription"
+              className="rounded-lg px-3 py-2 text-zinc-300 hover:bg-white/10"
+            >
+              Subscription
+            </Link>
+            <Link
               href="/dashboard/wallet"
               className="rounded-lg px-3 py-2 text-zinc-300 hover:bg-white/10"
             >

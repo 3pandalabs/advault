@@ -144,6 +144,70 @@ one discriminator.
 the money path with tests, because it is the only part that needs neither a live
 Postgres nor an approved developer token.
 
+## The subscription is the revenue model — there is no one-off charge
+
+For most of this repo's life AdVault could not earn money at any customer
+count. Every plan carried `monthlyFeeMinor: 0`, `applyEntry` was never called
+with `type: 'fee'`, and the plan prices on the marketing page were display-only
+strings. `lib/pricing` now holds four SKUs and one of them has to be sold:
+
+| Line | India | US |
+|---|---|---|
+| `offer` — 3 fresh videos/month, **no Google at all** | ₹999/mo | $39/mo |
+| `managed` — creatives plus a live campaign | ₹1,499/mo fee | $79/mo fee |
+
+**The offer line is the one that can be sold today.** It needs no Google
+developer token, no YouTube upload, no ad account and no Indian entity — which
+is exactly why it exists. Do not "simplify" it away as a cut-down managed plan.
+
+**Every rupee of platform revenue is a `fee` ledger row**, whichever rail
+collected it, so "what did AdVault earn" is one query over one column. Because
+the ledger is a wallet and a wallet cannot go negative, `feeFunding()` decides
+whether the fee needs a paired `topup` credit alongside it: platform-billed
+managed advertisers prepay an all-in amount and the fee is drawn from it;
+everyone else is charged externally and gets the paired credit so the balance
+nets to zero. Getting that backwards fails an offer-line charge whose card just
+succeeded, or hands a platform-billed advertiser free ad budget every month.
+
+**Provider metadata is fixed at mandate creation, so every renewal webhook
+carries the FIRST invoice's id — for years.** `resolveInvoiceForPayment()`
+treats it as a pointer to the subscription and applies payment to whichever
+invoice is open. Removing that indirection breaks month two silently: the
+customer keeps being charged and the database stays in month one.
+
+`lib/subscriptions/policy.ts` and `lib/offers/policy.ts` hold every pure
+decision and are tested. Anything reaching for `db` or `fetch` belongs in the
+sibling `index.ts`.
+
+## Local ads are OFFER ads, and the loop runs on WhatsApp
+
+A shop does not advertise "we exist", it advertises "₹499 haircut till Sunday".
+The offer changes monthly, which is what makes a monthly charge obvious to the
+customer — they are buying this month's promotion going out, not a video
+subscription. `offer_cycles` is one row per subscriber per month tracking that
+conversation.
+
+**WhatsApp is the interface, not a notification channel.** Owners will not open
+a dashboard on the 1st; they will reply to a message. `/dashboard/offer` is a
+deliberate fallback for people who prefer a screen and for when Meta is down —
+keep every step of the loop reachable both ways.
+
+Two constraints that are easy to get wrong:
+
+- **The monthly prompt must be a pre-approved TEMPLATE.** It opens the
+  conversation, so it falls outside the 24-hour service window and free text
+  will not deliver. `sendTemplate` and `sendText` are separate functions so the
+  choice is forced at the call site.
+- **Reminders are capped at two and then stop.** A shop owner who feels nagged
+  reports the number, and enough reports cost the WhatsApp business account —
+  the channel, not one customer.
+
+`inferOfferExpiry()` ALWAYS returns a date, falling back to end of month. That
+property matters more than the parsing: an offer campaign outliving its deadline
+spends the advertiser's budget sending people to a deal the shop will not
+honour, and nothing at Google expires an ad for us. The sweep in
+`render/offerCycles.ts` pauses them.
+
 ## Not used here
 
 No Temporal (the DB job queue covers the only async work), no mobile app, no

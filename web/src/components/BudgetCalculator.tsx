@@ -16,10 +16,10 @@ import Link from "next/link";
 type Estimate = {
   currency: "INR" | "USD";
   adBudgetMinor: number;
-  creationFeeMinor: number;
-  upfrontTotalMinor: number;
+  monthlyFeeMinor: number;
+  monthlyTotalMinor: number;
   reach: { low: number; high: number };
-  display: { adBudget: string; upfrontTotal: string };
+  display: { adBudget: string; monthlyTotal: string };
 };
 
 const PRESETS: Record<"INR" | "USD", number[]> = {
@@ -134,11 +134,16 @@ export function BudgetCalculator() {
             <p className="mt-1 text-sm text-zinc-400">views near your business</p>
           </div>
           <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4">
-            <p className="text-xs tracking-wide text-zinc-500 uppercase">You pay upfront</p>
-            <p className="mt-1 text-3xl font-semibold">{est.display.upfrontTotal}</p>
+            <p className="text-xs tracking-wide text-zinc-500 uppercase">You pay monthly</p>
+            <p className="mt-1 text-3xl font-semibold">{est.display.monthlyTotal}</p>
             <p className="mt-1 text-sm text-zinc-400">
-              {est.creationFeeMinor > 0
-                ? `${est.display.adBudget} ad budget + one-off setup`
+              {/* Quoted as one all-in figure on purpose. Showing the fee beside
+                  the ad budget invites the fee-ratio comparison against an
+                  agency retainer, which a flat fee on a small budget never
+                  wins — and the customer is buying the whole thing existing,
+                  not media buying by the hour. */}
+              {est.monthlyFeeMinor > 0
+                ? `${est.display.adBudget} of ads, everything handled`
                 : `${est.display.adBudget} ad budget · no platform fee`}
             </p>
           </div>
