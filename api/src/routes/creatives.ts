@@ -1,16 +1,28 @@
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, gte, inArray, sql } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { requireAuth } from "../auth/plugin.js";
 import { db } from "../db/index.js";
 import { assets, campaigns, creatives } from "../db/schema.js";
 import { loadOwnedCampaign, loadOwnedCreative } from "../lib/ownership.js";
-import { generateScript } from "../lib/script/generate.js";
+import { generateScript } from "../lib/ai/script/index.js";
 import { adScriptSchema } from "../lib/script/schema.js";
 import { enqueueRender } from "../render/jobs.js";
 import { campaignIdForCreativeKey, presignDownload } from "../plugins/r2.js";
 
 const ASPECT_RATIOS = ["16:9", "9:16"] as const;
+
+// Creatives one advertiser may generate per rolling 24 hours.
+//
+// This is a SPEND control, not an abuse control. Once a motion provider is
+// configured every creative costs the org roughly a dollar in vendor fees, and
+// that cost lands BEFORE any ad spend — so it sits outside the prepaid wallet
+// that guards Google entirely. Without a ceiling here, a user clicking
+// "regenerate" in a loop spends the org's money at no cost to themselves.
+//
+// Deliberately generous: a real advertiser iterating on two aspect ratios uses
+// a handful, so this only catches the pathological case.
+const MAX_CREATIVES_PER_DAY = Number(process.env.MAX_CREATIVES_PER_DAY ?? 20);
 
 export async function creativeRoutes(app: FastifyInstance) {
   app.addHook("onRequest", requireAuth);
@@ -52,6 +64,25 @@ export async function creativeRoutes(app: FastifyInstance) {
 
       if (ownedAssets.length !== body.assetIds.length) {
         return reply.code(400).send({ error: "unknown_assets" });
+      }
+
+      // Counted across all of this user's campaigns, not just this one —
+      // per-campaign would be trivially sidestepped by creating campaigns in a
+      // loop, which costs nothing. Checked against the number about to be
+      // created so a request cannot straddle the ceiling.
+      const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+      const [{ count: recentCount }] = await db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(creatives)
+        .innerJoin(campaigns, eq(creatives.campaignId, campaigns.id))
+        .where(and(eq(campaigns.userId, req.userId!), gte(creatives.createdAt, since)));
+
+      if (recentCount + body.aspectRatios.length > MAX_CREATIVES_PER_DAY) {
+        return reply.code(429).send({
+          error: "daily_creative_limit",
+          limit: MAX_CREATIVES_PER_DAY,
+          used: recentCount,
+        });
       }
 
       // Preserve the order the advertiser chose — it is the order the scenes

@@ -1,6 +1,6 @@
 import { and, eq, sql } from "drizzle-orm";
 import { db } from "../db/index.js";
-import { creatives, renderJobs } from "../db/schema.js";
+import { campaigns, creatives, renderJobs, users } from "../db/schema.js";
 
 // The render queue. A Postgres table rather than Redis or Temporal: the only
 // async work in this app is "encode this creative", the API and the renderer
@@ -161,10 +161,25 @@ export async function reclaimStalled(olderThanMinutes = 30): Promise<number> {
   return result.rows.length;
 }
 
+// Joins out to the owning user for `currencyCode` alone: it selects the
+// voiceover locale, so a Delhi plumber's ad is read in en-IN rather than
+// opening in a US accent. Fetched here with the creative rather than in a
+// second query from the worker — the renderer holds a connection from a pool
+// sized for one job at a time, and every extra round trip per render is one
+// more failure point in the hot path.
 export async function loadCreativeForRender(creativeId: string) {
   const [row] = await db
-    .select()
+    .select({
+      id: creatives.id,
+      campaignId: creatives.campaignId,
+      aspectRatio: creatives.aspectRatio,
+      script: creatives.script,
+      sourceAssetKeys: creatives.sourceAssetKeys,
+      currencyCode: users.currencyCode,
+    })
     .from(creatives)
+    .innerJoin(campaigns, eq(creatives.campaignId, campaigns.id))
+    .innerJoin(users, eq(campaigns.userId, users.id))
     .where(and(eq(creatives.id, creativeId)))
     .limit(1);
   return row ?? null;
