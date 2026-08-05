@@ -540,6 +540,22 @@ export const creatives = pgTable(
     // 'edge-tts' | 'elevenlabs' | 'none'
     voiceSource: text("voice_source").notNull().default("none"),
 
+    // 'standard' — the subscription pipeline: the advertiser's photos, animated.
+    // 'cinematic' — the paid add-on: text-to-video footage the model invented,
+    //   closing on the advertiser's real photo. A different render path, a
+    //   different cost per unit, and a different failure policy (a cinematic
+    //   render that fails is a refund, not a downgraded ad), so the renderer has
+    //   to be able to tell them apart before it starts.
+    kind: text("kind").notNull().default("standard"),
+    // The order that paid for this creative. Null for everything the
+    // subscription produces.
+    //
+    // Declared without .references() on purpose: `purchases` is defined further
+    // down this file, and a forward reference here would be evaluated before
+    // that table exists. The foreign key is real — 0004 adds it in SQL — this
+    // is only how it is spelled in the TypeScript.
+    purchaseId: uuid("purchase_id"),
+
     // Set once uploaded to YouTube as part of a launch. Google Ads video ads
     // reference a YouTube video id, not an arbitrary MP4 URL — see
     // infra/google-ads-setup.md.
@@ -848,5 +864,84 @@ export const whatsappMessages = pgTable(
       .on(t.providerRef)
       .where(sql`provider_ref is not null`),
     check("whatsapp_direction_check", sql`${t.direction} in ('inbound','outbound')`),
+  ],
+);
+
+// ---------------------------------------------------------------------------
+// One-off add-on purchases.
+//
+// Separate from `subscriptions` rather than a status on it, because the two
+// have genuinely different lifecycles: a subscription renews forever and its
+// hard problem is dunning, while a purchase is charged once and its hard
+// problem is that the thing it bought is PRODUCED MINUTES AFTER THE MONEY IS
+// TAKEN and can fail afterwards. Folding one into the other would give every
+// subscription row a nullable delivery state it never uses, and every purchase
+// a dunning ladder that never runs.
+// ---------------------------------------------------------------------------
+export const purchases = pgTable(
+  "purchases",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    // The campaign the produced creative belongs to. Nullable because checkout
+    // happens before the advertiser has necessarily picked one.
+    campaignId: uuid("campaign_id").references(() => campaigns.id, { onDelete: "set null" }),
+
+    // Add-on key from lib/pricing (in-cinematic, us-cinematic).
+    addOnKey: text("add_on_key").notNull(),
+    sku: text("sku").notNull(),
+    currencyCode: text("currency_code").notNull(),
+    // The price agreed AT CHECKOUT, copied for the same reason subscriptions
+    // copy theirs: repricing the list must never change what someone already
+    // bought. Zero is legal here (the at_cost waiver still produces a real
+    // artefact), so revenue queries must filter amount_minor > 0 rather than
+    // assuming every row is a sale.
+    amountMinor: integer("amount_minor").notNull(),
+
+    provider: text("provider").notNull(),
+    providerRef: text("provider_ref"),
+
+    // pending -> paid -> producing -> delivered
+    //                             \-> failed -> refunded
+    status: text("status").notNull().default("pending"),
+
+    // The generated CinematicBrief, snapshotted whole. Kept even on failure —
+    // it is the only record of what the customer was going to receive, and the
+    // first thing to look at when they ask why the ad was refused.
+    brief: jsonb("brief"),
+
+    // Production attempts. Generation is metered, so this is a spend counter as
+    // much as a reliability one; lib/cinematic/policy caps it.
+    attempts: integer("attempts").notNull().default(0),
+    lastError: text("last_error"),
+
+    paidAt: timestamp("paid_at", { withTimezone: true }),
+    deliveredAt: timestamp("delivered_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("idx_purchases_user").on(t.userId, t.createdAt),
+    // The replay guard. Both PSPs retry webhooks by design, and without this a
+    // retried delivery charges a one-off sale twice.
+    uniqueIndex("uq_purchases_provider_ref")
+      .on(t.provider, t.providerRef)
+      .where(sql`provider_ref is not null`),
+    // The renderer's work queue. Partial because delivered rows accumulate
+    // forever and are never producible again.
+    index("idx_purchases_producible").on(t.createdAt).where(sql`status = 'paid'`),
+    check("purchases_currency_check", sql`${t.currencyCode} in ('INR','USD')`),
+    check("purchases_sku_check", sql`${t.sku} in ('cinematic')`),
+    check(
+      "purchases_provider_check",
+      sql`${t.provider} in ('razorpay','stripe','paddle','manual')`,
+    ),
+    check(
+      "purchases_status_check",
+      sql`${t.status} in ('pending','paid','producing','delivered','failed','refunded','cancelled')`,
+    ),
+    check("purchases_amount_check", sql`${t.amountMinor} >= 0`),
   ],
 );

@@ -13,6 +13,7 @@ import { creativeRoutes } from "./routes/creatives.js";
 import { launchRoutes } from "./routes/launch.js";
 import { metricsRoutes } from "./routes/metrics.js";
 import { subscriptionRoutes } from "./routes/subscriptions.js";
+import { cinematicRoutes } from "./routes/cinematic.js";
 import { offerRoutes } from "./routes/offers.js";
 
 const app = Fastify({
@@ -96,6 +97,7 @@ await app.register(authRoutes);
 // and must work before signup.
 await app.register(billingRoutes);
 await app.register(subscriptionRoutes);
+await app.register(cinematicRoutes);
 await app.register(offerRoutes);
 await app.register(assetRoutes);
 await app.register(campaignRoutes);
