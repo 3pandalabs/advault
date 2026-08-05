@@ -1,0 +1,13 @@
+{
+  // Type-checks the test files that tsconfig.json deliberately excludes from
+  // the build. Emits nothing — vitest transpiles at run time; this exists so a
+  // broken test is caught by `npm run typecheck` rather than only when someone
+  // runs the suite.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "types": ["node", "vitest/globals"]
+  },
+  "include": ["src"],
+  "exclude": []
+}

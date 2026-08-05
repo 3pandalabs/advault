@@ -132,6 +132,31 @@ export async function getBalance(userId: string): Promise<{
 }
 
 /**
+ * Ledger totals grouped by entry type, in minor units and signed as stored.
+ *
+ * Exists for the billing summary, which has to show ad spend AdVault fronted
+ * separately from AdVault's own fees — Google's Third Party Policy requires a
+ * reseller to disclose real ad costs rather than one blended number. Summing
+ * from the ledger rather than the cached balance because the ledger is
+ * authoritative and the balance is a single figure that cannot be decomposed.
+ */
+export async function sumEntriesByType(userId: string): Promise<Record<string, number>> {
+  const rows = await db
+    .select({
+      type: ledgerEntries.type,
+      total: sql<string>`sum(${ledgerEntries.amountMinor})`,
+    })
+    .from(ledgerEntries)
+    .innerJoin(wallets, eq(ledgerEntries.walletId, wallets.id))
+    .where(eq(wallets.userId, userId))
+    .groupBy(ledgerEntries.type);
+
+  const out: Record<string, number> = {};
+  for (const r of rows) out[r.type] = Number(r.total ?? 0);
+  return out;
+}
+
+/**
  * Can this advertiser afford to have a campaign live?
  *
  * Requires the balance to cover at least MIN_FUNDED_DAYS of the daily budget

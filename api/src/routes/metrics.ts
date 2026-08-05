@@ -27,6 +27,9 @@ type CountsRow = {
   failed_creatives: number;
   queued_render_jobs: number;
   connected_ad_accounts: number;
+  platform_funded_accounts: number;
+  customer_funded_accounts: number;
+  billing_link_incomplete: number;
   active_sessions: number;
 };
 
@@ -60,6 +63,9 @@ export async function metricsRoutes(app: FastifyInstance) {
         (select count(*) from creatives where render_status = 'failed')::int as failed_creatives,
         (select count(*) from render_jobs where status in ('queued','running'))::int as queued_render_jobs,
         (select count(*) from ad_accounts where status = 'active')::int as connected_ad_accounts,
+        (select count(*) from ad_accounts where status = 'active' and billing_mode = 'platform')::int as platform_funded_accounts,
+        (select count(*) from ad_accounts where status = 'active' and billing_mode = 'customer')::int as customer_funded_accounts,
+        (select count(*) from ad_accounts where status = 'active' and billing_link_status in ('pending','invited'))::int as billing_link_incomplete,
         (select count(*) from sessions where expires_at > now())::int as active_sessions
     `);
 
@@ -91,6 +97,18 @@ export async function metricsRoutes(app: FastifyInstance) {
         // while every advertiser's video sits unrendered.
         queuedRenderJobs: c.queued_render_jobs,
         connectedAdAccounts: c.connected_ad_accounts,
+        // The split that says how much of the org's money is at risk.
+        // platformFunded accounts spend from AdVault's payments account and are
+        // recovered from wallets; customerFunded ones cost the org nothing.
+        platformFundedAccounts: c.platform_funded_accounts,
+        customerFundedAccounts: c.customer_funded_accounts,
+        // The onboarding funnel's leak, and the second thing worth alerting on.
+        // These advertisers finished signup, got an ad account, and then never
+        // completed the Google billing step — so they can never launch and
+        // nothing else in this envelope would reveal it. A number that grows
+        // rather than drains means the invitation email or the billing deep
+        // link is broken.
+        billingLinkIncomplete: c.billing_link_incomplete,
         activeSessions: c.active_sessions,
       },
       traffic: {

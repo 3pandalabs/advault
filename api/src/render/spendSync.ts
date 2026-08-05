@@ -41,8 +41,13 @@ export async function runSpendSync(): Promise<{ synced: number; paused: number }
     return { synced: 0, paused: 0 };
   }
 
-  // Only managed, live campaigns. An unmanaged campaign bills the advertiser's
-  // own card and is none of the wallet's business.
+  // Only PLATFORM-FUNDED, live campaigns — the ones whose spend actually left
+  // our payments account and therefore has to be recovered from the wallet.
+  //
+  // Keyed on billing_mode, not is_managed. A managed child the customer pays
+  // for looks identical structurally but is none of the wallet's business:
+  // debiting it would charge an advertiser for spend they already paid Google
+  // directly, and auto-pause would then stop a campaign we never funded.
   const rows = await db
     .select({ campaign: campaigns, account: adAccounts })
     .from(campaigns)
@@ -50,7 +55,7 @@ export async function runSpendSync(): Promise<{ synced: number; paused: number }
     .where(
       and(
         eq(campaigns.status, "live"),
-        eq(adAccounts.isManaged, true),
+        eq(adAccounts.billingMode, "platform"),
         isNotNull(campaigns.googleCampaignResourceName),
       ),
     );

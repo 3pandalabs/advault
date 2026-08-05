@@ -46,7 +46,10 @@ export default function SignupPage() {
     try {
       const tokens = await register(form);
       setTokens(tokens.accessToken, tokens.refreshToken);
-      router.push("/dashboard/campaigns/new");
+      // Ad account setup first. Sending a new advertiser straight to the
+      // campaign wizard lets them build a whole campaign and only discover at
+      // the launch button that there is nowhere to launch it to.
+      router.push("/dashboard/onboarding");
     } catch (err) {
       setError(
         err instanceof ApiError && err.code === "registration_failed"

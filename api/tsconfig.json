@@ -14,5 +14,10 @@
     "declaration": false,
     "sourceMap": true
   },
-  "include": ["src"]
+  "include": ["src"],
+  // Tests must not reach dist/. The container image installs production
+  // dependencies only, so a compiled test that imports vitest is dead weight at
+  // best — and `npm run build` is what produces the image's dist/.
+  // tsconfig.test.json type-checks them instead; see the typecheck script.
+  "exclude": ["src/**/*.test.ts"]
 }

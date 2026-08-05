@@ -103,6 +103,47 @@ Treat it accordingly:
   which is the single place that spends money. Keep it that way — no other
   route may call the Google Ads mutate API.
 
+## `is_managed` and `billing_mode` are two different questions
+
+`ad_accounts.is_managed` — did AdVault provision this account under the MCC?
+`ad_accounts.billing_mode` — whose card does Google actually charge?
+
+They are independent, and the original schema conflated them. That made the
+genuinely useful third shape — an MCC child the advertiser pays for themselves —
+impossible to express, and left `spendSync` and the wallet guard keyed on the
+wrong column. Three combinations are real:
+
+| `is_managed` | `billing_mode` | Shape |
+|---|---|---|
+| false | customer | Advertiser connected their own Google Ads account |
+| true | platform | MCC child, **org fronts the spend** — the only case the wallet exists for |
+| true | customer | MCC child, advertiser's own card |
+
+`platform` + `is_managed = false` is impossible and a CHECK constraint says so.
+
+**Anything asking "is the org's money at risk" must read `billing_mode`, never
+`is_managed`.** Both `routes/launch.ts` and `render/spendSync.ts` do. Keying
+either on `is_managed` would demand a wallet balance from an advertiser whose
+card Google already has, and would auto-pause campaigns we never funded.
+
+**There is no Google Ads API that adds a payment method.** `BillingSetupService`
+only links a payments account that already exists. So `platform` is fully
+automatic and `customer` is not automatable at all: the advertiser accepts an
+account invitation and enters a card in Google's own UI, and the only signal
+available is polling for a funded `billing_setup`. Do not add a "mark as done"
+control — a self-reported yes produces a campaign that launches successfully and
+then silently never serves, which is strictly worse than an honest blocked
+state.
+
+Which modes a deployment offers is `ADVAULT_BILLING_MODES`. Offering one is a
+single-path onboarding; offering both adds the choice step. Removing the choice
+should mean removing an env value, not unpicking a fork — keep the branch to the
+one discriminator.
+
+`lib/billing/policy.ts` holds every pure decision here and is the only part of
+the money path with tests, because it is the only part that needs neither a live
+Postgres nor an approved developer token.
+
 ## Not used here
 
 No Temporal (the DB job queue covers the only async work), no mobile app, no

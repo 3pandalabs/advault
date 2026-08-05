@@ -16,7 +16,31 @@ import { getCustomerDetails, listAccessibleCustomers } from "../lib/googleAds/cl
 import { decryptToken } from "../lib/crypto.js";
 import { loadOwnedAdAccount } from "../lib/ownership.js";
 import { createChildAccount, defaultTimeZone, isMccConfigured } from "../lib/googleAds/mcc.js";
+import { billingSetupUrl } from "../lib/googleAds/billingLink.js";
+import {
+  attachPlatformBillingToAccount,
+  NoMccPaymentsAccount,
+  refreshCustomerBillingLink,
+  startCustomerBillingLink,
+} from "../lib/billing/link.js";
+import {
+  offeredModes,
+  offeredModeList,
+  resolveRequestedMode,
+  shouldPromptForMode,
+  canSwitchMode,
+  needsBillingLinkPolling,
+  type BillingMode,
+} from "../lib/billing/policy.js";
 import type { Currency } from "../lib/pricing/index.js";
+
+/** What this deployment offers — recomputed per request so a config change lands without a restart. */
+function currentOfferedModes() {
+  return offeredModes({
+    configured: process.env.ADVAULT_BILLING_MODES,
+    mccConfigured: isMccConfigured(),
+  });
+}
 
 // A stored Google Ads refresh token authorises spending an advertiser's money.
 // This serializer is the ONLY shape an ad_accounts row may leave the API in —
@@ -40,6 +64,16 @@ function toPublicAdAccount(row: typeof adAccounts.$inferSelect) {
     isManaged: row.isManaged,
     provisionStatus: row.provisionStatus,
     provisionError: row.provisionError,
+    // Who pays Google. The dashboard shows a wallet and a top-up prompt for
+    // 'platform' and neither for 'customer', so getting this wrong shows an
+    // advertiser a balance that has nothing to do with their campaigns.
+    billingMode: row.billingMode,
+    billingLinkStatus: row.billingLinkStatus,
+    billingConfirmedAt: row.billingConfirmedAt,
+    // Only meaningful mid-handshake, but cheap and stable, and it saves the
+    // dashboard from reconstructing a Google URL itself.
+    billingUrl:
+      row.isManaged && row.billingMode === "customer" ? billingSetupUrl(row.customerId) : null,
   };
 }
 
@@ -61,6 +95,17 @@ export async function adAccountRoutes(app: FastifyInstance) {
       // manual review — see infra/google-ads-setup.md.
       return reply.code(503).send({ error: "google_ads_mcc_not_configured" });
     }
+
+    const body = z
+      .object({ billingMode: z.enum(["platform", "customer"]).optional() })
+      .safeParse(req.body ?? {});
+    if (!body.success) return reply.code(400).send({ error: "invalid_billing_mode" });
+
+    // With both modes offered the advertiser must have chosen. Defaulting here
+    // would silently put one of them on our credit card.
+    const resolved = resolveRequestedMode(body.data.billingMode, currentOfferedModes());
+    if (!resolved.ok) return reply.code(400).send({ error: resolved.code });
+    const billingMode: BillingMode = resolved.mode;
 
     const [user] = await db
       .select({
@@ -113,6 +158,10 @@ export async function adAccountRoutes(app: FastifyInstance) {
           status: "active",
           provisionStatus: "active",
           provisionedAt: new Date(),
+          billingMode,
+          // Customer-funded children start the invitation handshake below;
+          // platform-funded ones must leave this null (schema CHECK).
+          billingLinkStatus: billingMode === "customer" ? "pending" : null,
         })
         .onConflictDoUpdate({
           target: [adAccounts.userId, adAccounts.provider, adAccounts.customerId],
@@ -120,7 +169,45 @@ export async function adAccountRoutes(app: FastifyInstance) {
         })
         .returning();
 
-      return reply.code(201).send(toPublicAdAccount(row));
+      // The account exists at this point. Billing attachment is a second round
+      // trip that can fail on its own, and its failure must not undo a
+      // successful provision — so it is recorded on the row and surfaced, not
+      // thrown. Both branches return 201.
+      if (billingMode === "platform") {
+        try {
+          await attachPlatformBillingToAccount(row);
+        } catch (err) {
+          const detail = err instanceof Error ? err.message : String(err);
+          req.log.error({ err, adAccountId: row.id }, "platform billing attach failed");
+
+          // No payments account on the MCC is an operator problem that will
+          // break every platform signup identically until someone fixes it.
+          // Surfaced distinctly so it does not read as this advertiser's fault.
+          const code =
+            err instanceof NoMccPaymentsAccount ? "mcc_has_no_payments_account" : "billing_attach_failed";
+          const [fresh] = await db
+            .select()
+            .from(adAccounts)
+            .where(eq(adAccounts.id, row.id))
+            .limit(1);
+          return reply
+            .code(201)
+            .send({ ...toPublicAdAccount(fresh ?? row), billingWarning: code, billingDetail: detail });
+        }
+      } else {
+        const link = await startCustomerBillingLink(row, user.email);
+        const [fresh] = await db.select().from(adAccounts).where(eq(adAccounts.id, row.id)).limit(1);
+        return reply.code(201).send({
+          ...toPublicAdAccount(fresh ?? row),
+          // The two things the wizard needs to render step 6 and step 7.
+          billingUrl: link.billingUrl,
+          invitationSent: link.invitationSent,
+          ...(link.detail ? { billingDetail: link.detail } : {}),
+        });
+      }
+
+      const [fresh] = await db.select().from(adAccounts).where(eq(adAccounts.id, row.id)).limit(1);
+      return reply.code(201).send(toPublicAdAccount(fresh ?? row));
     } catch (err) {
       const detail = err instanceof Error ? err.message : String(err);
       req.log.error({ err }, "MCC child account provisioning failed");
@@ -145,6 +232,185 @@ export async function adAccountRoutes(app: FastifyInstance) {
       return reply.code(502).send({ error: "provisioning_failed", detail });
     }
   });
+
+  // ---------------------------------------------------------------------
+  // Billing mode — the onboarding branch.
+  //
+  // `prompt` is what decides whether the wizard shows a choice step at all.
+  // With one mode offered there is nothing to ask, and asking anyway is a
+  // question with one answer.
+  // ---------------------------------------------------------------------
+  app.get("/ad-accounts/billing-options", async () => {
+    const offered = currentOfferedModes();
+    return {
+      modes: offeredModeList(offered),
+      prompt: shouldPromptForMode(offered),
+      mccConfigured: isMccConfigured(),
+    };
+  });
+
+  // Polled by the wizard while the advertiser is off in Google accepting an
+  // invitation and entering a card. Billing setup is the authority — see the
+  // note in lib/billing/link.ts on why invitation state alone is ambiguous.
+  app.get<{ Params: { adAccountId: string } }>(
+    "/ad-accounts/:adAccountId/billing-status",
+    async (req, reply) => {
+      const account = await loadOwnedAdAccount(req.params.adAccountId, req.userId!, reply);
+      if (!account) return;
+
+      if (!needsBillingLinkPolling(account)) {
+        // Terminal or not applicable — answer from the row rather than
+        // spending a Google call on an account that cannot change.
+        return {
+          ...toPublicAdAccount(account),
+          billingConfigured: account.billingLinkStatus === "active",
+          polling: false,
+        };
+      }
+
+      const [user] = await db
+        .select({ email: users.email })
+        .from(users)
+        .where(eq(users.id, req.userId!))
+        .limit(1);
+
+      const snapshot = await refreshCustomerBillingLink(account, user.email);
+      const [fresh] = await db
+        .select()
+        .from(adAccounts)
+        .where(eq(adAccounts.id, account.id))
+        .limit(1);
+
+      return {
+        ...toPublicAdAccount(fresh ?? account),
+        billingConfigured: snapshot.billingConfigured,
+        invitationState: snapshot.invitationState,
+        polling: snapshot.status !== "active",
+        ...(snapshot.detail ? { billingDetail: snapshot.detail } : {}),
+      };
+    },
+  );
+
+  // The invitation email is the classic silent failure in this flow — spam
+  // filtered, wrong address, or simply lost. Resend is cheap and idempotent at
+  // Google (a second invitation supersedes the first), so there is no reason to
+  // make an advertiser wait it out.
+  app.post<{ Params: { adAccountId: string } }>(
+    "/ad-accounts/:adAccountId/billing/resend-invite",
+    async (req, reply) => {
+      const account = await loadOwnedAdAccount(req.params.adAccountId, req.userId!, reply);
+      if (!account) return;
+
+      if (!account.isManaged || account.billingMode !== "customer") {
+        return reply.code(409).send({ error: "no_billing_invitation_for_account" });
+      }
+      if (account.billingLinkStatus === "active") {
+        return reply.code(409).send({ error: "billing_already_configured" });
+      }
+
+      const [user] = await db
+        .select({ email: users.email })
+        .from(users)
+        .where(eq(users.id, req.userId!))
+        .limit(1);
+
+      const link = await startCustomerBillingLink(account, user.email);
+      const [fresh] = await db
+        .select()
+        .from(adAccounts)
+        .where(eq(adAccounts.id, account.id))
+        .limit(1);
+
+      return reply.code(link.invitationSent ? 200 : 502).send({
+        ...toPublicAdAccount(fresh ?? account),
+        billingUrl: link.billingUrl,
+        invitationSent: link.invitationSent,
+        ...(link.detail ? { billingDetail: link.detail } : {}),
+      });
+    },
+  );
+
+  // Moving between modes after onboarding. Only managed accounts can switch —
+  // there is nothing to attach our billing to on a brought-your-own connection,
+  // and the schema CHECK says the same thing one layer down.
+  app.post<{ Params: { adAccountId: string } }>(
+    "/ad-accounts/:adAccountId/billing-mode",
+    async (req, reply) => {
+      const body = z.object({ billingMode: z.enum(["platform", "customer"]) }).safeParse(req.body);
+      if (!body.success) return reply.code(400).send({ error: "invalid_billing_mode" });
+
+      const account = await loadOwnedAdAccount(req.params.adAccountId, req.userId!, reply);
+      if (!account) return;
+
+      const decision = canSwitchMode(account, body.data.billingMode, currentOfferedModes());
+      if (!decision.ok) {
+        return reply.code(decision.code === "same_mode" ? 200 : 409).send(
+          decision.code === "same_mode" ? toPublicAdAccount(account) : { error: decision.code },
+        );
+      }
+
+      const [user] = await db
+        .select({ email: users.email })
+        .from(users)
+        .where(eq(users.id, req.userId!))
+        .limit(1);
+
+      if (body.data.billingMode === "platform") {
+        // Flip the row first so the CHECK constraint permits clearing the
+        // handshake columns, then attach. A failed attach leaves a
+        // platform-mode account with no payments account, which the launch
+        // guard does not catch — so it is surfaced as a warning, loudly.
+        await db
+          .update(adAccounts)
+          .set({ billingMode: "platform", billingLinkStatus: null })
+          .where(eq(adAccounts.id, account.id));
+
+        const [flipped] = await db
+          .select()
+          .from(adAccounts)
+          .where(eq(adAccounts.id, account.id))
+          .limit(1);
+
+        try {
+          await attachPlatformBillingToAccount(flipped);
+        } catch (err) {
+          const detail = err instanceof Error ? err.message : String(err);
+          req.log.error({ err, adAccountId: account.id }, "billing mode switch to platform failed");
+          return reply.code(502).send({ error: "billing_attach_failed", detail });
+        }
+      } else {
+        await db
+          .update(adAccounts)
+          .set({ billingMode: "customer", billingLinkStatus: "pending", billingConfirmedAt: null })
+          .where(eq(adAccounts.id, account.id));
+
+        const [flipped] = await db
+          .select()
+          .from(adAccounts)
+          .where(eq(adAccounts.id, account.id))
+          .limit(1);
+
+        const link = await startCustomerBillingLink(flipped, user.email);
+        const [fresh] = await db
+          .select()
+          .from(adAccounts)
+          .where(eq(adAccounts.id, account.id))
+          .limit(1);
+        return reply.code(200).send({
+          ...toPublicAdAccount(fresh ?? flipped),
+          billingUrl: link.billingUrl,
+          invitationSent: link.invitationSent,
+        });
+      }
+
+      const [fresh] = await db
+        .select()
+        .from(adAccounts)
+        .where(eq(adAccounts.id, account.id))
+        .limit(1);
+      return reply.code(200).send(toPublicAdAccount(fresh ?? account));
+    },
+  );
 
   app.get("/ad-accounts", async (req) => {
     const rows = await db.select().from(adAccounts).where(eq(adAccounts.userId, req.userId!));

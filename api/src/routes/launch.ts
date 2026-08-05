@@ -16,6 +16,7 @@ import {
 } from "../lib/googleAds/campaigns.js";
 import { loadOwnedAdAccount, loadOwnedCampaign } from "../lib/ownership.js";
 import { canLaunch, MIN_FUNDED_DAYS } from "../lib/wallet/index.js";
+import { billingGate, requiresWalletCheck } from "../lib/billing/policy.js";
 
 // ---------------------------------------------------------------------------
 // THE ONLY ROUTE IN THIS CODEBASE THAT SPENDS MONEY.
@@ -64,24 +65,50 @@ export async function launchRoutes(app: FastifyInstance) {
 
       const account = await loadOwnedAdAccount(adAccountId, req.userId!, reply);
       if (!account) return;
-      if (account.status !== "active") {
-        return reply.code(409).send({ error: "ad_account_revoked" });
+
+      // -------------------------------------------------------------------
+      // THE BILLING GATE. Can Google accept spend on this account at all?
+      //
+      // Distinct from — and prior to — the wallet guard below, which asks
+      // whether WE can afford it. The case this exists for is a customer-funded
+      // managed account whose owner never finished entering a card: launching
+      // into it SUCCEEDS at the API level and then silently never delivers.
+      // That is the worst failure available here, because the advertiser
+      // believes they are live and nothing in the system disagrees.
+      // -------------------------------------------------------------------
+      const gate = billingGate(account);
+      if (!gate.ok) {
+        const detail =
+          gate.code === "billing_not_configured"
+            ? "This account has no payment method yet. Finish the Google billing step, then launch."
+            : gate.code === "billing_link_failed"
+              ? "The Google account invitation could not be completed. Resend it from Settings."
+              : gate.code === "provisioning_incomplete"
+                ? "This ad account is still being set up."
+                : "This ad account is no longer connected.";
+        return reply
+          .code(gate.code === "account_revoked" ? 409 : 409)
+          .send({ error: gate.code === "account_revoked" ? "ad_account_revoked" : gate.code, detail });
       }
 
       // -------------------------------------------------------------------
-      // THE WALLET GUARD. Managed accounts only, and non-negotiable there.
+      // THE WALLET GUARD. Platform-funded accounts only, and non-negotiable
+      // there.
       //
-      // On a managed (MCC) account, Google bills 3PandaLabs, not the
-      // advertiser — so launching without funds means the org finances
+      // When billing_mode is 'platform', Google bills 3PandaLabs rather than
+      // the advertiser — so launching without funds means the org finances
       // someone else's advertising. Requiring MIN_FUNDED_DAYS of cover rather
       // than one day is deliberate: the spend sync runs nightly and Google
       // keeps serving until we pause it, so the guard has to lead the spend
       // rather than trail it.
       //
-      // Unmanaged (own-OAuth) accounts skip this entirely — the advertiser's
-      // own card is charged and the org has no exposure to bound.
+      // Customer-funded accounts skip this entirely — whether they are managed
+      // children or brought-your-own connections, the advertiser's own card is
+      // charged and the org has no exposure to bound. Note this is keyed on
+      // billing mode, NOT on isManaged: a managed child the customer pays for
+      // has no wallet and must not be gated on one.
       // -------------------------------------------------------------------
-      if (account.isManaged) {
+      if (requiresWalletCheck(account)) {
         const funds = await canLaunch(req.userId!, campaign.dailyBudgetCents);
         if (!funds.ok) {
           return reply.code(402).send({
@@ -89,7 +116,7 @@ export async function launchRoutes(app: FastifyInstance) {
             balanceMinor: funds.balanceMinor,
             requiredMinor: funds.requiredMinor,
             currencyCode: campaign.currencyCode,
-            detail: `A managed campaign needs ${MIN_FUNDED_DAYS} days of budget on hand before it can go live.`,
+            detail: `A campaign we fund needs ${MIN_FUNDED_DAYS} days of budget on hand before it can go live.`,
           });
         }
       }

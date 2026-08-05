@@ -30,6 +30,18 @@ const LAUNCH_ERRORS: Record<string, string> = {
   no_ready_creatives: "Wait for at least one video to finish rendering first.",
   already_launched: "This campaign has already been sent to Google Ads.",
   no_resolvable_zip_codes: "Google did not recognise any of those ZIP codes.",
+  // The wallet guard on accounts AdVault funds. Previously unmapped, so a 402
+  // surfaced as the raw code.
+  insufficient_funds:
+    "Your balance is too low to cover this campaign. Top up on the Wallet page and try again.",
+  // The billing gate. A campaign launched into an account with no payment
+  // method succeeds at Google and then never serves, so this is refused rather
+  // than allowed through.
+  billing_not_configured:
+    "Google still needs a payment method on this ad account. Finish the billing step in Settings, then launch.",
+  billing_link_failed:
+    "The Google account invitation could not be completed. Resend it from Settings, then launch.",
+  provisioning_incomplete: "This ad account is still being set up. Try again in a moment.",
 };
 
 export default function CampaignDetailPage({

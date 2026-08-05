@@ -1,16 +1,18 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { requireAdmin, requireAuth } from "../auth/plugin.js";
 import { db } from "../db/index.js";
-import { payments, users } from "../db/schema.js";
+import { adAccounts, payments, users } from "../db/schema.js";
 import { env } from "../env.js";
+import { invoiceShapeFor } from "../lib/billing/policy.js";
 import {
   applyEntry,
   DuplicateLedgerEntry,
   ensureWallet,
   getBalance,
   listEntries,
+  sumEntriesByType,
 } from "../lib/wallet/index.js";
 import { providerByName, providerFor } from "../lib/payments/index.js";
 import {
@@ -109,6 +111,72 @@ export async function billingRoutes(app: FastifyInstance) {
         currencyCode: wallet.currencyCode,
         display: formatMinor(wallet.balanceMinor, wallet.currencyCode as Currency),
         entries: await listEntries(req.userId!),
+      };
+    });
+
+    // ---------------------------------------------------------------------
+    // Billing summary — the disclosure surface.
+    //
+    // Google's Third Party Policy requires a reseller to show clients their
+    // ACTUAL ad costs, distinct from the reseller's own fee. That obligation
+    // attaches to platform-funded accounts, where we pay Google and rebill:
+    // a single blended figure does not satisfy it. Customer-funded advertisers
+    // have no pass-through from us at all, so their summary carries no ad-spend
+    // line — there isn't one to disclose.
+    //
+    // NOTE: AdVault has no invoice generation. This endpoint is the shape an
+    // invoice would take, sourced from the ledger, and is what the dashboard
+    // renders today.
+    // ---------------------------------------------------------------------
+    secured.get("/billing/summary", async (req) => {
+      const [user] = await db
+        .select({ currencyCode: users.currencyCode })
+        .from(users)
+        .where(eq(users.id, req.userId!))
+        .limit(1);
+      const currency = user.currencyCode as Currency;
+
+      const accounts = await db
+        .select({
+          id: adAccounts.id,
+          customerId: adAccounts.customerId,
+          descriptiveName: adAccounts.descriptiveName,
+          isManaged: adAccounts.isManaged,
+          billingMode: adAccounts.billingMode,
+          billingLinkStatus: adAccounts.billingLinkStatus,
+        })
+        .from(adAccounts)
+        .where(and(eq(adAccounts.userId, req.userId!), eq(adAccounts.status, "active")));
+
+      const anyPlatform = accounts.some((a) => a.billingMode === "platform");
+
+      // Ledger totals by type. Only meaningful when something is platform
+      // funded — a purely customer-funded advertiser never accrues spend rows.
+      const totals = anyPlatform ? await sumEntriesByType(req.userId!) : {};
+      const adSpendMinor = Math.abs(totals.spend ?? 0);
+      const feeMinor = Math.abs(totals.fee ?? 0);
+
+      return {
+        currencyCode: currency,
+        accounts: accounts.map((a) => ({
+          ...a,
+          invoiceShape: invoiceShapeFor(a.billingMode),
+        })),
+        // Present only when we actually fronted money. Omitted rather than
+        // zeroed for customer-funded advertisers, so the dashboard can tell
+        // "nothing yet" apart from "not applicable".
+        passThrough: anyPlatform
+          ? {
+              adSpendMinor,
+              display: formatMinor(adSpendMinor, currency),
+              note: "Ad spend AdVault paid Google on your behalf.",
+            }
+          : null,
+        fees: {
+          feeMinor,
+          display: formatMinor(feeMinor, currency),
+          note: "AdVault's own charges.",
+        },
       };
     });
 
