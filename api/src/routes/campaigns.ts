@@ -8,7 +8,17 @@ import { loadOwnedCampaign } from "../lib/ownership.js";
 
 // US ZIPs, 5 digits. Validated here as well as by the CHECK constraint so the
 // wizard gets a field-level error instead of a 400 with no shape to it.
-const zipCode = z.string().regex(/^\d{5}$/, "must be a 5-digit ZIP code");
+// US ZIP (5 digits) or Indian PIN (6 digits). Both markets, one field.
+//
+// This was `^\d{5}$` and it made India unusable: a Bengaluru advertiser typing
+// 560001 was told "must be a 5-digit ZIP code" and could not create a campaign
+// at all. Nothing downstream cared — Google's location targeting takes the
+// string as a name — so the entire market was closed by a validation rule.
+// Found by dogfooding the product on 3PandaLabs itself, which is the only
+// reason it surfaced before a customer hit it.
+const postalCode = z
+  .string()
+  .regex(/^\d{5}$|^\d{6}$/, "must be a 5-digit US ZIP or 6-digit Indian PIN code");
 
 const campaignInput = z.object({
   name: z.string().min(1).max(120),
@@ -21,7 +31,7 @@ const campaignInput = z.object({
     message: "must be an http(s) URL",
   }),
   offerDetails: z.string().max(2000).nullish(),
-  targetZipCodes: z.array(zipCode).min(1).max(50),
+  targetZipCodes: z.array(postalCode).min(1).max(50),
   radiusMiles: z.number().int().min(1).max(50).default(10),
   // Minor units. A $5/day floor because Google's own minimums and this app's
   // per-impression maths both stop being meaningful below it; the $500/day

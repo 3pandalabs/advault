@@ -453,6 +453,17 @@ export const campaigns = pgTable(
     // dashboard can say why rather than showing an unexplained pause.
     pausedForFundsAt: timestamp("paused_for_funds_at", { withTimezone: true }),
 
+    // When this month's offer stops being true.
+    //
+    // Local ads are OFFER ads — "30% off till Sunday", not "we exist". An offer
+    // campaign still serving after its deadline is worse than no ad at all: it
+    // burns budget and sends people to a shop that will turn them away. Nothing
+    // in Google pauses on our behalf, so the sweep in render/offerCycles.ts
+    // does, and `offerExpiredAt` records that it happened rather than leaving
+    // another unexplained pause.
+    offerExpiresAt: timestamp("offer_expires_at", { withTimezone: true }),
+    offerExpiredAt: timestamp("offer_expired_at", { withTimezone: true }),
+
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -595,5 +606,247 @@ export const renderJobs = pgTable(
       .on(t.creativeId)
       .where(sql`status in ('queued','running')`),
     check("render_jobs_status_check", sql`${t.status} in ('queued','running','done','failed')`),
+  ],
+);
+
+// ---------------------------------------------------------------------------
+// Subscriptions — the revenue model.
+//
+// Until this table existed, AdVault earned nothing at any customer count:
+// `plan.monthlyFeeMinor` was 0 on every plan, no ledger row was ever written
+// with type 'fee', and the only money that moved was ad spend passing straight
+// through to Google. This is the row that makes a customer a paying customer.
+//
+// One live subscription per user (partial unique index below). Changing plan
+// cancels and re-creates rather than mutating, so the invoice history always
+// names the price it was actually charged at.
+// ---------------------------------------------------------------------------
+
+export const subscriptions = pgTable(
+  "subscriptions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+
+    // Plan key from lib/pricing (in-offer, in-managed, us-offer, us-managed).
+    planKey: text("plan_key").notNull(),
+    // Denormalised from the plan so a later price-list edit cannot retroactively
+    // change what an existing subscriber was sold.
+    line: text("line").notNull(),
+    currencyCode: text("currency_code").notNull(),
+    // The fee agreed AT SIGNUP. Deliberately a copy: repricing the plan table
+    // must never silently change an existing subscriber's bill. A price change
+    // is a new subscription, not an UPDATE.
+    amountMinor: integer("amount_minor").notNull(),
+
+    // razorpay | stripe | paddle | manual. Which rail collects the money.
+    // 'paddle' is the merchant-of-record path, where Paddle is the seller and
+    // therefore carries the Indian GST/OIDAR obligation instead of us.
+    provider: text("provider").notNull(),
+    providerRef: text("provider_ref"),
+
+    // pending  — created, first payment not yet confirmed
+    // active   — paid and current
+    // past_due — a charge failed; still serving, inside the grace window
+    // canceled — ended deliberately
+    // expired  — ended because dunning ran out
+    status: text("status").notNull().default("pending"),
+
+    currentPeriodStart: timestamp("current_period_start", { withTimezone: true }),
+    currentPeriodEnd: timestamp("current_period_end", { withTimezone: true }),
+    // Cancel at the end of the paid period rather than immediately. Cutting
+    // service off mid-period for someone who has already paid is a refund
+    // problem we do not want.
+    cancelAtPeriodEnd: boolean("cancel_at_period_end").notNull().default(false),
+    canceledAt: timestamp("canceled_at", { withTimezone: true }),
+
+    // Consecutive failed charges, reset to 0 on any success. Drives the dunning
+    // ladder in lib/subscriptions.
+    failedChargeCount: integer("failed_charge_count").notNull().default(0),
+
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("idx_subscriptions_user").on(t.userId),
+    // Renewals are found by scanning for periods that have ended. Partial,
+    // because canceled and expired rows are the majority over time and are
+    // never due for anything.
+    index("idx_subscriptions_due")
+      .on(t.currentPeriodEnd)
+      .where(sql`status in ('active','past_due')`),
+    uniqueIndex("uq_subscriptions_provider_ref")
+      .on(t.provider, t.providerRef)
+      .where(sql`provider_ref is not null`),
+    // At most one live subscription per user. Without this, a double-submitted
+    // checkout bills someone twice a month forever and nothing notices.
+    uniqueIndex("uq_subscriptions_one_live")
+      .on(t.userId)
+      .where(sql`status in ('pending','active','past_due')`),
+    check("subscriptions_line_check", sql`${t.line} in ('offer','managed')`),
+    check("subscriptions_currency_check", sql`${t.currencyCode} in ('INR','USD')`),
+    check(
+      "subscriptions_provider_check",
+      sql`${t.provider} in ('razorpay','stripe','paddle','manual')`,
+    ),
+    check(
+      "subscriptions_status_check",
+      sql`${t.status} in ('pending','active','past_due','canceled','expired')`,
+    ),
+    // A zero-amount subscription is the bug this table exists to fix. at_cost
+    // customers get no subscription row at all rather than a free one, so
+    // "how many people pay us" is answerable by counting rows.
+    check("subscriptions_amount_check", sql`${t.amountMinor} > 0`),
+  ],
+);
+
+// One row per billing period per subscription. Written BEFORE the charge is
+// attempted, so a failed period is visible rather than absent — the same reason
+// `payments` rows precede the provider call.
+export const subscriptionInvoices = pgTable(
+  "subscription_invoices",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    subscriptionId: uuid("subscription_id")
+      .notNull()
+      .references(() => subscriptions.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+
+    amountMinor: integer("amount_minor").notNull(),
+    currencyCode: text("currency_code").notNull(),
+    periodStart: timestamp("period_start", { withTimezone: true }).notNull(),
+    periodEnd: timestamp("period_end", { withTimezone: true }).notNull(),
+
+    // pending | paid | failed | voided
+    status: text("status").notNull().default("pending"),
+    attemptCount: integer("attempt_count").notNull().default(0),
+    paidAt: timestamp("paid_at", { withTimezone: true }),
+    failureReason: text("failure_reason"),
+
+    // Provider's invoice/payment id. Unique per subscription so a replayed
+    // webhook cannot post the fee twice — the same guarantee the wallet's
+    // (wallet_id, external_ref) index gives top-ups.
+    externalRef: text("external_ref"),
+    providerPayload: jsonb("provider_payload"),
+
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("idx_sub_invoices_sub").on(t.subscriptionId, t.periodStart),
+    index("idx_sub_invoices_user").on(t.userId),
+    uniqueIndex("uq_sub_invoices_ref")
+      .on(t.subscriptionId, t.externalRef)
+      .where(sql`external_ref is not null`),
+    // One invoice per period. Makes the renewal sweep safe to re-run: a second
+    // pass for the same period is a caught duplicate, not a second charge.
+    uniqueIndex("uq_sub_invoices_period").on(t.subscriptionId, t.periodStart),
+    check("sub_invoices_currency_check", sql`${t.currencyCode} in ('INR','USD')`),
+    check("sub_invoices_status_check", sql`${t.status} in ('pending','paid','failed','voided')`),
+    check("sub_invoices_amount_check", sql`${t.amountMinor} > 0`),
+    check("sub_invoices_period_check", sql`${t.periodEnd} > ${t.periodStart}`),
+  ],
+);
+
+// ---------------------------------------------------------------------------
+// Offer cycles — the monthly conversation.
+//
+// A local business does not advertise "we exist", it advertises "499 haircut
+// till Sunday". The offer IS the ad, it changes every month, and that is what
+// makes a monthly charge obvious to the customer: they are not buying a video
+// subscription, they are buying this month's promotion going out.
+//
+// A shop owner will not log into a dashboard on the 1st of the month. They will
+// reply to a WhatsApp message. So one row per subscription per month tracks
+// that conversation: prompted -> answered -> previewed -> approved.
+// ---------------------------------------------------------------------------
+
+export const offerCycles = pgTable(
+  "offer_cycles",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    subscriptionId: uuid("subscription_id").references(() => subscriptions.id, {
+      onDelete: "set null",
+    }),
+    // The campaign this cycle refreshed, once one exists. Null on the offer
+    // line, which produces creatives and no campaign at all.
+    campaignId: uuid("campaign_id").references(() => campaigns.id, { onDelete: "set null" }),
+
+    // First instant of the cycle's month, UTC. The natural key for "have we
+    // already asked this month" — see the unique index.
+    periodMonth: timestamp("period_month", { withTimezone: true }).notNull(),
+
+    // pending   — due, not yet asked
+    // prompted  — message sent, waiting on a reply
+    // answered  — the owner told us the offer
+    // previewed — creatives rendered, approval requested
+    // approved  — owner said yes; live or delivered
+    // skipped   — no reply inside the window; the previous offer is left running
+    status: text("status").notNull().default("pending"),
+
+    // What the owner actually said, verbatim. Kept raw as well as parsed,
+    // because the parse is a guess and the original is evidence.
+    offerText: text("offer_text"),
+    offerExpiresAt: timestamp("offer_expires_at", { withTimezone: true }),
+
+    promptedAt: timestamp("prompted_at", { withTimezone: true }),
+    answeredAt: timestamp("answered_at", { withTimezone: true }),
+    previewedAt: timestamp("previewed_at", { withTimezone: true }),
+    approvedAt: timestamp("approved_at", { withTimezone: true }),
+    // Reminders are capped. Nagging a shop owner is how you get reported on
+    // WhatsApp, and that costs the channel permanently, not just this customer.
+    reminderCount: integer("reminder_count").notNull().default(0),
+
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    // Exactly one cycle per user per month. This is what makes the scheduler
+    // safe to run hourly: the second attempt in a month is a caught duplicate
+    // rather than a second WhatsApp message to a real person.
+    uniqueIndex("uq_offer_cycles_user_month").on(t.userId, t.periodMonth),
+    index("idx_offer_cycles_open")
+      .on(t.status, t.promptedAt)
+      .where(sql`status in ('pending','prompted','answered','previewed')`),
+    check(
+      "offer_cycles_status_check",
+      sql`${t.status} in ('pending','prompted','answered','previewed','approved','skipped')`,
+    ),
+  ],
+);
+
+// Inbound and outbound WhatsApp messages, for audit and for de-duplicating
+// provider retries. Meta redelivers on any non-2xx, and a redelivered "yes"
+// must not approve a second month's creative.
+export const whatsappMessages = pgTable(
+  "whatsapp_messages",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id").references(() => users.id, { onDelete: "set null" }),
+    offerCycleId: uuid("offer_cycle_id").references(() => offerCycles.id, {
+      onDelete: "set null",
+    }),
+    direction: text("direction").notNull(),
+    // E.164, as the provider gives it.
+    phone: text("phone").notNull(),
+    body: text("body"),
+    // Provider message id. Unique — this is the replay guard.
+    providerRef: text("provider_ref"),
+    status: text("status"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("idx_whatsapp_user").on(t.userId, t.createdAt),
+    uniqueIndex("uq_whatsapp_provider_ref")
+      .on(t.providerRef)
+      .where(sql`provider_ref is not null`),
+    check("whatsapp_direction_check", sql`${t.direction} in ('inbound','outbound')`),
   ],
 );

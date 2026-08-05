@@ -16,11 +16,12 @@ import {
 } from "../lib/wallet/index.js";
 import { providerByName, providerFor } from "../lib/payments/index.js";
 import {
+  effectiveMonthlyFeeMinor,
   estimateReach,
   formatMinor,
   isCurrency,
+  monthlyQuoteMinor,
   planFor,
-  upfrontTotalMinor,
   type Currency,
 } from "../lib/pricing/index.js";
 
@@ -39,22 +40,28 @@ export async function billingRoutes(app: FastifyInstance) {
       const { currency } = req.query as { currency: string };
       if (!isCurrency(currency)) return reply.code(400).send({ error: "unsupported_currency" });
 
-      const standard = planFor(currency, "standard");
-      const atCost = planFor(currency, "at_cost");
-      const shape = (p: typeof standard) => ({
+      const offer = planFor(currency, "offer");
+      const managed = planFor(currency, "managed");
+      const shape = (p: typeof offer) => ({
         key: p.key,
+        line: p.line,
         label: p.label,
         blurb: p.blurb,
         currency: p.currency,
-        creationFeeMinor: p.creationFeeMinor,
         monthlyFeeMinor: p.monthlyFeeMinor,
+        includedCreativesPerMonth: p.includedCreativesPerMonth,
         suggestedAdBudgetMinor: p.suggestedAdBudgetMinor,
         minDailyBudgetMinor: p.minDailyBudgetMinor,
-        upfrontTotalMinor: upfrontTotalMinor(p, p.suggestedAdBudgetMinor),
-        reach: estimateReach(p.suggestedAdBudgetMinor, p.currency),
+        // The all-in figure a platform-billed advertiser is quoted. The offer
+        // line buys no media, so its quote is the fee alone.
+        monthlyQuoteMinor: monthlyQuoteMinor(p, {
+          bundledAdBudgetMinor: p.suggestedAdBudgetMinor,
+        }),
+        reach:
+          p.suggestedAdBudgetMinor > 0 ? estimateReach(p.suggestedAdBudgetMinor, p.currency) : null,
       });
 
-      return { currency, plans: { standard: shape(standard), atCost: shape(atCost) } };
+      return { currency, plans: { offer: shape(offer), managed: shape(managed) } };
     },
   );
 
@@ -73,20 +80,25 @@ export async function billingRoutes(app: FastifyInstance) {
       const q = req.query as { currency: string; adBudgetMinor: number; marginMode: "standard" | "at_cost" };
       if (!isCurrency(q.currency)) return reply.code(400).send({ error: "unsupported_currency" });
 
-      const plan = planFor(q.currency, q.marginMode);
+      // Always the managed plan: this endpoint exists for the budget slider,
+      // and the offer line has no ad budget to estimate against.
+      const plan = planFor(q.currency, "managed");
+      const monthlyTotal = monthlyQuoteMinor(plan, {
+        marginMode: q.marginMode,
+        bundledAdBudgetMinor: q.adBudgetMinor,
+      });
       return {
         currency: q.currency,
         adBudgetMinor: q.adBudgetMinor,
-        creationFeeMinor: plan.creationFeeMinor,
-        monthlyFeeMinor: plan.monthlyFeeMinor,
-        upfrontTotalMinor: upfrontTotalMinor(plan, q.adBudgetMinor),
+        monthlyFeeMinor: effectiveMonthlyFeeMinor(plan, q.marginMode),
+        monthlyTotalMinor: monthlyTotal,
         // Modelled, and the UI must say so. A hard promise about someone's
         // specific neighbourhood is a claim we cannot back — same honesty
         // constraint as MealMargin's dataset.
         reach: estimateReach(q.adBudgetMinor, q.currency),
         display: {
           adBudget: formatMinor(q.adBudgetMinor, q.currency),
-          upfrontTotal: formatMinor(upfrontTotalMinor(plan, q.adBudgetMinor), q.currency),
+          monthlyTotal: formatMinor(monthlyTotal, q.currency),
         },
       };
     },
