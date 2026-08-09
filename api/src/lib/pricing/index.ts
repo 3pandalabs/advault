@@ -198,6 +198,102 @@ export function estimateReach(adBudgetMinor: number, currency: Currency): ReachE
   };
 }
 
+// ---------------------------------------------------------------------------
+// One-off add-ons.
+//
+// The subscription is still the revenue model — see CLAUDE.md — and this does
+// not change that. An add-on is a SINGLE purchase that produces one artefact,
+// billed once, and it exists because of a gap the subscriptions cannot close:
+//
+// Everything the monthly plans produce, a shop owner could plausibly make on
+// their own phone. Copy, captions, a slow zoom on a photo, even an
+// image-to-video clip — CapCut and Kling's own consumer app do all of it free.
+// Selling that is selling a commodity. The `cinematic` add-on is deliberately
+// the opposite: TEXT-to-video, where the model invents the scene and therefore
+// controls the lighting, lens and composition. That is the part a phone cannot
+// reach at any effort, and it is the only reason the price below stands up.
+//
+// It is priced against a videographer (₹15,000–50,000 for a half-day) and a
+// freelance editor (₹3,000–15,000), NOT against other software. First purchase
+// is heavily discounted because the entire job of the first one is to be tried.
+// ---------------------------------------------------------------------------
+
+export const ADD_ON_SKUS = ["cinematic"] as const;
+export type AddOnSku = (typeof ADD_ON_SKUS)[number];
+
+export type AddOn = {
+  key: string;
+  sku: AddOnSku;
+  currency: Currency;
+  /** Charged once, per artefact produced. */
+  priceMinor: number;
+  /**
+   * What the advertiser pays for their FIRST one, ever. Not a coupon and not
+   * time-limited — it is the price of finding out whether the thing is any
+   * good, and it is checked against purchase history rather than a promo code
+   * so it cannot be farmed.
+   */
+  firstPurchasePriceMinor: number;
+  /**
+   * Seconds of GENERATED footage. The real-photo close is extra and free —
+   * it is the advertiser's own asset and costs nothing to encode.
+   *
+   * This is the cost driver and the reason the number lives in the price list:
+   * text-to-video is metered per second, so a change here is a change to
+   * margin, and it must not be settable from a request body.
+   */
+  generatedSeconds: number;
+  label: string;
+  blurb: string;
+};
+
+export const ADD_ONS: Record<string, AddOn> = {
+  "in-cinematic": {
+    key: "in-cinematic",
+    sku: "cinematic",
+    currency: "INR",
+    priceMinor: 299_900, // ₹2,999
+    firstPurchasePriceMinor: 99_900, // ₹999
+    generatedSeconds: 15,
+    label: "India — Cinematic Ad",
+    blurb: "A filmed-looking ad built from a description, closing on your own photo.",
+  },
+  "us-cinematic": {
+    key: "us-cinematic",
+    sku: "cinematic",
+    currency: "USD",
+    priceMinor: 9_900, // $99
+    firstPurchasePriceMinor: 2_900, // $29
+    generatedSeconds: 15,
+    label: "US — Cinematic Ad",
+    blurb: "A filmed-looking ad built from a description, closing on your own photo.",
+  },
+};
+
+export function addOnFor(currency: Currency, sku: AddOnSku): AddOn {
+  return ADD_ONS[`${currency === "INR" ? "in" : "us"}-${sku}`];
+}
+
+export function addOnByKey(key: string): AddOn | null {
+  return ADD_ONS[key] ?? null;
+}
+
+/**
+ * What this advertiser pays right now.
+ *
+ * Takes the count of add-ons they have already PAID for rather than a boolean,
+ * so the caller cannot accidentally pass "has an order" (which would include
+ * an abandoned checkout and hand the intro price away for free) — and so the
+ * at-cost waiver still composes the same way it does for subscriptions.
+ */
+export function addOnPriceMinor(
+  addOn: AddOn,
+  opts: { priorPaidCount: number; marginMode?: MarginMode },
+): number {
+  if ((opts.marginMode ?? "standard") === "at_cost") return 0;
+  return opts.priorPaidCount === 0 ? addOn.firstPurchasePriceMinor : addOn.priceMinor;
+}
+
 export function formatMinor(minor: number, currency: Currency): string {
   return new Intl.NumberFormat(currency === "INR" ? "en-IN" : "en-US", {
     style: "currency",

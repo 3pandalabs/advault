@@ -23,6 +23,7 @@ import {
 import { renderCreative, type AspectRatio } from "./ffmpeg.js";
 import { startSpendSync } from "./spendSync.js";
 import { startOfferScheduler } from "./offerCycles.js";
+import { startCinematicWorker, stopCinematicWorker } from "./cinematic.js";
 import { adScriptSchema, type AdScript } from "../lib/script/schema.js";
 import { motionProvider } from "../lib/ai/motion/index.js";
 import { voiceProvider } from "../lib/ai/voice/index.js";
@@ -294,6 +295,9 @@ async function main(): Promise<void> {
   // offer expiry are all periodic work that needs a long-lived process and must
   // fire exactly once, not once per API replica.
   startOfferScheduler();
+  // The paid add-on queue. Separate from the render loop above because it is
+  // metered per attempt and must never fall back — see render/cinematic.ts.
+  startCinematicWorker();
 
   log("renderer started", { concurrency: CONCURRENCY, workRoot: WORK_ROOT });
   await Promise.all(Array.from({ length: CONCURRENCY }, (_, i) => runLoop(i)));
@@ -307,6 +311,7 @@ for (const signal of ["SIGTERM", "SIGINT"] as const) {
     if (shuttingDown) process.exit(1);
     log(`${signal} received — finishing the current job then exiting`);
     shuttingDown = true;
+    stopCinematicWorker();
     void pool.end().catch(() => undefined);
   });
 }

@@ -12,7 +12,13 @@ import { manual } from "./manual.js";
 // actually pay — card-only would exclude a large share of them), and Stripe
 // handles USD.
 
-export type PaymentPurpose = "topup" | "creation_fee" | "subscription";
+// `add_on` is a one-off purchase of a produced artefact (the cinematic ad),
+// as distinct from `topup`, which buys nothing and only moves money into the
+// wallet to be spent at Google later. The difference matters at refund time:
+// an unspent topup is still the advertiser's money sitting in a ledger, while
+// an add_on that failed to produce is money taken for something never
+// delivered.
+export type PaymentPurpose = "topup" | "creation_fee" | "subscription" | "add_on";
 
 export type CheckoutRequest = {
   paymentId: string;

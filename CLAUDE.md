@@ -179,6 +179,53 @@ customer keeps being charged and the database stays in month one.
 decision and are tested. Anything reaching for `db` or `fetch` belongs in the
 sibling `index.ts`.
 
+## The cinematic add-on is TEXT-to-video, and that is the whole point
+
+Everything the subscription produces, a shop owner could plausibly make on
+their own phone — copy, captions, a slow zoom, even an image-to-video clip.
+CapCut and Kling's consumer app do all of it free. We measured the ceiling: a
+real Kling image-to-video clip came back **visually indistinguishable from the
+free `zoompan` filter**, because image-to-video can only move *within* a photo
+it cannot relight.
+
+`lib/cinematic` sells the opposite. The model invents the scene, so it owns the
+lighting, the lens and the composition — which is why vendor showreels look the
+way they do. That is the part a phone cannot reach at any effort, and it is the
+only reason a ₹2,999 one-off price stands up. **Do not "unify" this with the
+motion path.** They differ in cost per unit, in failure policy and in what they
+are for.
+
+**Three rules that are not style preferences:**
+
+**Generated footage carries atmosphere only; every factual claim lives in a
+burnt-in caption or the voiceover.** `rejectVisualPrompt()` enforces it, and it
+is enforced in code rather than only in the system prompt because a system
+prompt is a request. A generated visual is not evidence: film a glistening
+croissant for a shop that sells rusks and the ad has made a claim about goods
+they do not sell — misleading advertising under ASCI and the FTC alike, carried
+by the advertiser. Video models also render text as garbled characters, and a
+wrong price in a paid placement is worse than no price.
+
+**There is always a real photo and it always closes.** An ad made entirely of
+generated footage is a stock-footage advertisement for a business that may as
+well not exist. `rejectBrief` refuses without one.
+
+**Nothing here falls back.** Every other AI provider in this repo degrades — a
+missing key costs polish on a free render. This one is the thing the advertiser
+paid for, so `cinematicProvider()` returning null means *refuse the sale*, and a
+production failure means `status: 'failed'`, which is a **refund queue**, not a
+terminal state. `counts.cinematicFailedUnrefunded` in `/metrics` is the only
+number in that envelope that is a work item rather than a statistic. Silently
+shipping a Ken Burns slideshow to someone who bought cinematic footage sells
+them the thing they specifically chose not to buy.
+
+Two consequences that look like bugs and are not: the renderer strips vendor
+audio (`-an`) and uses our own TTS, because Veo will invent spoken dialogue and
+invented speech is the claim problem again through another channel. And shot
+durations come from `planShotDurations()` — the price list — never from the
+model, or a chatty response would give a fixed-price product a variable vendor
+bill.
+
 ## Local ads are OFFER ads, and the loop runs on WhatsApp
 
 A shop does not advertise "we exist", it advertises "₹499 haircut till Sunday".

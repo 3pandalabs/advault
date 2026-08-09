@@ -39,6 +39,11 @@ type CountsRow = {
   wallet_balance_minor_usd: number;
   offers_awaiting_reply: number;
   offers_approved_this_month: number;
+  cinematic_awaiting_production: number;
+  cinematic_delivered: number;
+  cinematic_failed_unrefunded: number;
+  add_on_revenue_minor_inr: number;
+  add_on_revenue_minor_usd: number;
 };
 
 type DatabaseRow = {
@@ -89,7 +94,12 @@ export async function metricsRoutes(app: FastifyInstance) {
         (select coalesce(sum(balance_minor), 0) from wallets where currency_code = 'INR')::int as wallet_balance_minor_inr,
         (select coalesce(sum(balance_minor), 0) from wallets where currency_code = 'USD')::int as wallet_balance_minor_usd,
         (select count(*) from offer_cycles where status in ('prompted','answered','previewed'))::int as offers_awaiting_reply,
-        (select count(*) from offer_cycles where status = 'approved' and period_month = date_trunc('month', now()))::int as offers_approved_this_month
+        (select count(*) from offer_cycles where status = 'approved' and period_month = date_trunc('month', now()))::int as offers_approved_this_month,
+        (select count(*) from purchases where status in ('paid','producing'))::int as cinematic_awaiting_production,
+        (select count(*) from purchases where status = 'delivered')::int as cinematic_delivered,
+        (select count(*) from purchases where status = 'failed')::int as cinematic_failed_unrefunded,
+        (select coalesce(sum(amount_minor),0) from purchases where currency_code = 'INR' and status in ('paid','producing','delivered'))::int as add_on_revenue_minor_inr,
+        (select coalesce(sum(amount_minor),0) from purchases where currency_code = 'USD' and status in ('paid','producing','delivered'))::int as add_on_revenue_minor_usd
     `);
 
     const database = await db.execute<DatabaseRow>(sql`
@@ -150,6 +160,15 @@ export async function metricsRoutes(app: FastifyInstance) {
         // which no other number here would show.
         offersAwaitingReply: c.offers_awaiting_reply,
         offersApprovedThisMonth: c.offers_approved_this_month,
+        cinematicAwaitingProduction: c.cinematic_awaiting_production,
+        cinematicDelivered: c.cinematic_delivered,
+        // Paid for, production exhausted its retries, nothing delivered. This
+        // is the only number here that is a REFUND QUEUE rather than a
+        // statistic, and nothing else in the system will notice it — a value
+        // above zero means someone is owed money back right now.
+        cinematicFailedUnrefunded: c.cinematic_failed_unrefunded,
+        addOnRevenueMinorInr: c.add_on_revenue_minor_inr,
+        addOnRevenueMinorUsd: c.add_on_revenue_minor_usd,
       },
       traffic: {
         // Rolling 60 minutes, in-process — see metrics/collector.ts. Resets on
