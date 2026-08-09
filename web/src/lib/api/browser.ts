@@ -484,3 +484,94 @@ export function pricingEstimate(currency: string, adBudgetMinor: number, atCost 
   });
   return api<PricingEstimate>(`/pricing/estimate?${q}`);
 }
+
+// --- Cinematic add-on -------------------------------------------------------
+//
+// A one-off purchase, not a subscription. `available` reflects whether the
+// deployment has a text-to-video provider configured at all — the UI must
+// respect it rather than letting someone pay for something that cannot be
+// produced, because there is deliberately no cheaper fallback on this path.
+
+export type AddOn = {
+  key: string;
+  sku: "cinematic";
+  label: string;
+  blurb: string;
+  currency: "INR" | "USD";
+  priceMinor: number;
+  firstPurchasePriceMinor: number;
+  generatedSeconds: number;
+  totalSeconds: number;
+  display: { price: string; firstPurchasePrice: string };
+  available: boolean;
+};
+
+export function listAddOns(currency: string) {
+  return api<AddOn[]>(`/add-ons?currency=${encodeURIComponent(currency)}`);
+}
+
+export type CinematicQuote = {
+  addOnKey: string;
+  currency: "INR" | "USD";
+  amountMinor: number;
+  listPriceMinor: number;
+  isFirstPurchase: boolean;
+  generatedSeconds: number;
+  totalSeconds: number;
+  available: boolean;
+  display: { amount: string; listPrice: string };
+};
+
+export function cinematicQuote() {
+  return api<CinematicQuote>("/cinematic/quote");
+}
+
+export type PurchaseStatus =
+  | "pending"
+  | "paid"
+  | "producing"
+  | "delivered"
+  | "failed"
+  | "refunded"
+  | "cancelled";
+
+export type CinematicOrder = {
+  id: string;
+  addOnKey: string;
+  sku: string;
+  campaignId: string | null;
+  currency: "INR" | "USD";
+  amountMinor: number;
+  display: { amount: string };
+  status: PurchaseStatus;
+  attempts: number;
+  // Surfaced deliberately. When someone has paid and has no ad, hiding the
+  // reason from them is the wrong default.
+  lastError: string | null;
+  paidAt: string | null;
+  deliveredAt: string | null;
+  createdAt: string;
+};
+
+export function listCinematicOrders() {
+  return api<CinematicOrder[]>("/cinematic/orders");
+}
+
+export function getCinematicOrder(purchaseId: string) {
+  return api<CinematicOrder>(`/cinematic/orders/${purchaseId}`);
+}
+
+export function orderCinematic(input: {
+  campaignId: string;
+  description: string;
+  aspectRatio: "16:9" | "9:16";
+}) {
+  return api<{
+    purchase: CinematicOrder;
+    checkout: {
+      provider: string;
+      redirectUrl: string | null;
+      clientPayload: Record<string, unknown>;
+    };
+  }>("/cinematic/orders", { method: "POST", body: JSON.stringify(input) });
+}

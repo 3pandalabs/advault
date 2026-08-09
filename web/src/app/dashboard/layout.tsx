@@ -70,6 +70,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               This month
             </Link>
             <Link
+              href="/dashboard/cinematic"
+              className="rounded-lg px-3 py-2 text-zinc-300 hover:bg-white/10"
+            >
+              Cinematic
+            </Link>
+            <Link
               href="/dashboard/subscription"
               className="rounded-lg px-3 py-2 text-zinc-300 hover:bg-white/10"
             >
