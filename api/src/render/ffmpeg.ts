@@ -103,6 +103,8 @@ async function renderScene(args: {
     `drawbox=x=0:y=ih*0.72:w=iw:h=ih*0.18:color=black@0.55:t=fill`,
     [
       `drawtext=fontfile=${FONT_REGULAR}`,
+      // See escapeDrawText: escaping % is not enough on its own.
+      `expansion=none`,
       `text='${escapeDrawText(args.caption)}'`,
       `fontcolor=white`,
       `fontsize=${fontSize}`,
@@ -157,6 +159,7 @@ async function renderEndCard(args: {
   const filters = [
     [
       `drawtext=fontfile=${FONT_BOLD}`,
+      `expansion=none`,
       `text='${escapeDrawText(args.endCardText)}'`,
       `fontcolor=white`,
       `fontsize=${args.aspectRatio === "9:16" ? 72 : 84}`,
@@ -165,6 +168,8 @@ async function renderEndCard(args: {
     ].join(":"),
     [
       `drawtext=fontfile=${FONT_REGULAR}`,
+      // See escapeDrawText: escaping % is not enough on its own.
+      `expansion=none`,
       `text='${escapeDrawText(args.callToAction)}'`,
       `fontcolor=0xF5C242`,
       `fontsize=${args.aspectRatio === "9:16" ? 52 : 60}`,
