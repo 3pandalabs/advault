@@ -136,6 +136,23 @@ export default function SignupPage() {
           <Button type="submit" className="w-full" disabled={busy}>
             {busy ? "Creating account…" : "Create account"}
           </Button>
+
+          {/* Stated at the point of agreement rather than only in the footer.
+              A tick-box would be the belt-and-braces version, but it adds a
+              validation path to the one form that must never fail for a shop
+              owner on a phone — and consent-on-submit is the standard the
+              terms themselves are written to. */}
+          <p className="text-center text-xs leading-relaxed text-zinc-500">
+            By creating an account you agree to our{" "}
+            <Link href="/terms" className="text-zinc-400 underline hover:text-zinc-200">
+              Terms of Service
+            </Link>{" "}
+            and{" "}
+            <Link href="/privacy" className="text-zinc-400 underline hover:text-zinc-200">
+              Privacy Policy
+            </Link>
+            .
+          </p>
         </form>
       </Card>
 

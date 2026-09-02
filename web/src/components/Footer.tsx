@@ -34,6 +34,9 @@ export function Footer() {
         <Link href="/privacy" className="text-zinc-400 hover:text-zinc-200">
           Privacy
         </Link>
+        <Link href="/terms" className="text-zinc-400 hover:text-zinc-200">
+          Terms
+        </Link>
       </div>
       <div className="mx-auto flex w-full max-w-5xl flex-wrap items-center justify-between gap-2 text-sm text-zinc-500">
         <span>&copy; 3PandaLabs LLC, USA.</span>
