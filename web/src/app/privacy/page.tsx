@@ -20,7 +20,7 @@ import { LegalPage } from "@/components/legal/LegalPage";
 // The Limited Use paragraph under "Google account data" is required near-verbatim
 // by the Google API Services User Data Policy. Do not paraphrase it.
 
-const CONTACT = "3pandalabs@gmail.com";
+const CONTACT = "privacy@3pandalabs.com";
 
 export const metadata: Metadata = {
   title: "Privacy Policy — AdVault",
