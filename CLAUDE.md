@@ -267,6 +267,19 @@ no render-complete notification yet; the dashboard polls instead. When a second
 Resend domain becomes available, add `MAILER_URL`/`MAILER_TOKEN` and copy
 RsvpVault's `lib/mailer.ts` verbatim rather than writing a new one.
 
+## The privacy policy is a factual document, not boilerplate
+
+`web/src/app/privacy/page.tsx` describes what this code actually does — what
+it collects, which providers it sends data to, how long rows survive, and that
+the site sets no cookies. The Google Ads API review reads it against the live
+product, and a policy that overstates our practices is a written
+misrepresentation rather than a harmless stale doc.
+
+**Change it in the same PR that changes the behaviour it describes**: a new
+column holding personal data, a new subprocessor, a change of retention, or the
+first analytics script anyone adds to `web/`. The page's own header comment
+lists the specific claims that are pinned to the implementation.
+
 ## Deployment gotchas inherited from the other apps
 
 These cost real hours elsewhere; they apply verbatim here.
