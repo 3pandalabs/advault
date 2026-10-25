@@ -26,6 +26,12 @@ type CountsRow = {
   rendered_creatives: number;
   failed_creatives: number;
   queued_render_jobs: number;
+  queued_youtube_uploads: number;
+  failed_youtube_uploads: number;
+  rendered_not_on_youtube: number;
+  creatives_on_youtube: number;
+  advertiser_youtube_channels: number;
+  live_campaigns_without_ads: number;
   connected_ad_accounts: number;
   platform_funded_accounts: number;
   customer_funded_accounts: number;
@@ -75,6 +81,24 @@ export async function metricsRoutes(app: FastifyInstance) {
         (select count(*) from creatives where render_status = 'ready')::int as rendered_creatives,
         (select count(*) from creatives where render_status = 'failed')::int as failed_creatives,
         (select count(*) from render_jobs where status in ('queued','running'))::int as queued_render_jobs,
+        -- The YouTube chain. A creative that rendered but never reached YouTube
+        -- cannot be attached to a campaign, so these three are the difference
+        -- between "ads are being produced" and "ads that can actually serve".
+        -- rendered_not_on_youtube climbing while the render counts look
+        -- healthy is the signature of the upload worker being down or having no
+        -- channel credential, which is otherwise completely silent.
+        (select count(*) from youtube_upload_jobs where status in ('queued','running'))::int as queued_youtube_uploads,
+        (select count(*) from creatives where youtube_upload_status = 'failed')::int as failed_youtube_uploads,
+        (select count(*) from creatives where render_status = 'ready' and youtube_video_id is null)::int as rendered_not_on_youtube,
+        (select count(*) from creatives where youtube_video_id is not null)::int as creatives_on_youtube,
+        (select count(*) from youtube_channels where status = 'active')::int as advertiser_youtube_channels,
+        -- Live campaigns with no ad attached: the shell-campaign failure this
+        -- app shipped until 2026-10-24. Should be 0 forever; anything else
+        -- means someone is paying for a campaign that cannot show an ad.
+        (select count(*) from campaigns c where c.status = 'live'
+           and not exists (select 1 from creatives cr
+                            where cr.campaign_id = c.id
+                              and cr.google_ad_resource_name is not null))::int as live_campaigns_without_ads,
         (select count(*) from ad_accounts where status = 'active')::int as connected_ad_accounts,
         (select count(*) from ad_accounts where status = 'active' and billing_mode = 'platform')::int as platform_funded_accounts,
         (select count(*) from ad_accounts where status = 'active' and billing_mode = 'customer')::int as customer_funded_accounts,
@@ -129,6 +153,17 @@ export async function metricsRoutes(app: FastifyInstance) {
         // else in this envelope would show it — the API stays perfectly healthy
         // while every advertiser's video sits unrendered.
         queuedRenderJobs: c.queued_render_jobs,
+        // The YouTube chain. renderedNotOnYouTube is the one to alert on: it
+        // climbs silently while every other render metric looks healthy, and
+        // every creative it counts is an ad that cannot be attached to a
+        // campaign. liveCampaignsWithoutAds should be 0 forever — anything
+        // else is a campaign that is budgeted and cannot show an ad.
+        queuedYoutubeUploads: c.queued_youtube_uploads,
+        failedYoutubeUploads: c.failed_youtube_uploads,
+        renderedNotOnYouTube: c.rendered_not_on_youtube,
+        creativesOnYouTube: c.creatives_on_youtube,
+        advertiserYoutubeChannels: c.advertiser_youtube_channels,
+        liveCampaignsWithoutAds: c.live_campaigns_without_ads,
         connectedAdAccounts: c.connected_ad_accounts,
         // The split that says how much of the org's money is at risk.
         // platformFunded accounts spend from AdVault's payments account and are

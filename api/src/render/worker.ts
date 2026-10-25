@@ -24,6 +24,8 @@ import { renderCreative, type AspectRatio } from "./ffmpeg.js";
 import { startSpendSync } from "./spendSync.js";
 import { startOfferScheduler } from "./offerCycles.js";
 import { startCinematicWorker, stopCinematicWorker } from "./cinematic.js";
+import { enqueueYoutubeUpload } from "./youtubeJobs.js";
+import { startYoutubeUploadWorker, stopYoutubeUploadWorker } from "./youtubeUploads.js";
 import { adScriptSchema, type AdScript } from "../lib/script/schema.js";
 import { motionProvider } from "../lib/ai/motion/index.js";
 import { voiceProvider } from "../lib/ai/voice/index.js";
@@ -237,6 +239,19 @@ async function processJob(job: RenderJob): Promise<void> {
       motionClips: clipPaths.size,
       voiceover: Boolean(voicePath),
     });
+
+    // A rendered MP4 is not yet an ad. Google Ads video ads reference a YouTube
+    // video id, so the upload is the step that turns a file into something that
+    // can serve — enqueued here rather than at launch so it has already
+    // happened by the time the advertiser presses the button, instead of adding
+    // minutes of transfer to a request that is holding an HTTP connection.
+    //
+    // Enqueue failure is logged, never thrown: the render genuinely succeeded,
+    // the creative is 'ready', and the upload is independently retryable from
+    // POST /creatives/:id/youtube-upload.
+    await enqueueYoutubeUpload(creative.id).catch((err) =>
+      log("failed to enqueue the youtube upload", { creativeId: creative.id, error: String(err) }),
+    );
   } finally {
     // Always — a scratch directory left behind on a failed render fills the
     // 75GB disk, and a full disk takes Postgres down with it, which takes all
@@ -298,6 +313,9 @@ async function main(): Promise<void> {
   // The paid add-on queue. Separate from the render loop above because it is
   // metered per attempt and must never fall back — see render/cinematic.ts.
   startCinematicWorker();
+  // The queue that makes a rendered file into an ad. Network-bound, so it runs
+  // alongside the encode loop rather than inside its concurrency budget.
+  startYoutubeUploadWorker();
 
   log("renderer started", { concurrency: CONCURRENCY, workRoot: WORK_ROOT });
   await Promise.all(Array.from({ length: CONCURRENCY }, (_, i) => runLoop(i)));
@@ -312,6 +330,7 @@ for (const signal of ["SIGTERM", "SIGINT"] as const) {
     log(`${signal} received — finishing the current job then exiting`);
     shuttingDown = true;
     stopCinematicWorker();
+    stopYoutubeUploadWorker();
     void pool.end().catch(() => undefined);
   });
 }

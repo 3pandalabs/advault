@@ -3,9 +3,13 @@
 import { useEffect, useState } from "react";
 import {
   disconnectAdAccount,
+  disconnectYouTubeChannel,
+  getYouTubeChannel,
   googleAuthorizeUrl,
   listAdAccounts,
+  youtubeAuthorizeUrl,
   type AdAccount,
+  type YouTubeChannelStatus,
 } from "@/lib/api/browser";
 import { Badge, Card, CardDescription, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -16,14 +20,47 @@ export default function SettingsPage() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  const [youtube, setYoutube] = useState<YouTubeChannelStatus | null>(null);
+
   const refresh = () =>
     listAdAccounts()
       .then(setData)
       .catch(() => setError("Could not load your connected accounts."));
 
+  // Separate request and separate failure: not knowing which YouTube channel is
+  // in effect must not blank out the ad accounts card, which is the one an
+  // advertiser came here for.
+  const refreshYoutube = () =>
+    getYouTubeChannel()
+      .then(setYoutube)
+      .catch(() => undefined);
+
   useEffect(() => {
     refresh();
+    refreshYoutube();
   }, []);
+
+  async function connectYouTube() {
+    setBusy(true);
+    setError(null);
+    try {
+      const { url } = await youtubeAuthorizeUrl();
+      window.location.assign(url);
+    } catch {
+      setError("Could not start the YouTube connection. Please try again.");
+      setBusy(false);
+    }
+  }
+
+  async function disconnectYouTube() {
+    setBusy(true);
+    try {
+      await disconnectYouTubeChannel();
+      await refreshYoutube();
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function connect() {
     setBusy(true);
@@ -71,8 +108,9 @@ export default function SettingsPage() {
         {!data ? (
           <p className="mt-4 text-sm text-zinc-500">Loading…</p>
         ) : !data.configured ? (
-          // Not an error state. The Google Ads developer token is a manual
-          // review that can take days, so this is the expected state for a
+          // Not an error state. Google Ads API access is granted per Google
+          // Cloud project (developer tokens were sunset in September 2026) and
+          // needs brand verification, so this is the expected state for a
           // freshly-deployed instance and reads as such.
           <p className="mt-4 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-zinc-400">
             Google Ads launching is not switched on for this deployment yet. Everything else —
@@ -151,6 +189,94 @@ export default function SettingsPage() {
                 </div>
               </div>
             ))}
+          </div>
+        )}
+      </Card>
+
+      <Card className="mt-4">
+        <CardTitle>Where your ads are published</CardTitle>
+        <CardDescription>
+          A YouTube ad has to be a YouTube video, so every ad AdVault makes is published as an
+          unlisted video before it can run. By default that happens on our channel and needs
+          nothing from you. You can publish to your own channel instead if you would rather own
+          the videos.
+        </CardDescription>
+
+        {!youtube ? (
+          <p className="mt-4 text-sm text-zinc-500">Loading…</p>
+        ) : (
+          <div className="mt-4 space-y-3">
+            {/* The state that matters most and is otherwise invisible: nothing
+                can be published at all, so ads render and no campaign can ever
+                serve. An operator problem, but the advertiser is the one who
+                would otherwise sit waiting. */}
+            {!youtube.uploadsPossible && (
+              <p className="rounded-lg border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-sm text-amber-200">
+                Publishing to YouTube is not switched on for this deployment yet, so campaigns
+                cannot go live. Your videos still render and are yours to download.
+              </p>
+            )}
+
+            {youtube.ownChannel && youtube.ownChannel.status === "active" ? (
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-white/10 bg-white/[0.02] p-3">
+                <div>
+                  <p className="text-sm font-medium text-zinc-100">
+                    {youtube.ownChannel.title ?? "Your YouTube channel"}
+                  </p>
+                  <p className="mt-0.5 text-xs text-zinc-500">
+                    Connected {formatDate(youtube.ownChannel.connectedAt)} · new ads publish here
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Badge tone="success">Your channel</Badge>
+                  <Button variant="ghost" size="sm" disabled={busy} onClick={disconnectYouTube}>
+                    Use our channel
+                  </Button>
+                </div>
+              </div>
+            ) : youtube.ownChannel?.status === "revoked" ? (
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-white/10 bg-white/[0.02] p-3">
+                <div>
+                  <p className="text-sm font-medium text-zinc-100">
+                    {youtube.ownChannel.title ?? "Your YouTube channel"}
+                  </p>
+                  <p className="mt-0.5 text-xs text-zinc-500">
+                    Access to your channel has lapsed, so new ads publish to our channel until you
+                    reconnect.
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Badge tone="danger">Reconnect needed</Badge>
+                  <Button size="sm" onClick={connectYouTube} disabled={busy}>
+                    Reconnect
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div className="rounded-lg border border-white/10 bg-white/[0.02] p-3">
+                <p className="text-sm text-zinc-300">
+                  Publishing to{" "}
+                  <span className="font-medium text-zinc-100">
+                    {youtube.orgChannelTitle ?? "the AdVault channel"}
+                  </span>
+                  . Nothing to do — this is the default.
+                </p>
+                {youtube.canConnectOwnChannel && (
+                  <>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <Button variant="outline" size="sm" onClick={connectYouTube} disabled={busy}>
+                        {busy ? "Redirecting…" : "Use my own YouTube channel"}
+                      </Button>
+                    </div>
+                    <p className="mt-2 text-xs text-zinc-500">
+                      You will be sent to Google to approve uploading videos to your channel. Ads
+                      already published stay on our channel — YouTube cannot move a video between
+                      channels, so only new ads are affected.
+                    </p>
+                  </>
+                )}
+              </div>
+            )}
           </div>
         )}
       </Card>

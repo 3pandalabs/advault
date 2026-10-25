@@ -16,6 +16,10 @@ import { LegalPage } from "@/components/legal/LegalPage";
 //   - the log/metric retention figures come from the monitoring stack
 //     (Loki 14 days, VictoriaMetrics 3 months)
 //   - AES-256-GCM at rest is api/src/lib/crypto.ts, bcrypt is auth/password.ts
+//   - "published as an unlisted video" is privacyStatus in api/src/lib/youtube/
+//     upload.ts, and the org-channel default is lib/youtube/channels.ts
+//   - the synthetic-content declaration is `containsSyntheticMedia`, derived
+//     from the creative's motion/voice source in render/youtubeUploads.ts
 //
 // The Limited Use paragraph under "Google account data" is required near-verbatim
 // by the Google API Services User Data Policy. Do not paraphrase it.
@@ -167,6 +171,34 @@ export default function PrivacyPage() {
         wrote yourself.
       </p>
 
+      <h2>Where your finished ads are published</h2>
+      <p>
+        A YouTube ad has to be a YouTube video — Google&apos;s advertising system can only
+        run a video that is already on YouTube, not a file we host. So before an ad can
+        run, AdVault publishes it to YouTube as an{" "}
+        <strong>unlisted</strong> video: it does not appear in search, in feeds, or on a
+        channel&apos;s public video list, and it is not promoted to anyone who is not shown
+        the ad.
+      </p>
+      <p>
+        By default that upload goes to a <strong>YouTube channel owned by 3PandaLabs</strong>,
+        so that you do not need a channel of your own. You can instead connect your own
+        channel from Settings, in which case new ads are published there. Ads already
+        published stay on the channel they were published to — YouTube does not allow a
+        video to be moved between channels.
+      </p>
+      <p>
+        If you connect your own channel, we store a second Google refresh token for it,
+        encrypted at rest with AES-256-GCM in the same way as the Google Ads one, and it
+        is used for nothing except uploading your ads. You can withdraw it from Settings
+        or from your Google account permissions page at any time.
+      </p>
+      <p>
+        Where an ad was produced using AI-generated footage or an AI voiceover, we declare
+        that to YouTube as synthetic content, as YouTube&apos;s policies require. Where an
+        ad is a photo slideshow with no AI-generated material, we do not.
+      </p>
+
       <h2>Who else sees your data</h2>
       <p>
         We use the following companies to run AdVault. Each receives only what it needs
@@ -184,8 +216,11 @@ export default function PrivacyPage() {
         <tbody>
           <tr>
             <td>Google (Ads and YouTube)</td>
-            <td>Your campaign settings and your finished video</td>
-            <td>To run the ad and host the video</td>
+            <td>
+              Your campaign settings, and your finished video published as an unlisted
+              YouTube video
+            </td>
+            <td>To run the ad, and to host the video the ad plays</td>
           </tr>
           <tr>
             <td>Cloudflare</td>
@@ -258,7 +293,13 @@ export default function PrivacyPage() {
         </li>
         <li>
           <strong>Your Google refresh token</strong> — deleted as soon as you disconnect
-          the account, or close your own.
+          the account, or close your own. This covers both the Google Ads token and, if
+          you connected one, the YouTube channel token.
+        </li>
+        <li>
+          <strong>Ads already published to YouTube</strong> — these are videos on a
+          YouTube channel, not rows in our database. Ask us and we will delete the ones on
+          our channel; ones on your own channel are yours to delete directly.
         </li>
       </ul>
 

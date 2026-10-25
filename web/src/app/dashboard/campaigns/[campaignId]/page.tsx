@@ -9,6 +9,7 @@ import {
   launchCampaign,
   listAdAccounts,
   retryCreative,
+  retryYouTubeUpload,
   type AdAccount,
   type Campaign,
   type Creative,
@@ -42,6 +43,15 @@ const LAUNCH_ERRORS: Record<string, string> = {
   billing_link_failed:
     "The Google account invitation could not be completed. Resend it from Settings, then launch.",
   provisioning_incomplete: "This ad account is still being set up. Try again in a moment.",
+  // A YouTube ad has to be a YouTube video. These two are the gap between
+  // "rendered" and "can actually run", and until the upload queue existed the
+  // launch simply succeeded without an ad in it.
+  youtube_upload_pending:
+    "Your ad is still being published to YouTube. Launch is available once that finishes — usually a minute or two.",
+  youtube_upload_failed:
+    "Your ad could not be published to YouTube, so Google has nothing to show. Try publishing again from the video below.",
+  no_ads_attached:
+    "The campaign reached Google but no ad could be attached to it, so it would not serve. Nothing is spending — try launching again.",
 };
 
 export default function CampaignDetailPage({
@@ -74,8 +84,16 @@ export default function CampaignDetailPage({
   // container, so there is nothing to await — this is the progress indicator.
   // The interval clears itself as soon as nothing is pending, so a finished
   // campaign page makes no background requests at all.
+  // Publishing to YouTube counts as pending too. Without it the page stopped
+  // polling the moment the encode finished and then sat there showing
+  // "Publishing…" forever, with the Launch button withheld and no explanation.
   const pending = campaign?.creatives.some(
-    (c) => c.renderStatus === "queued" || c.renderStatus === "rendering",
+    (c) =>
+      c.renderStatus === "queued" ||
+      c.renderStatus === "rendering" ||
+      (c.renderStatus === "ready" &&
+        !c.youtubeVideoId &&
+        c.youtubeUploadStatus !== "failed"),
   );
   useEffect(() => {
     if (!pending) return;
@@ -115,7 +133,15 @@ export default function CampaignDetailPage({
   if (error && !campaign) return <p className="text-sm text-red-300">{error}</p>;
   if (!campaign) return <p className="text-sm text-zinc-500">Loading…</p>;
 
-  const ready = campaign.creatives.filter((c) => c.renderStatus === "ready");
+  // "Launchable" means rendered AND published to YouTube. Filtering on
+  // renderStatus alone offered a Launch button for a campaign that would be
+  // created at Google with no ad attached to it.
+  const ready = campaign.creatives.filter(
+    (c) => c.renderStatus === "ready" && c.youtubeVideoId,
+  );
+  const renderedNotPublished = campaign.creatives.filter(
+    (c) => c.renderStatus === "ready" && !c.youtubeVideoId,
+  );
   const activeAccounts = adAccounts?.accounts.filter((a) => a.status === "active") ?? [];
 
   return (
@@ -158,12 +184,16 @@ export default function CampaignDetailPage({
                     ` · ${formatDuration(creative.durationSeconds)}`}
                 </CardDescription>
               </div>
+              {/* Two separate facts, deliberately not collapsed into one
+                  badge: a video can be rendered and still unable to run, and
+                  reporting that as "Ready" is exactly how a campaign got
+                  launched with no ad in it. "Ready" here means ready to run. */}
               <Badge
                 tone={
-                  creative.renderStatus === "ready"
-                    ? "success"
-                    : creative.renderStatus === "failed"
-                      ? "danger"
+                  creative.renderStatus === "failed" || creative.youtubeUploadStatus === "failed"
+                    ? "danger"
+                    : creative.renderStatus === "ready" && creative.youtubeVideoId
+                      ? "success"
                       : "pending"
                 }
               >
@@ -171,9 +201,13 @@ export default function CampaignDetailPage({
                   ? "Queued"
                   : creative.renderStatus === "rendering"
                     ? "Rendering…"
-                    : creative.renderStatus === "ready"
-                      ? "Ready"
-                      : "Failed"}
+                    : creative.renderStatus === "failed"
+                      ? "Failed"
+                      : creative.youtubeUploadStatus === "failed"
+                        ? "Not published"
+                        : creative.youtubeVideoId
+                          ? "Ready"
+                          : "Publishing…"}
               </Badge>
             </div>
 
@@ -196,6 +230,26 @@ export default function CampaignDetailPage({
                   onClick={() => retryCreative(creative.id).then(refresh)}
                 >
                   Try again
+                </Button>
+              </div>
+            )}
+
+            {/* The publish step, surfaced only when it is the thing standing
+                between a finished video and a runnable ad. A successful
+                publish needs no mention — the badge already says Ready. */}
+            {creative.renderStatus === "ready" && creative.youtubeUploadStatus === "failed" && (
+              <div className="mt-4 flex flex-wrap items-center gap-3">
+                <p className="text-sm text-red-300">
+                  {creative.youtubeUploadError
+                    ? `Could not publish to YouTube: ${creative.youtubeUploadError}`
+                    : "Could not publish this ad to YouTube, so it cannot run yet."}
+                </p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => retryYouTubeUpload(creative.id).then(refresh)}
+                >
+                  Publish again
                 </Button>
               </div>
             )}
@@ -234,7 +288,16 @@ export default function CampaignDetailPage({
             </div>
           </>
         ) : ready.length === 0 ? (
-          <CardDescription>Waiting for at least one video to finish rendering.</CardDescription>
+          // Distinguishes the two waits, because they have different answers:
+          // rendering finishes on its own, whereas a failed publish needs the
+          // "Publish again" button on the video above.
+          <CardDescription>
+            {renderedNotPublished.length > 0
+              ? renderedNotPublished.some((c) => c.youtubeUploadStatus === "failed")
+                ? "Your video is rendered but could not be published to YouTube, so there is nothing for Google to show yet. Publish it again above."
+                : "Your video is rendered and is being published to YouTube. Launch unlocks as soon as that finishes."
+              : "Waiting for at least one video to finish rendering."}
+          </CardDescription>
         ) : (
           <>
             <CardDescription>

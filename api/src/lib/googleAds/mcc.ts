@@ -29,7 +29,7 @@ export function isMccConfigured(): boolean {
   return Boolean(
     googleAdsEnv.clientId &&
       googleAdsEnv.clientSecret &&
-      googleAdsEnv.developerToken &&
+      // developerToken deliberately absent — sunset 9 Sep 2026, see env.ts.
       googleAdsEnv.loginCustomerId &&
       MCC_REFRESH_TOKEN_CIPHERTEXT,
   );

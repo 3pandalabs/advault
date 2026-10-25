@@ -97,11 +97,90 @@ Treat it accordingly:
   responses are shaped by `toPublicAdAccount()` in `routes/adAccounts.ts`;
   extend that rather than hand-rolling a response.
 - The OAuth `state` parameter is a signed, single-use, 10-minute value tied to
-  the user id (`src/lib/oauthState.ts`). Without it the callback is a CSRF
-  primitive that attaches an attacker's ad account to a victim's login.
+  the user id (`src/lib/googleAds/oauthState.ts`, shared by the YouTube flow).
+  Without it the callback is a CSRF primitive that attaches an attacker's ad
+  account — or YouTube channel — to a victim's login.
 - `campaigns.status` only reaches `live` through `POST /campaigns/:id/launch`,
   which is the single place that spends money. Keep it that way — no other
   route may call the Google Ads mutate API.
+
+## A rendered MP4 is not an ad — the chain is five links
+
+A Google Ads video ad references an **11-character YouTube video id**, never an
+MP4 URL. So producing an ad is:
+
+```
+rendered MP4  ->  YouTube video id  ->  Asset  ->  AdGroup  ->  AdGroupAd
+   (R2)          (lib/youtube/*, its   (YOUTUBE_  (type is    (videoAd)
+                  own queue)            VIDEO)    immutable)
+```
+
+**Four of those five links look like success on their own.** Until 2026-10-24
+`POST /campaigns/:id/launch` stopped after the campaign and its geo targeting:
+it created a budget, a campaign and location criteria, returned 200, set
+`campaigns.status = 'live'`, and left a campaign with no ad group and no ad,
+which can never show anything to anybody. Same shape as the v1 missing fonts —
+a green path with a broken product at the end of it.
+
+- **The upload is its own queue** (`youtube_upload_jobs`, worker in
+  `render/youtubeUploads.ts`), not a step inside the render job, because it must
+  stay retryable long after its render finished — an advertiser who connects
+  their own channel in month three wants the back catalogue published without
+  re-encoding anything. It runs in the renderer (already long-lived) but
+  **outside `RENDER_CONCURRENCY`**: an upload is network-bound and must not hold
+  the box's only ffmpeg slot.
+- **Two channel shapes, and the default is the important one.** No row in
+  `youtube_channels` means the ad publishes to the org's channel, which is the
+  only thing that works for a managed Option A advertiser — a local shop with no
+  YouTube channel must never be asked to make one mid-signup. The advertiser's
+  own channel is an upgrade in Settings, never a funnel step. Do not "simplify"
+  by deleting the org path.
+- **`videoAdFormatFor()` derives the ad group type from the real rendered
+  duration** (bumper ≤6s, non-skippable ≤15s, skippable beyond). The type is
+  IMMUTABLE at Google, so getting it wrong means deleting and recreating the ad
+  group. It is the one piece of pure logic here and it is tested.
+- **`VideoResponsiveAdInfo` is deliberately not used.** It requires
+  `business_name` *and* `logo_images` at ≥128x128, 1:1. `assets.kind` has a
+  'logo' value but it is optional and unvalidated, so the responsive format
+  would make a square logo a mandatory onboarding step and fail launches for
+  everyone already signed up without one.
+- **The ad group and ad are ENABLED inside a PAUSED campaign.** The campaign is
+  the single serving gate and it belongs to the advertiser; pausing the ad group
+  too would mean enabling the campaign still showed nothing.
+- **A published creative is never re-published.** The worker skips a creative
+  that already has a video id, and the edit/retry routes refuse one with a
+  `google_ad_resource_name` (`creative_is_live`). A live ad points at a specific
+  video asset, so a second upload would leave the ad showing the old cut with
+  nothing recording the swap.
+- **"Ready" in the UI means ready to run, not rendered.** The campaign page's
+  badge and its launch gating both require `youtubeVideoId`. Collapsing them
+  back into `renderStatus` is how a Launch button got offered for a campaign
+  that would be created with no ad in it.
+
+`counts.renderedNotOnYouTube` and `counts.liveCampaignsWithoutAds` in `/metrics`
+exist to make this visible; the second should be **0 forever**.
+
+## Google Ads API access: developer tokens are gone, and the version pin is load-bearing
+
+**Developer tokens were sunset on 9 Sep 2026.** API access level is now a
+property of the **Google Cloud project** that issued the OAuth credentials,
+gated on brand verification plus active paid billing. The header is still
+accepted and ignored, and will be rejected in 2027.
+`googleAdsEnv.developerToken` is optional and deliberately **not** part of
+`isGoogleAdsConfigured()` — requiring it made every launch answer 503 waiting on
+a credential Google no longer issues.
+
+A consequence worth knowing: the process cannot interrogate its project's access
+level, so **a project without Basic access fails at the first mutate call**, not
+at a predicate. There is no clean "not switched on yet" for that case.
+
+`GOOGLE_ADS_API_VERSION` was pinned to `v18` from the scaffold until 2026-10-24.
+**v18 sunset on 2025-08-20** — every Google Ads call this app could make had been
+dead for over a year, and nothing noticed because the 503 above meant no launch
+ever reached Google. An expired pin here is not deferred maintenance, it is a
+silent total outage of the only feature that spends money. Check the
+[sunset schedule](https://developers.google.com/google-ads/api/docs/sunset-dates)
+whenever `lib/googleAds/env.ts` is touched.
 
 ## `is_managed` and `billing_mode` are two different questions
 
@@ -142,7 +221,7 @@ one discriminator.
 
 `lib/billing/policy.ts` holds every pure decision here and is the only part of
 the money path with tests, because it is the only part that needs neither a live
-Postgres nor an approved developer token.
+Postgres nor Google Ads API access.
 
 ## The subscription is the revenue model — there is no one-off charge
 
@@ -156,9 +235,9 @@ strings. `lib/pricing` now holds four SKUs and one of them has to be sold:
 | `offer` — 3 fresh videos/month, **no Google at all** | ₹999/mo | $39/mo |
 | `managed` — creatives plus a live campaign | ₹1,499/mo fee | $79/mo fee |
 
-**The offer line is the one that can be sold today.** It needs no Google
-developer token, no YouTube upload, no ad account and no Indian entity — which
-is exactly why it exists. Do not "simplify" it away as a cut-down managed plan.
+**The offer line is the one that can be sold today.** It needs no Google Ads API
+access, no YouTube channel, no ad account and no Indian entity — which is
+exactly why it exists. Do not "simplify" it away as a cut-down managed plan.
 
 **Every rupee of platform revenue is a `fee` ledger row**, whichever rail
 collected it, so "what did AdVault earn" is one query over one column. Because

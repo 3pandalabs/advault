@@ -13,6 +13,7 @@ import {
 import { generateCinematicBrief } from "../lib/cinematic/brief.js";
 import { REAL_PHOTO_CLOSE_SECONDS, type CinematicBrief } from "../lib/cinematic/policy.js";
 import { addOnByKey } from "../lib/pricing/index.js";
+import { enqueueYoutubeUpload } from "./youtubeJobs.js";
 import { cinematicProvider } from "../lib/ai/cinematic/index.js";
 import { voiceProvider } from "../lib/ai/voice/index.js";
 import { renderCreative, type AspectRatio } from "./ffmpeg.js";
@@ -217,6 +218,17 @@ async function produce(purchase: typeof import("../db/schema.js").purchases.$inf
         sizeBytes: videoBytes.byteLength,
       })
       .where(eq(creatives.id, creative.id));
+
+    // A paid cinematic ad needs the same YouTube trip as a subscription one —
+    // more so, since the customer paid for this single creative specifically.
+    // Logged, never thrown: the purchase IS delivered, and the upload retries
+    // on its own queue.
+    await enqueueYoutubeUpload(creative.id).catch((err) =>
+      log("failed to enqueue the cinematic youtube upload", {
+        creativeId: creative.id,
+        error: String(err),
+      }),
+    );
 
     await markDelivered(purchase.id);
     log("cinematic ad delivered", {

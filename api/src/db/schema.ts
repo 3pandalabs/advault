@@ -434,6 +434,10 @@ export const campaigns = pgTable(
     // ("customers/123/campaigns/456").
     googleCampaignResourceName: text("google_campaign_resource_name"),
     googleBudgetResourceName: text("google_budget_resource_name"),
+    // The ad group the video ads hang off. One per campaign: a target-frequency
+    // video campaign supports exactly one ad group, so there is no reason to
+    // model this as its own table.
+    googleAdGroupResourceName: text("google_ad_group_resource_name"),
     launchError: text("launch_error"),
     launchedAt: timestamp("launched_at", { withTimezone: true }),
 
@@ -556,10 +560,35 @@ export const creatives = pgTable(
     // is only how it is spelled in the TypeScript.
     purchaseId: uuid("purchase_id"),
 
-    // Set once uploaded to YouTube as part of a launch. Google Ads video ads
-    // reference a YouTube video id, not an arbitrary MP4 URL — see
-    // infra/google-ads-setup.md.
+    // Set once uploaded to YouTube. Google Ads video ads reference a YouTube
+    // video id, not an arbitrary MP4 URL — see infra/google-ads-setup.md.
+    //
+    // This is the hard prerequisite for a servable ad: a campaign can be
+    // created, budgeted and geotargeted without it, and will never show
+    // anything. routes/launch.ts refuses to launch without one.
     youtubeVideoId: text("youtube_video_id"),
+
+    // pending -> uploading -> done | failed. Mirrors renderStatus rather than
+    // being folded into it: an ad whose render succeeded and whose upload
+    // failed is a completely different thing to show the advertiser than one
+    // that never encoded, and conflating them was how the "launched but can
+    // never serve" shell campaign became invisible in the first place.
+    youtubeUploadStatus: text("youtube_upload_status").notNull().default("pending"),
+    youtubeUploadError: text("youtube_upload_error"),
+
+    // Which channel the video actually landed on: 'org' for the 3PandaLabs
+    // channel, 'advertiser' for the advertiser's own connected channel. Worth
+    // recording per creative, not just per user — an advertiser who connects
+    // their channel later has older ads sitting on the org one, and a takedown
+    // or channel strike has to be traceable to the right place.
+    // Typed inline rather than imported from lib/youtube: that module reads
+    // this schema, so importing its type back here would be a cycle. The CHECK
+    // constraint below is the real enforcement either way.
+    youtubeChannelSource: text("youtube_channel_source").$type<"org" | "advertiser">(),
+
+    // The ad resource name at Google, once this creative is attached to the
+    // campaign's ad group. Null means rendered and uploaded but not serving.
+    googleAdResourceName: text("google_ad_resource_name"),
 
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     renderedAt: timestamp("rendered_at", { withTimezone: true }),
@@ -572,6 +601,14 @@ export const creatives = pgTable(
     check(
       "creatives_render_status_check",
       sql`${t.renderStatus} in ('queued','rendering','ready','failed')`,
+    ),
+    check(
+      "creatives_youtube_upload_status_check",
+      sql`${t.youtubeUploadStatus} in ('pending','uploading','done','failed')`,
+    ),
+    check(
+      "creatives_youtube_channel_source_check",
+      sql`${t.youtubeChannelSource} is null or ${t.youtubeChannelSource} in ('org','advertiser')`,
     ),
   ],
 );
@@ -622,6 +659,110 @@ export const renderJobs = pgTable(
       .on(t.creativeId)
       .where(sql`status in ('queued','running')`),
     check("render_jobs_status_check", sql`${t.status} in ('queued','running','done','failed')`),
+  ],
+);
+
+// ---------------------------------------------------------------------------
+// YouTube channels — where a rendered ad has to live before it can be an ad.
+//
+// A Google Ads video ad references an 11-character YouTube video id, never an
+// MP4 URL, so every creative must be uploaded to *some* channel. There are two
+// shapes and both are needed:
+//
+//  - 'org' (the default): the video goes to the 3PandaLabs channel. No consent
+//    screen, no second OAuth grant, and it is the only shape that works for a
+//    managed Option A advertiser, who typically has no YouTube channel at all.
+//    Google Ads is happy to serve a video from a channel the ad account does
+//    not own — linking a channel only buys earned views and remarketing.
+//  - 'advertiser': the advertiser connects their own channel and owns the
+//    creative outright. An upgrade offered in Settings, never a funnel step.
+//
+// A row here is the 'advertiser' case; its absence means the org channel. The
+// org credential is a single platform-wide refresh token in the environment,
+// exactly like the MCC one (see lib/youtube/env.ts) — it is not a row.
+// ---------------------------------------------------------------------------
+
+export const youtubeChannels = pgTable(
+  "youtube_channels",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+
+    // Google's own channel id ("UC..."), plus the title for display so Settings
+    // can say which channel is connected without an API round trip.
+    channelId: text("channel_id").notNull(),
+    title: text("title"),
+
+    // AES-256-GCM, same key and helper as the Google Ads tokens. This grant can
+    // publish video to someone's channel, which is its own kind of damage —
+    // there is no degrade-gracefully story for storing it in plaintext either.
+    refreshTokenCiphertext: text("refresh_token_ciphertext").notNull(),
+    scope: text("scope"),
+
+    // active | revoked. Set to 'revoked' on an invalid_grant so Settings can
+    // prompt a reconnect instead of every upload failing the same opaque way.
+    status: text("status").notNull().default("active"),
+
+    connectedAt: timestamp("connected_at", { withTimezone: true }).notNull().defaultNow(),
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+  },
+  (t) => [
+    // One channel per advertiser. Connecting a second replaces the first rather
+    // than leaving two grants where uploads could land on either.
+    uniqueIndex("uq_youtube_channels_user").on(t.userId),
+    check("youtube_channels_status_check", sql`${t.status} in ('active','revoked')`),
+  ],
+);
+
+// ---------------------------------------------------------------------------
+// YouTube upload queue.
+//
+// Its own queue rather than a step inside the render job, for one reason worth
+// stating: an upload has to be retryable long after the render that produced it
+// finished. An advertiser who connects their own channel in month three wants
+// their back catalogue there, and a creative rendered before any channel
+// existed has to be uploadable later without re-encoding it.
+//
+// Same claim mechanics as render_jobs — FOR UPDATE SKIP LOCKED, attempts with
+// backoff, a partial unique index for idempotence. Deliberately NOT bounded by
+// RENDER_CONCURRENCY: an upload is network-bound, not CPU-bound, and must not
+// hold the box's only encode slot.
+// ---------------------------------------------------------------------------
+
+export const youtubeUploadJobs = pgTable(
+  "youtube_upload_jobs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    creativeId: uuid("creative_id")
+      .notNull()
+      .references(() => creatives.id, { onDelete: "cascade" }),
+
+    status: text("status").notNull().default("queued"),
+    attempts: integer("attempts").notNull().default(0),
+    maxAttempts: integer("max_attempts").notNull().default(3),
+
+    claimedBy: text("claimed_by"),
+    claimedAt: timestamp("claimed_at", { withTimezone: true }),
+    runAfter: timestamp("run_after", { withTimezone: true }).notNull().defaultNow(),
+
+    lastError: text("last_error"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("idx_youtube_upload_jobs_claim").on(t.status, t.runAfter),
+    // One live upload per creative. Two concurrent uploads of the same file
+    // would publish the same ad twice to the channel and leave the loser's
+    // video id orphaned on YouTube, counting against the daily upload quota.
+    uniqueIndex("uq_youtube_upload_jobs_creative_open")
+      .on(t.creativeId)
+      .where(sql`status in ('queued','running')`),
+    check(
+      "youtube_upload_jobs_status_check",
+      sql`${t.status} in ('queued','running','done','failed')`,
+    ),
   ],
 );
 
