@@ -15,6 +15,7 @@ import { metricsRoutes } from "./routes/metrics.js";
 import { subscriptionRoutes } from "./routes/subscriptions.js";
 import { cinematicRoutes } from "./routes/cinematic.js";
 import { offerRoutes } from "./routes/offers.js";
+import { youtubeRoutes } from "./routes/youtube.js";
 
 const app = Fastify({
   logger: true,
@@ -106,6 +107,7 @@ await app.register(adAccountRoutes);
 // Registered last and on its own, because it is the only route in this app
 // that spends an advertiser's money. Keeping it visibly separate in this list
 // is deliberate — see routes/launch.ts.
+await app.register(youtubeRoutes);
 await app.register(launchRoutes);
 await app.register(metricsRoutes);
 

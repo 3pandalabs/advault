@@ -161,6 +161,21 @@ export async function creativeRoutes(app: FastifyInstance) {
       const owned = await loadOwnedCreative(creativeId, req.userId!, reply);
       if (!owned) return;
 
+      // A creative that is already an ad at Google cannot be edited in place.
+      // The ad references a YouTube video asset, and re-rendering would produce
+      // a different video that the live ad does not point at — so the edit
+      // would appear to work while the ad kept showing the old cut. Replacing a
+      // live ad is a different operation and is not built yet; refusing is the
+      // honest answer, and 409 says it is a state problem rather than a bad
+      // request.
+      if (owned.creative.googleAdResourceName) {
+        return reply.code(409).send({
+          error: "creative_is_live",
+          detail:
+            "This ad is already running at Google. Pause the campaign and make a new ad rather than editing this one.",
+        });
+      }
+
       const { script } = req.body as { script: z.infer<typeof adScriptSchema> };
       const maxIndex = Math.max(owned.creative.sourceAssetKeys.length - 1, 0);
       if (script.scenes.some((s) => s.assetIndex > maxIndex)) {
@@ -169,7 +184,20 @@ export async function creativeRoutes(app: FastifyInstance) {
 
       const [updated] = await db
         .update(creatives)
-        .set({ script, scriptSource: "manual", renderStatus: "queued", renderError: null })
+        .set({
+          script,
+          scriptSource: "manual",
+          renderStatus: "queued",
+          renderError: null,
+          // The published video is about to be superseded by a different cut,
+          // so the creative is no longer published. Cleared here rather than
+          // left stale, because a non-null id makes the upload worker skip the
+          // re-publish entirely and the advertiser would get their old video.
+          youtubeVideoId: null,
+          youtubeUploadStatus: "pending",
+          youtubeUploadError: null,
+          youtubeChannelSource: null,
+        })
         .where(eq(creatives.id, creativeId))
         .returning();
 
@@ -192,9 +220,26 @@ export async function creativeRoutes(app: FastifyInstance) {
         return reply.code(409).send({ error: "already_rendering" });
       }
 
+      // Same reasoning as the edit route: a live ad points at a specific
+      // YouTube video, and re-rendering would leave it pointing at the old one.
+      if (owned.creative.googleAdResourceName) {
+        return reply.code(409).send({
+          error: "creative_is_live",
+          detail:
+            "This ad is already running at Google. Pause the campaign and make a new ad rather than re-rendering this one.",
+        });
+      }
+
       await db
         .update(creatives)
-        .set({ renderStatus: "queued", renderError: null })
+        .set({
+          renderStatus: "queued",
+          renderError: null,
+          youtubeVideoId: null,
+          youtubeUploadStatus: "pending",
+          youtubeUploadError: null,
+          youtubeChannelSource: null,
+        })
         .where(eq(creatives.id, creativeId));
       await enqueueRender(creativeId);
 

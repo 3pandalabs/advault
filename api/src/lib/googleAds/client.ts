@@ -21,8 +21,12 @@ async function call<T>(
 ): Promise<T> {
   const headers: Record<string, string> = {
     authorization: `Bearer ${accessToken}`,
-    "developer-token": googleAdsEnv.developerToken!,
   };
+  // Sent only when one is configured. Developer tokens were sunset on
+  // 9 Sep 2026 — Google's servers ignore the header now and will reject it in
+  // 2027 — but passing one an existing deployment still has is harmless, and
+  // omitting the header entirely is what a fresh install does.
+  if (googleAdsEnv.developerToken) headers["developer-token"] = googleAdsEnv.developerToken;
   // Required whenever the target customer is reached through a Manager (MCC)
   // account, which is the normal shape here. Digits only — a dashed id reaches
   // Google as a 400 that reads like an auth failure.

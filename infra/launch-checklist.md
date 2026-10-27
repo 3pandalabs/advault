@@ -31,6 +31,14 @@ app in the org has.
       dev machine — the firewall only admits Cloudflare IPs, and that is the
       firewall working. Check it from the box with a `Host:` header.
 - [ ] Renderer log line `"renderer started"` present in `docker logs`.
+- [ ] Renderer log line `"youtube upload worker started"` present — and
+      **not** `"youtube uploads disabled — no OAuth client configured"`. With
+      the latter, every creative renders fine and no campaign can ever serve.
+- [ ] `GET /metrics` → `counts.renderedNotOnYouTube` is 0 and stays 0 as
+      creatives render. It climbing while the render counts look healthy is the
+      only signal that the upload chain is broken.
+- [ ] `GET /metrics` → `counts.liveCampaignsWithoutAds` is 0. It should be 0
+      forever; anything else is a budgeted campaign with no ad in it.
 - [ ] `GET /metrics` with the shared bearer returns the full envelope; an
       unauthenticated request and a wrong token both return `401`.
 - [ ] Coolify Postgres backup schedule to `advault-backups` configured and a
@@ -60,16 +68,46 @@ localhost bug survived a 40-check suite.
       creative is marked `fallback` — the whole point of that path is that a
       missing integration key cannot break the wizard.
 
-### Google Ads, once the developer token lands
+### YouTube publishing — before Google Ads is worth testing
+
+A rendered MP4 is not an ad. Until a creative is on YouTube it cannot be
+attached to anything, so this section gates the one below it.
+
+- [ ] A rendered creative's badge reaches **Ready**, not a stuck
+      **Publishing…**, and the campaign page's Launch button appears.
+- [ ] The video exists on the org channel and is **unlisted** — not public, not
+      private.
+- [ ] An ad produced with AI motion or voice is declared as synthetic content on
+      YouTube; one from the plain photo pipeline is not. The privacy policy makes
+      this claim, so it is a published statement rather than a detail.
+- [ ] Connect an advertiser's own channel from Settings, render a new creative,
+      and confirm it lands on **their** channel while the earlier ones stay on
+      the org channel.
+- [ ] Disconnect it and confirm new creatives go back to the org channel.
+- [ ] `POST /youtube/backfill` queues only creatives that never reached YouTube,
+      and re-running it does not publish anything a second time.
+- [ ] Retry an already-published creative and confirm it is **not** re-uploaded
+      (no second video on the channel, same video id).
+
+### Google Ads, once the Cloud project has Basic access
 
 - [ ] Connect flow completes and the account appears in Settings.
 - [ ] **Launch against a test account first.** Google rejects mutates against a
-      production account with a test token and vice versa.
+      production account with test-level access and vice versa.
 - [ ] Confirm in the Google Ads UI that the campaign is **PAUSED**, has the right
       daily budget, and has the right location criteria. Verify the geo targeting
       before anything is enabled — a campaign with no location criteria targets
       the entire country, which is the single most expensive way this app can be
       wrong.
+- [ ] **Confirm the campaign has an ad group with an ad in it**, and that the ad
+      plays the right video. A budget and a campaign with no ad is a shell that
+      can never serve — it is what this app shipped until 2026-10-24, and it
+      looks identical to success from the API's side.
+- [ ] Confirm the ad group's type matches the creative's length (bumper ≤6s,
+      non-skippable ≤15s, skippable beyond). The type is immutable at Google.
+- [ ] Try to edit or retry a creative that is already running and confirm it is
+      refused with `creative_is_live` — re-rendering would leave the live ad
+      pointing at a video that no longer matches it.
 - [ ] Confirm launching twice returns `already_launched` rather than creating a
       second campaign and a second budget.
 - [ ] Revoke access from the Google account side, then confirm the next launch

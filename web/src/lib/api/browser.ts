@@ -156,6 +156,35 @@ export type Creative = {
   thumbnailKey: string | null;
   durationSeconds: number | null;
   createdAt: string;
+
+  // Whether this ad exists on YouTube yet, which is a harder requirement than
+  // it sounds: a Google Ads video ad references a YouTube video id, never an
+  // MP4 URL, so a creative with no id here cannot be attached to a campaign
+  // and the campaign cannot serve. Shown separately from renderStatus for
+  // exactly that reason — "your video is ready" and "your ad can run" are two
+  // different statements.
+  youtubeVideoId: string | null;
+  youtubeUploadStatus: "pending" | "uploading" | "done" | "failed";
+  youtubeUploadError: string | null;
+  youtubeChannelSource: "org" | "advertiser" | null;
+};
+
+// Where this advertiser's ads get published. 'org' is the default and needs
+// nothing from them; 'advertiser' means they connected their own channel.
+export type YouTubeChannelStatus = {
+  effectiveSource: "org" | "advertiser";
+  ownChannel: {
+    channelId: string;
+    title: string | null;
+    status: "active" | "revoked";
+    connectedAt: string;
+  } | null;
+  canConnectOwnChannel: boolean;
+  orgChannelConfigured: boolean;
+  orgChannelTitle: string | null;
+  // The honest answer to "can my ads actually run": false means uploads are
+  // queueing up with nothing to drain them and no launch can succeed.
+  uploadsPossible: boolean;
 };
 
 // Who pays Google. 'platform' means AdVault's card is behind the account and
@@ -287,6 +316,27 @@ export const googleAuthorizeUrl = () =>
 
 export const disconnectAdAccount = (id: string) =>
   api<void>(`/ad-accounts/${id}`, { method: "DELETE" });
+
+// YouTube. Publishing to the org channel is the default and needs none of
+// these — they exist for the advertiser who wants their ads on their own
+// channel instead.
+export const getYouTubeChannel = () => api<YouTubeChannelStatus>("/youtube/channel");
+
+export const youtubeAuthorizeUrl = () => api<{ url: string }>("/youtube/authorize-url");
+
+export const disconnectYouTubeChannel = () =>
+  api<void>("/youtube/channel", { method: "DELETE" });
+
+// Retries one creative's upload. The path out of a failed publish, and what
+// makes a creative rendered before any channel existed usable later.
+export const retryYouTubeUpload = (creativeId: string) =>
+  api<{ queued: boolean }>(`/creatives/${creativeId}/youtube-upload`, { method: "POST" });
+
+// Queues every rendered creative that never reached YouTube. For the advertiser
+// who connects their own channel after the fact — published ads stay where they
+// are, because YouTube has no concept of moving a video between channels.
+export const backfillYouTubeUploads = () =>
+  api<{ queued: number; creativeIds: string[] }>("/youtube/backfill", { method: "POST" });
 
 // Two steps: ask the API for a presigned PUT, then upload straight to R2. The
 // file never passes through the API, which is what keeps a 10MB storefront

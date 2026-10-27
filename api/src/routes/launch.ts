@@ -14,6 +14,12 @@ import {
   createVideoCampaign,
   resolveZipCriteria,
 } from "../lib/googleAds/campaigns.js";
+import {
+  createVideoAd,
+  createVideoAdGroup,
+  findOrCreateYoutubeVideoAsset,
+  videoAdFormatFor,
+} from "../lib/googleAds/ads.js";
 import { loadOwnedAdAccount, loadOwnedCampaign } from "../lib/ownership.js";
 import { canLaunch, MIN_FUNDED_DAYS } from "../lib/wallet/index.js";
 import { billingGate, requiresWalletCheck } from "../lib/billing/policy.js";
@@ -29,6 +35,19 @@ import { billingGate, requiresWalletCheck } from "../lib/billing/policy.js";
 // hands the advertiser a fully-built, geotargeted, budgeted campaign; the
 // advertiser presses go in their own Google Ads account. Nothing here starts
 // serving impressions on its own.
+//
+// ⚠️ WHAT THIS ROUTE GOT WRONG UNTIL 2026-10-24, because the shape of the bug
+// is worth keeping: it created a budget, a campaign and geo targets and then
+// stopped. No ad group, no ad. Google accepted every call, the advertiser saw a
+// real campaign in their account, `campaigns.status` said 'live', and the
+// campaign could never show anything to anybody — enabling it would have spent
+// nothing and achieved nothing. The full chain is
+//
+//   rendered MP4 -> YouTube video id -> Asset -> AdGroup -> AdGroupAd
+//
+// and the first link is a separate queue (render/youtubeUploads.ts) because a
+// video ad references a YouTube video id, never an MP4 URL. All five links are
+// required; four of them look like success on their own.
 // ---------------------------------------------------------------------------
 
 export async function launchRoutes(app: FastifyInstance) {
@@ -125,12 +144,43 @@ export async function launchRoutes(app: FastifyInstance) {
       // produce a campaign that can never serve, and the advertiser would be
       // left with a budgeted shell in their Google Ads account.
       const ready = await db
-        .select({ id: creatives.id })
+        .select({
+          id: creatives.id,
+          youtubeVideoId: creatives.youtubeVideoId,
+          youtubeUploadStatus: creatives.youtubeUploadStatus,
+          youtubeUploadError: creatives.youtubeUploadError,
+          durationSeconds: creatives.durationSeconds,
+        })
         .from(creatives)
         .where(and(eq(creatives.campaignId, campaignId), eq(creatives.renderStatus, "ready")));
 
       if (ready.length === 0) {
         return reply.code(409).send({ error: "no_ready_creatives" });
+      }
+
+      // -------------------------------------------------------------------
+      // AND AT LEAST ONE OF THEM ON YOUTUBE.
+      //
+      // This check is the whole reason this app could previously "launch
+      // successfully" and never show an ad. A Google Ads video ad references an
+      // 11-character YouTube video id — never an MP4 URL — so a creative that
+      // exists only in R2 cannot be attached to anything. Without this guard,
+      // the route created a budget, a campaign and geo targets, returned 200,
+      // and left a budgeted shell that no amount of enabling would make serve.
+      //
+      // 409 rather than 503: unlike a missing credential, this is usually a
+      // wait rather than a misconfiguration — the upload is queued and will
+      // arrive, and the dashboard polls.
+      // -------------------------------------------------------------------
+      const uploaded = ready.filter((c) => c.youtubeVideoId);
+      if (uploaded.length === 0) {
+        const anyFailed = ready.find((c) => c.youtubeUploadStatus === "failed");
+        return reply.code(409).send({
+          error: anyFailed ? "youtube_upload_failed" : "youtube_upload_pending",
+          detail: anyFailed
+            ? `This ad could not be published to YouTube, so Google has nothing to show: ${anyFailed.youtubeUploadError ?? "unknown error"}`
+            : "This ad is still being published to YouTube. Launch is available once that finishes — usually a minute or two.",
+        });
       }
 
       const fail = async (code: string, detail: string) => {
@@ -224,6 +274,90 @@ export async function launchRoutes(app: FastifyInstance) {
           radiusMiles: campaign.radiusMiles,
         });
 
+        // -----------------------------------------------------------------
+        // THE AD GROUP AND THE ADS — i.e. the part that makes the campaign
+        // able to show something.
+        //
+        // The ad group's `type` is IMMUTABLE at Google and must match the
+        // creative's length (bumper ≤6s, non-skippable ≤15s, skippable
+        // beyond), so it is derived from the real rendered duration. One ad
+        // group per campaign: a target-frequency video campaign supports
+        // exactly one.
+        // -----------------------------------------------------------------
+        const primary = uploaded[0]!;
+        const { adGroupType, format } = videoAdFormatFor(primary.durationSeconds ?? 15);
+
+        const adGroupResourceName =
+          campaign.googleAdGroupResourceName ??
+          (await createVideoAdGroup({
+            accessToken,
+            customerId: account.customerId,
+            loginCustomerId: account.loginCustomerId,
+            campaignResourceName,
+            name: `${campaign.name} ads (${campaign.id.slice(0, 8)})`,
+            adGroupType,
+          }));
+
+        // Persisted before any ad is created, for the same reason the campaign
+        // resource name is: if the next call fails, the ad group exists at
+        // Google and this row is the only record of it.
+        await db
+          .update(campaigns)
+          .set({ googleAdGroupResourceName: adGroupResourceName })
+          .where(eq(campaigns.id, campaignId));
+
+        // Both aspect ratios of one campaign share a script and therefore a
+        // duration, so in practice every uploaded creative lands on the same
+        // format. A creative that somehow needs a different ad group type is
+        // skipped and counted rather than silently dropped — attaching it
+        // would be rejected by Google and fail the whole launch.
+        let attached = 0;
+        let skippedForFormat = 0;
+
+        for (const creative of uploaded) {
+          const shape = videoAdFormatFor(creative.durationSeconds ?? 15);
+          if (shape.adGroupType !== adGroupType) {
+            skippedForFormat += 1;
+            continue;
+          }
+
+          const videoAssetResourceName = await findOrCreateYoutubeVideoAsset({
+            accessToken,
+            customerId: account.customerId,
+            loginCustomerId: account.loginCustomerId,
+            youtubeVideoId: creative.youtubeVideoId!,
+            title: `${campaign.businessName} — ${campaign.name}`,
+          });
+
+          const adResourceName = await createVideoAd({
+            accessToken,
+            customerId: account.customerId,
+            loginCustomerId: account.loginCustomerId,
+            adGroupResourceName,
+            videoAssetResourceName,
+            finalUrl: campaign.landingUrl,
+            format,
+            actionButtonLabel: campaign.callToAction,
+            actionHeadline: campaign.businessName,
+          });
+
+          await db
+            .update(creatives)
+            .set({ googleAdResourceName: adResourceName })
+            .where(eq(creatives.id, creative.id));
+
+          attached += 1;
+        }
+
+        // Nothing attached means the campaign still cannot serve, so it is not
+        // 'live' — exactly the state this route used to report as success.
+        if (attached === 0) {
+          return fail(
+            "no_ads_attached",
+            "The campaign was created but no ad could be attached to it, so it cannot serve.",
+          );
+        }
+
         const [updated] = await db
           .update(campaigns)
           .set({
@@ -242,9 +376,16 @@ export async function launchRoutes(app: FastifyInstance) {
           // rather than silently targeting fewer places than they entered.
           zipCodesRequested: campaign.targetZipCodes.length,
           zipCodesTargeted: geoTargetConstants.length,
+          // Reported because it is the difference between a campaign that can
+          // serve and one that cannot, and because a non-zero skip count is
+          // something the advertiser should see rather than discover later.
+          adsAttached: attached,
+          adsSkippedForFormat: skippedForFormat,
+          adFormat: format,
           // Said plainly in the response as well as the UI: the campaign is
-          // built but not serving, and enabling it is the advertiser's call.
-          note: "Campaign created in PAUSED state. Review it in Google Ads and enable it when ready.",
+          // built, has an ad in it, and is not serving — enabling it is the
+          // advertiser's call.
+          note: "Campaign created in PAUSED state with its ad attached. Review it in Google Ads and enable it when ready.",
         };
       } catch (err) {
         req.log.error({ err, campaignId }, "Google Ads campaign creation failed");
