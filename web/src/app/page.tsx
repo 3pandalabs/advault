@@ -58,6 +58,12 @@ export default function LandingPage() {
           course. Upload three photos, tell us your pin code, pick a budget. We write it,
           make the video, and run the campaign — you never touch Google Ads.
         </p>
+        <p className="mt-4 max-w-2xl text-base text-zinc-300">
+          <strong>AdVault</strong> is a self-serve advertising tool for small local
+          businesses. It turns a few photos of your business into short video ads for
+          YouTube and YouTube Shorts, and runs them as a Google Ads campaign targeted to the
+          neighbourhood you serve. You can read what it does below without an account.
+        </p>
 
         <div className="mt-6 flex flex-wrap gap-2">
           {FOR_WHOM.map((w) => (
@@ -95,7 +101,8 @@ export default function LandingPage() {
           <Card className="border-amber-400/20 bg-amber-400/[0.04]">
             <CardTitle>You never open Google Ads</CardTitle>
             <CardDescription>
-              We create and run your ad account for you under our Google partner account.
+              We create and run your ad account for you under our Google Ads manager
+              account.
               No billing setup, no campaign builder, no jargon. Top up a balance, and your
               ads run until it is spent — never a rupee more.
             </CardDescription>
@@ -108,6 +115,39 @@ export default function LandingPage() {
               card, your control.
             </CardDescription>
           </Card>
+        </div>
+
+        <div className="mt-12 rounded-xl border border-white/10 bg-white/[0.02] p-6">
+          <h2 className="text-xl font-semibold tracking-tight">
+            How AdVault uses your Google account
+          </h2>
+          <p className="mt-3 text-sm text-zinc-400">
+            Connecting Google is optional and only happens when you choose it. AdVault asks
+            for these permissions, and uses each only for the purpose listed:
+          </p>
+          <ul className="mt-3 list-disc space-y-2 pl-5 text-sm text-zinc-400">
+            <li>
+              <strong className="text-zinc-200">Google Ads</strong> — to create, pause and
+              report on the campaigns you ask AdVault to run in your own Google Ads account.
+            </li>
+            <li>
+              <strong className="text-zinc-200">YouTube upload</strong> — to publish your
+              finished ad to your YouTube channel as an unlisted video, because a YouTube
+              ad must be a YouTube video.
+            </li>
+            <li>
+              <strong className="text-zinc-200">YouTube read-only</strong> — to read your
+              channel&apos;s name and ID so you can see which channel is connected.
+            </li>
+          </ul>
+          <p className="mt-3 text-sm text-zinc-400">
+            We never sell Google user data, never use it for advertising, and never send it
+            to an AI provider. Full details are in our{" "}
+            <Link href="/privacy" className="text-amber-300 underline">
+              privacy policy
+            </Link>
+            .
+          </p>
         </div>
 
         <p className="mt-8 text-center text-sm text-zinc-500">
