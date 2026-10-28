@@ -31,7 +31,16 @@ const campaignInput = z.object({
     message: "must be an http(s) URL",
   }),
   offerDetails: z.string().max(2000).nullish(),
-  targetZipCodes: z.array(postalCode).min(1).max(50),
+  // One country per campaign: launch resolves every code against a single
+  // country (US for 5 digits, IN for 6), so a mixed list would silently drop
+  // half of its targets.
+  targetZipCodes: z
+    .array(postalCode)
+    .min(1)
+    .max(50)
+    .refine((codes) => new Set(codes.map((c) => c.length)).size <= 1, {
+      message: "mix of US ZIP and Indian PIN codes",
+    }),
   radiusMiles: z.number().int().min(1).max(50).default(10),
   // Minor units. A $5/day floor because Google's own minimums and this app's
   // per-impression maths both stop being meaningful below it; the $500/day

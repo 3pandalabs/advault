@@ -11,6 +11,7 @@ export class ApiError extends Error {
     readonly status: number,
     readonly code: string,
     readonly detail?: string,
+    readonly fields?: string[],
   ) {
     super(code);
   }
@@ -85,9 +86,18 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
     // map it to a specific message ("google_ads_not_configured" reads very
     // differently from a generic failure) without parsing prose.
     const body = (await res.json().catch(() => null)) as
-      | { error?: string; detail?: string }
+      | {
+          error?: string;
+          detail?: string;
+          details?: { instancePath?: string; path?: (string | number)[] }[];
+        }
       | null;
-    throw new ApiError(res.status, body?.error ?? "request_failed", body?.detail);
+    // Validation failures carry `details`; reduce them to top-level field names
+    // so the form can say WHICH field was rejected.
+    const fields = (body?.details ?? [])
+      .map((d) => (d.instancePath ? d.instancePath.split("/")[1] : String(d.path?.[0] ?? "")))
+      .filter(Boolean);
+    throw new ApiError(res.status, body?.error ?? "request_failed", body?.detail, fields);
   }
   return res.status === 204 ? (undefined as T) : res.json();
 }
