@@ -59,7 +59,9 @@ async function poll<T>(
 // --- Kling v2.5 Turbo ------------------------------------------------------
 
 const KLING_KEY = process.env.KLING_API_KEY;
-const KLING_BASE = process.env.KLING_API_BASE ?? "https://api.klingai.com/v1";
+// Singapore host, same default as ../cinematic. The bare api.klingai.com is
+// the China-mainland endpoint and fails from Germany as if the key were wrong.
+const KLING_BASE = process.env.KLING_API_BASE ?? "https://api-singapore.klingai.com/v1";
 
 export const kling: MotionProvider = {
   name: "kling",
@@ -77,7 +79,11 @@ export const kling: MotionProvider = {
         aspect_ratio: req.aspectRatio === "9:16" ? "9:16" : "16:9",
       }),
     });
-    if (!create.ok) throw new Error(`Kling create failed: ${create.status}`);
+    if (!create.ok) {
+      // Keep Kling's body: its status codes are ambiguous ("balance not enough"
+      // is a 429, a discontinued model a 404) and the message is the diagnosis.
+      throw new Error(`Kling create failed: ${create.status} ${(await create.text()).slice(0, 300)}`);
+    }
     const { data } = (await create.json()) as { data?: { task_id?: string } };
     const taskId = data?.task_id;
     if (!taskId) throw new Error("Kling returned no task id");
@@ -130,7 +136,9 @@ export const luma: MotionProvider = {
         keyframes: { frame0: { type: "image", url: req.imageUrl } },
       }),
     });
-    if (!create.ok) throw new Error(`Luma create failed: ${create.status}`);
+    if (!create.ok) {
+      throw new Error(`Luma create failed: ${create.status} ${(await create.text()).slice(0, 300)}`);
+    }
     const created = (await create.json()) as { id?: string };
     if (!created.id) throw new Error("Luma returned no generation id");
 

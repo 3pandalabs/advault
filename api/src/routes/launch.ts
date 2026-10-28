@@ -231,6 +231,10 @@ export async function launchRoutes(app: FastifyInstance) {
           customerId: account.customerId,
           loginCustomerId: account.loginCustomerId,
           zipCodes: campaign.targetZipCodes,
+          // 6-digit codes are Indian PINs; resolving them against the default
+          // "US" would match nothing and refuse the launch. campaigns.ts
+          // rejects mixed lengths, so the first code decides for all.
+          countryCode: campaign.targetZipCodes[0]?.length === 6 ? "IN" : "US",
         });
 
         if (geoTargetConstants.length === 0) {

@@ -32,6 +32,24 @@ const ASPECT_OPTIONS = [
 
 const MAX_PHOTOS = 5;
 
+// Mirror the API's dailyBudgetCents bounds (api/src/routes/campaigns.ts) so the
+// form says so up front instead of the server rejecting it after submit.
+const MIN_DAILY_BUDGET_CENTS = 500;
+const MAX_DAILY_BUDGET_CENTS = 50_000;
+
+// API field names -> the label the advertiser sees, for naming rejected fields.
+const FIELD_LABELS: Record<string, string> = {
+  name: "campaign name",
+  businessName: "business name",
+  businessCategory: "category",
+  callToAction: "call to action",
+  landingUrl: "website link",
+  offerDetails: "offer details",
+  targetZipCodes: "ZIP/PIN codes",
+  radiusMiles: "radius",
+  dailyBudgetCents: "daily budget",
+};
+
 export default function NewCampaignPage() {
   const router = useRouter();
   const [step, setStep] = useState(1);
@@ -96,7 +114,14 @@ export default function NewCampaignPage() {
     .split(/[\s,]+/)
     .map((z) => z.trim())
     .filter(Boolean);
-  const invalidZips = zipCodes.filter((z) => !/^\d{5}$/.test(z));
+  // 5 digits = US ZIP, 6 digits = Indian PIN. Launch resolves them against one
+  // country, so a campaign can't mix the two.
+  const invalidZips = zipCodes.filter((z) => !/^\d{5}$|^\d{6}$/.test(z));
+  const mixedCountries =
+    invalidZips.length === 0 && new Set(zipCodes.map((z) => z.length)).size > 1;
+  const budgetCents = parseDollarsToCents(form.dailyBudget);
+  const budgetOutOfRange =
+    budgetCents !== null && (budgetCents < MIN_DAILY_BUDGET_CENTS || budgetCents > MAX_DAILY_BUDGET_CENTS);
 
   async function onUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files ?? []);
@@ -157,11 +182,16 @@ export default function NewCampaignPage() {
       await generateCreatives(campaign.id, { assetIds: selectedAssetIds, aspectRatios });
       router.push(`/dashboard/campaigns/${campaign.id}`);
     } catch (err) {
-      setError(
-        err instanceof ApiError && err.code === "invalid_request"
-          ? "Some details were rejected. Check the budget, landing URL and ZIP codes."
-          : "Could not create the campaign. Please try again.",
-      );
+      if (err instanceof ApiError && err.code === "invalid_request") {
+        const named = (err.fields ?? []).map((f) => FIELD_LABELS[f] ?? f);
+        setError(
+          named.length > 0
+            ? `Please check: ${[...new Set(named)].join(", ")}.`
+            : "Some details were rejected. Check the budget, landing URL and ZIP/PIN codes.",
+        );
+      } else {
+        setError("Could not create the campaign. Please try again.");
+      }
       setBusy(false);
     }
   }
@@ -174,7 +204,9 @@ export default function NewCampaignPage() {
     /^https?:\/\//i.test(form.landingUrl.trim()) &&
     zipCodes.length > 0 &&
     invalidZips.length === 0 &&
-    parseDollarsToCents(form.dailyBudget) !== null;
+    !mixedCountries &&
+    budgetCents !== null &&
+    !budgetOutOfRange;
 
   return (
     <div>
@@ -311,23 +343,27 @@ export default function NewCampaignPage() {
             </div>
 
             <div>
-              <Label htmlFor="zipInput">Target ZIP codes</Label>
+              <Label htmlFor="zipInput">Target ZIP or PIN codes</Label>
               <Textarea
                 id="zipInput"
                 value={form.zipInput}
                 onChange={set("zipInput")}
-                placeholder="94110, 94103, 94107"
+                placeholder="94110, 94103 — or 560038, 560008"
                 className="min-h-20"
               />
               {invalidZips.length > 0 ? (
                 <p className="mt-1.5 text-xs text-red-300">
-                  Not a 5-digit ZIP code: {invalidZips.join(", ")}
+                  Not a 5-digit US ZIP or 6-digit Indian PIN code: {invalidZips.join(", ")}
+                </p>
+              ) : mixedCountries ? (
+                <p className="mt-1.5 text-xs text-red-300">
+                  Use either US ZIP codes or Indian PIN codes in one campaign, not both.
                 </p>
               ) : (
                 <FieldHint>
                   {zipCodes.length > 0
-                    ? `${zipCodes.length} ZIP code${zipCodes.length === 1 ? "" : "s"}`
-                    : "Separate with commas or spaces."}
+                    ? `${zipCodes.length} ${zipCodes[0].length === 6 ? "PIN" : "ZIP"} code${zipCodes.length === 1 ? "" : "s"}`
+                    : "5-digit US ZIP or 6-digit Indian PIN. Separate with commas or spaces."}
                 </FieldHint>
               )}
             </div>
@@ -343,7 +379,7 @@ export default function NewCampaignPage() {
                   value={form.radiusMiles}
                   onChange={set("radiusMiles")}
                 />
-                <FieldHint>How far around those ZIPs to reach. Max 50.</FieldHint>
+                <FieldHint>How far around those codes to reach. Max 50.</FieldHint>
               </div>
               <div>
                 <Label htmlFor="dailyBudget">Daily budget (USD)</Label>
@@ -353,7 +389,19 @@ export default function NewCampaignPage() {
                   value={form.dailyBudget}
                   onChange={set("dailyBudget")}
                 />
-                <FieldHint>Google never charges more than this per day.</FieldHint>
+                {budgetCents === null && form.dailyBudget.trim() !== "" ? (
+                  <p className="mt-1.5 text-xs text-red-300">Enter a number, for example 15.</p>
+                ) : budgetOutOfRange ? (
+                  <p className="mt-1.5 text-xs text-red-300">
+                    Must be between {MIN_DAILY_BUDGET_CENTS / 100} and{" "}
+                    {MAX_DAILY_BUDGET_CENTS / 100} a day.
+                  </p>
+                ) : (
+                  <FieldHint>
+                    Between {MIN_DAILY_BUDGET_CENTS / 100} and {MAX_DAILY_BUDGET_CENTS / 100} a
+                    day. Google never charges more than this per day.
+                  </FieldHint>
+                )}
               </div>
             </div>
 
