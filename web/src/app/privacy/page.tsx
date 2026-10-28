@@ -36,7 +36,7 @@ export default function PrivacyPage() {
   return (
     <LegalPage
       title="Privacy Policy"
-      effective="20 August 2026"
+      effective="27 October 2026"
       summary="We collect what we need to make your ad and run your campaign, and nothing else. We do not sell your data, we do not track you around the internet, and this site sets no cookies at all."
     >
       <h2>Who we are</h2>
@@ -123,6 +123,61 @@ export default function PrivacyPage() {
         take payment, keep your account secure, send you service messages about your own
         campaigns, and meet our tax and accounting obligations. We do not use it for
         anything else, and we do not sell it or rent it to anybody, ever.
+      </p>
+
+      <h2>Google user data: what we access and why</h2>
+      <p>
+        AdVault asks for three Google permissions. Each is requested only when you choose
+        to connect the matching account, and each is used only for the purpose listed.
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>Permission</th>
+            <th>What we access</th>
+            <th>What we use it for</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Google Ads (adwords)</td>
+            <td>
+              The list of Google Ads account IDs you can access; for the account you pick,
+              its customer ID, name, currency and time zone; the campaigns, ad groups and
+              ads AdVault created; and campaign spend figures
+            </td>
+            <td>
+              To let you choose which account to connect, and to create, update, pause and
+              report on the campaigns you asked AdVault to run. We never change a campaign
+              AdVault did not create
+            </td>
+          </tr>
+          <tr>
+            <td>YouTube upload (youtube.upload)</td>
+            <td>Permission to add videos to the channel you connect</td>
+            <td>
+              To publish your finished ads to that channel as unlisted videos. We never
+              delete, edit or read your other videos
+            </td>
+          </tr>
+          <tr>
+            <td>YouTube read-only (youtube.readonly)</td>
+            <td>Your channel&apos;s ID and title</td>
+            <td>
+              To show you which channel is connected and to publish to the right one.
+              Nothing else on the channel is read
+            </td>
+          </tr>
+        </tbody>
+      </table>
+      <p>
+        <strong>Storage:</strong> the identifiers above and an encrypted refresh token per
+        connection, on our servers in Germany. <strong>Sharing:</strong> Google user data
+        is not shared with anyone outside AdVault, and never sent to an AI provider.{" "}
+        <strong>Deletion:</strong> disconnecting an account in Settings deletes its refresh
+        token immediately, and revoking access from your Google account makes it unusable
+        at once; the rest follows the retention periods below, or is deleted on request to
+        privacy@3pandalabs.com.
       </p>
 
       <h2>Google account data</h2>
