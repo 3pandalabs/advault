@@ -51,8 +51,11 @@ export default function LandingPage() {
           Vocal for Local
         </p>
         <h1 className="max-w-3xl text-4xl font-semibold tracking-tight text-balance sm:text-6xl">
-          The shop down the road is on YouTube. You should be too.
+          AdVault: YouTube ads for local businesses
         </h1>
+        <p className="mt-4 max-w-3xl text-2xl font-medium tracking-tight text-zinc-200 text-balance">
+          The shop down the road is on YouTube. You should be too.
+        </p>
         <p className="mt-6 max-w-2xl text-lg text-zinc-400">
           A salon in Indiranagar does not need an agency, a video team, or a Google Ads
           course. Upload three photos, tell us your pin code, pick a budget. We write it,
