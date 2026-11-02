@@ -1,25 +1,26 @@
-import { and, eq } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { requireAuth } from "../auth/plugin.js";
 import { db } from "../db/index.js";
-import { adAccounts, campaigns, creatives } from "../db/schema.js";
+import { adAccounts, assets, campaigns, creatives } from "../db/schema.js";
 import { decryptToken } from "../lib/crypto.js";
 import { isGoogleAdsConfigured } from "../lib/googleAds/env.js";
 import { mccAccessToken } from "../lib/googleAds/mcc.js";
 import { GoogleOAuthError, refreshAccessToken } from "../lib/googleAds/oauth.js";
+import { resolveZipCriteria } from "../lib/googleAds/campaigns.js";
+import { GoogleAdsApiError, getCustomerDetails } from "../lib/googleAds/client.js";
 import {
-  addLocationTargets,
-  createCampaignBudget,
-  createVideoCampaign,
-  resolveZipCriteria,
-} from "../lib/googleAds/campaigns.js";
-import {
-  createVideoAd,
-  createVideoAdGroup,
-  findOrCreateYoutubeVideoAsset,
-  videoAdFormatFor,
-} from "../lib/googleAds/ads.js";
+  buildAdCopy,
+  findLogoAsset,
+  findYoutubeVideoAsset,
+  launchDemandGen,
+  logoAssetName,
+  type AdCopyInput,
+  type LaunchPlan,
+} from "../lib/googleAds/demandGen.js";
+import { checkLogo } from "../lib/imageSize.js";
+import { getObjectBytes } from "../plugins/r2.js";
 import { loadOwnedAdAccount, loadOwnedCampaign } from "../lib/ownership.js";
 import { canLaunch, MIN_FUNDED_DAYS } from "../lib/wallet/index.js";
 import { billingGate, requiresWalletCheck } from "../lib/billing/policy.js";
@@ -31,7 +32,7 @@ import { billingGate, requiresWalletCheck } from "../lib/billing/policy.js";
 // reversible. This is the boundary. Keep it that way: no other route may call
 // the Google Ads mutate API, and `campaigns.status` reaches 'live' here alone.
 //
-// The campaign is created PAUSED at Google (see createVideoCampaign). AdVault
+// The campaign is created PAUSED at Google (see lib/googleAds/demandGen.ts). AdVault
 // hands the advertiser a fully-built, geotargeted, budgeted campaign; the
 // advertiser presses go in their own Google Ads account. Nothing here starts
 // serving impressions on its own.
@@ -58,7 +59,12 @@ export async function launchRoutes(app: FastifyInstance) {
     {
       schema: {
         params: z.object({ campaignId: z.string().uuid() }),
-        body: z.object({ adAccountId: z.string().uuid() }),
+        body: z.object({
+          adAccountId: z.string().uuid(),
+          // Dry run: Google checks every operation and creates nothing. Skips
+          // the billing and wallet gates, because nothing can spend.
+          validateOnly: z.boolean().optional(),
+        }),
       },
     },
     async (req, reply) => {
@@ -70,7 +76,10 @@ export async function launchRoutes(app: FastifyInstance) {
       }
 
       const { campaignId } = req.params as { campaignId: string };
-      const { adAccountId } = req.body as { adAccountId: string };
+      const { adAccountId, validateOnly = false } = req.body as {
+        adAccountId: string;
+        validateOnly?: boolean;
+      };
 
       const campaign = await loadOwnedCampaign(campaignId, req.userId!, reply);
       if (!campaign) return;
@@ -96,7 +105,7 @@ export async function launchRoutes(app: FastifyInstance) {
       // believes they are live and nothing in the system disagrees.
       // -------------------------------------------------------------------
       const gate = billingGate(account);
-      if (!gate.ok) {
+      if (!gate.ok && !validateOnly) {
         const detail =
           gate.code === "billing_not_configured"
             ? "This account has no payment method yet. Finish the Google billing step, then launch."
@@ -127,7 +136,7 @@ export async function launchRoutes(app: FastifyInstance) {
       // billing mode, NOT on isManaged: a managed child the customer pays for
       // has no wallet and must not be gated on one.
       // -------------------------------------------------------------------
-      if (requiresWalletCheck(account)) {
+      if (requiresWalletCheck(account) && !validateOnly) {
         const funds = await canLaunch(req.userId!, campaign.dailyBudgetCents);
         if (!funds.ok) {
           return reply.code(402).send({
@@ -150,6 +159,7 @@ export async function launchRoutes(app: FastifyInstance) {
           youtubeUploadStatus: creatives.youtubeUploadStatus,
           youtubeUploadError: creatives.youtubeUploadError,
           durationSeconds: creatives.durationSeconds,
+          script: creatives.script,
         })
         .from(creatives)
         .where(and(eq(creatives.campaignId, campaignId), eq(creatives.renderStatus, "ready")));
@@ -181,6 +191,27 @@ export async function launchRoutes(app: FastifyInstance) {
             ? `This ad could not be published to YouTube, so Google has nothing to show: ${anyFailed.youtubeUploadError ?? "unknown error"}`
             : "This ad is still being published to YouTube. Launch is available once that finishes — usually a minute or two.",
         });
+      }
+
+      // -------------------------------------------------------------------
+      // A SQUARE LOGO. Google requires one on every Demand Gen video ad
+      // (logo_images, mandatory since API v24): 1:1, at least 128x128.
+      // Checked here, before any Google call, so the advertiser is told "add
+      // a logo" rather than shown a field error from Google. The dashboard
+      // crops uploads to a square, so this mostly catches older logos.
+      // -------------------------------------------------------------------
+      const [logo] = await db
+        .select()
+        .from(assets)
+        .where(and(eq(assets.userId, req.userId!), eq(assets.kind, "logo")))
+        .orderBy(desc(assets.createdAt))
+        .limit(1);
+      if (!logo) return reply.code(409).send({ error: "logo_required" });
+
+      const logoBytes = await getObjectBytes(logo.r2Key);
+      const logoCheck = checkLogo(logoBytes);
+      if (!logoCheck.ok) {
+        return reply.code(409).send({ error: "logo_invalid", reason: logoCheck.reason });
       }
 
       const fail = async (code: string, detail: string) => {
@@ -222,14 +253,30 @@ export async function launchRoutes(app: FastifyInstance) {
         .where(eq(adAccounts.id, adAccountId));
 
       try {
-        // Resolved BEFORE the budget is created. A campaign with no location
-        // criteria targets the whole country — the single most expensive way
-        // for this app to be wrong — so if the ZIPs don't resolve, nothing
-        // chargeable has been created yet and there is nothing to unwind.
-        const geoTargetConstants = await resolveZipCriteria({
+        const ctx = {
           accessToken,
           customerId: account.customerId,
           loginCustomerId: account.loginCustomerId,
+        };
+
+        // A manager (MCC) account holds no campaigns, so a launch into it can
+        // only fail. Checked live rather than trusted from the row: accounts
+        // connected before the connect-time check existed may be managers —
+        // the first real launch attempt was exactly that.
+        const details = await getCustomerDetails(
+          accessToken,
+          account.customerId,
+          account.loginCustomerId,
+        );
+        if (details?.isManager) {
+          return reply.code(409).send({ error: "manager_account" });
+        }
+
+        // Resolved BEFORE anything is created. An ad group with no location
+        // criteria targets everywhere — the single most expensive way for this
+        // app to be wrong.
+        const geoTargetConstants = await resolveZipCriteria({
+          ...ctx,
           zipCodes: campaign.targetZipCodes,
           // 6-digit codes are Indian PINs; resolving them against the default
           // "US" would match nothing and refuse the launch. campaigns.ts
@@ -241,131 +288,69 @@ export async function launchRoutes(app: FastifyInstance) {
           return reply.code(400).send({ error: "no_resolvable_zip_codes" });
         }
 
-        // Budget names must be unique within a Google Ads account, and an
-        // advertiser reusing a campaign name is normal. The suffix keeps the
-        // second launch from colliding with the first.
-        const budgetResourceName = await createCampaignBudget({
-          accessToken,
+        // Assets Google already has are referenced, not re-created: assets
+        // are de-duplicated per account, so a second create is an error.
+        const [existingLogo, videos] = await Promise.all([
+          findLogoAsset(ctx, logo.id),
+          Promise.all(
+            uploaded.map(async (c) => {
+              const existing = await findYoutubeVideoAsset(ctx, c.youtubeVideoId!);
+              return existing
+                ? { existing }
+                : {
+                    youtubeVideoId: c.youtubeVideoId!,
+                    title: `${campaign.businessName} — ${campaign.name}`,
+                  };
+            }),
+          ),
+        ]);
+
+        const plan: LaunchPlan = {
           customerId: account.customerId,
-          loginCustomerId: account.loginCustomerId,
-          name: `${campaign.name} budget (${campaign.id.slice(0, 8)})`,
+          nameSuffix: campaign.id.slice(0, 8),
+          campaignName: campaign.name,
           dailyBudgetCents: campaign.dailyBudgetCents,
-        });
-
-        const campaignResourceName = await createVideoCampaign({
-          accessToken,
-          customerId: account.customerId,
-          loginCustomerId: account.loginCustomerId,
-          name: `${campaign.name} (${campaign.id.slice(0, 8)})`,
-          budgetResourceName,
-        });
-
-        // Persisted immediately, before geo targeting. If the next call fails,
-        // the campaign still exists at Google and this row is the only record
-        // of it — losing the resource name here would orphan a real, budgeted
-        // campaign in the advertiser's account with nothing pointing at it.
-        await db
-          .update(campaigns)
-          .set({ googleBudgetResourceName: budgetResourceName, googleCampaignResourceName: campaignResourceName, googleCustomerId: account.customerId })
-          .where(eq(campaigns.id, campaignId));
-
-        await addLocationTargets({
-          accessToken,
-          customerId: account.customerId,
-          loginCustomerId: account.loginCustomerId,
-          campaignResourceName,
+          finalUrl: campaign.landingUrl,
           geoTargetConstants,
-          radiusMiles: campaign.radiusMiles,
-        });
+          copy: buildAdCopy({
+            businessName: campaign.businessName,
+            businessCategory: campaign.businessCategory,
+            callToAction: campaign.callToAction,
+            offerDetails: campaign.offerDetails,
+            script: (uploaded[0]!.script ?? null) as AdCopyInput["script"],
+          }),
+          videos,
+          logo: existingLogo
+            ? { existing: existingLogo }
+            : { name: logoAssetName(logo.id), base64: logoBytes.toString("base64") },
+        };
 
-        // -----------------------------------------------------------------
-        // THE AD GROUP AND THE ADS — i.e. the part that makes the campaign
-        // able to show something.
-        //
-        // The ad group's `type` is IMMUTABLE at Google and must match the
-        // creative's length (bumper ≤6s, non-skippable ≤15s, skippable
-        // beyond), so it is derived from the real rendered duration. One ad
-        // group per campaign: a target-frequency video campaign supports
-        // exactly one.
-        // -----------------------------------------------------------------
-        const primary = uploaded[0]!;
-        const { adGroupType, format } = videoAdFormatFor(primary.durationSeconds ?? 15);
+        const zipCodes = {
+          // Reported so the advertiser can see when a typo'd ZIP was dropped
+          // rather than silently targeting fewer places than they entered.
+          zipCodesRequested: campaign.targetZipCodes.length,
+          zipCodesTargeted: geoTargetConstants.length,
+        };
 
-        const adGroupResourceName =
-          campaign.googleAdGroupResourceName ??
-          (await createVideoAdGroup({
-            accessToken,
-            customerId: account.customerId,
-            loginCustomerId: account.loginCustomerId,
-            campaignResourceName,
-            name: `${campaign.name} ads (${campaign.id.slice(0, 8)})`,
-            adGroupType,
-          }));
-
-        // Persisted before any ad is created, for the same reason the campaign
-        // resource name is: if the next call fails, the ad group exists at
-        // Google and this row is the only record of it.
-        await db
-          .update(campaigns)
-          .set({ googleAdGroupResourceName: adGroupResourceName })
-          .where(eq(campaigns.id, campaignId));
-
-        // Both aspect ratios of one campaign share a script and therefore a
-        // duration, so in practice every uploaded creative lands on the same
-        // format. A creative that somehow needs a different ad group type is
-        // skipped and counted rather than silently dropped — attaching it
-        // would be rejected by Google and fail the whole launch.
-        let attached = 0;
-        let skippedForFormat = 0;
-
-        for (const creative of uploaded) {
-          const shape = videoAdFormatFor(creative.durationSeconds ?? 15);
-          if (shape.adGroupType !== adGroupType) {
-            skippedForFormat += 1;
-            continue;
-          }
-
-          const videoAssetResourceName = await findOrCreateYoutubeVideoAsset({
-            accessToken,
-            customerId: account.customerId,
-            loginCustomerId: account.loginCustomerId,
-            youtubeVideoId: creative.youtubeVideoId!,
-            title: `${campaign.businessName} — ${campaign.name}`,
-          });
-
-          const adResourceName = await createVideoAd({
-            accessToken,
-            customerId: account.customerId,
-            loginCustomerId: account.loginCustomerId,
-            adGroupResourceName,
-            videoAssetResourceName,
-            finalUrl: campaign.landingUrl,
-            format,
-            actionButtonLabel: campaign.callToAction,
-            actionHeadline: campaign.businessName,
-          });
-
-          await db
-            .update(creatives)
-            .set({ googleAdResourceName: adResourceName })
-            .where(eq(creatives.id, creative.id));
-
-          attached += 1;
+        if (validateOnly) {
+          await launchDemandGen(ctx, plan, { validateOnly: true });
+          return { validateOnly: true, ok: true, ...zipCodes, adCopy: plan.copy, videos: videos.length };
         }
 
-        // Nothing attached means the campaign still cannot serve, so it is not
-        // 'live' — exactly the state this route used to report as success.
-        if (attached === 0) {
-          return fail(
-            "no_ads_attached",
-            "The campaign was created but no ad could be attached to it, so it cannot serve.",
-          );
-        }
+        // ONE atomic request: budget, campaign, ad group, locations, assets
+        // and the ad all exist at Google afterwards, or none of them do. So
+        // there is no half-built campaign to record or unwind, and the row is
+        // written once, after Google has accepted the whole thing.
+        const result = (await launchDemandGen(ctx, plan))!;
 
         const [updated] = await db
           .update(campaigns)
           .set({
             adAccountId,
+            googleCustomerId: account.customerId,
+            googleBudgetResourceName: result.budgetResourceName,
+            googleCampaignResourceName: result.campaignResourceName,
+            googleAdGroupResourceName: result.adGroupResourceName,
             status: "live",
             launchError: null,
             launchedAt: new Date(),
@@ -374,27 +359,56 @@ export async function launchRoutes(app: FastifyInstance) {
           .where(eq(campaigns.id, campaignId))
           .returning();
 
+        // Every published cut is in the one ad, so each creative points at it.
+        // This is also what stops a live creative being re-published.
+        await db
+          .update(creatives)
+          .set({ googleAdResourceName: result.adResourceName })
+          .where(inArray(creatives.id, uploaded.map((c) => c.id)));
+
         return {
           campaign: updated,
-          // Reported so the advertiser can see when a typo'd ZIP was dropped
-          // rather than silently targeting fewer places than they entered.
-          zipCodesRequested: campaign.targetZipCodes.length,
-          zipCodesTargeted: geoTargetConstants.length,
-          // Reported because it is the difference between a campaign that can
-          // serve and one that cannot, and because a non-zero skip count is
-          // something the advertiser should see rather than discover later.
-          adsAttached: attached,
-          adsSkippedForFormat: skippedForFormat,
-          adFormat: format,
+          ...zipCodes,
+          adsAttached: uploaded.length,
           // Said plainly in the response as well as the UI: the campaign is
-          // built, has an ad in it, and is not serving — enabling it is the
+          // built, has its ad in it, and is not serving — enabling it is the
           // advertiser's call.
           note: "Campaign created in PAUSED state with its ad attached. Review it in Google Ads and enable it when ready.",
         };
       } catch (err) {
-        req.log.error({ err, campaignId }, "Google Ads campaign creation failed");
-        return fail("google_ads_error", err instanceof Error ? err.message : String(err));
+        const detail = describeGoogleAdsError(err);
+        req.log.error({ err, campaignId, validateOnly }, "Google Ads campaign creation failed");
+        // A dry run changes nothing, including this campaign's status.
+        if (validateOnly) return reply.code(502).send({ error: "google_ads_error", detail });
+        return fail("google_ads_error", detail);
       }
     },
   );
+}
+
+type GoogleAdsFailure = {
+  errors?: {
+    message?: string;
+    location?: { fieldPathElements?: { fieldName?: string }[] };
+  }[];
+};
+
+// Google's top-level message is always "Request contains an invalid argument";
+// the useful part is the per-field list underneath. Kept on the campaign row
+// so a failed launch can be diagnosed from the database, not only the logs.
+function describeGoogleAdsError(err: unknown): string {
+  if (err instanceof GoogleAdsApiError && Array.isArray(err.details)) {
+    const failures = (err.details as GoogleAdsFailure[])
+      .flatMap((d) => d.errors ?? [])
+      .map((e) => {
+        const field = e.location?.fieldPathElements
+          ?.map((p) => p.fieldName)
+          .filter(Boolean)
+          .join(".");
+        return field ? `${e.message} (${field})` : e.message;
+      })
+      .filter(Boolean);
+    if (failures.length > 0) return failures.join("; ").slice(0, 1000);
+  }
+  return err instanceof Error ? err.message : String(err);
 }

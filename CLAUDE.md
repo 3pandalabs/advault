@@ -111,9 +111,42 @@ MP4 URL. So producing an ad is:
 
 ```
 rendered MP4  ->  YouTube video id  ->  Asset  ->  AdGroup  ->  AdGroupAd
-   (R2)          (lib/youtube/*, its   (YOUTUBE_  (type is    (videoAd)
-                  own queue)            VIDEO)    immutable)
+   (R2)          (lib/youtube/*, its   (YOUTUBE_  (Demand Gen, (demandGen
+                  own queue)            VIDEO)    YouTube only) VideoResponsiveAd)
 ```
+
+**The campaign is DEMAND_GEN, never VIDEO. The Google Ads API cannot create
+Video campaigns at all** — it can only read and report on them
+(`MUTATE_NOT_ALLOWED`, trigger `"VIDEO"`). Until 2026-11-02 this app built a
+VIDEO / `VIDEO_REACH_TARGET_FREQUENCY` campaign, so every launch it could ever
+make was impossible; nothing noticed because no earlier test got past a missing
+credential to reach Google. Demand Gen is what Google points API users to, and
+with the ad group's channel controls limited to YouTube in-stream, in-feed and
+Shorts it is the same product.
+
+**Launch is ONE atomic `googleAds:mutate`** (`lib/googleAds/demandGen.ts`):
+budget, campaign, ad group, location criteria, assets and the ad, linked by
+temporary negative ids. Google applies all of it or none of it, so a failed
+launch leaves nothing in the advertiser's account. The previous five-call chain
+orphaned a budget on every failure. Don't split it back up.
+
+- **A square logo is mandatory.** `logo_images` is required on every Demand Gen
+  video ad (1:1, ≥128x128). The campaign page fits whatever the advertiser
+  uploads onto a white 512x512 PNG in the browser, and launch checks the latest
+  `assets.kind = 'logo'` with `lib/imageSize.ts` before any Google call
+  (`logo_required` / `logo_invalid`).
+- **Location targeting lives on the ad group** for Demand Gen, not the campaign.
+- **Ad text is derived, not asked for.** `buildAdCopy()` takes the script's hook
+  and body plus the business fields, fitted to Google's limits (business name
+  25, headline 40, long headline 90, description 90) — Google rejects
+  over-length text rather than truncating it.
+- **Manager (MCC) accounts are refused** at connect
+  (`manager_account_not_supported`) and again at launch (`manager_account`).
+  They can hold no campaigns, and the org's own MCC was the first thing ever
+  connected as an "advertiser account".
+- **`validateOnly: true` on the launch body is a dry run**: Google checks every
+  operation against the real account and creates nothing. Use it before the
+  first real launch into a new account.
 
 **Four of those five links look like success on their own.** Until 2026-10-24
 `POST /campaigns/:id/launch` stopped after the campaign and its geo targeting:
@@ -135,15 +168,9 @@ a green path with a broken product at the end of it.
   YouTube channel must never be asked to make one mid-signup. The advertiser's
   own channel is an upgrade in Settings, never a funnel step. Do not "simplify"
   by deleting the org path.
-- **`videoAdFormatFor()` derives the ad group type from the real rendered
-  duration** (bumper ≤6s, non-skippable ≤15s, skippable beyond). The type is
-  IMMUTABLE at Google, so getting it wrong means deleting and recreating the ad
-  group. It is the one piece of pure logic here and it is tested.
-- **`VideoResponsiveAdInfo` is deliberately not used.** It requires
-  `business_name` *and* `logo_images` at ≥128x128, 1:1. `assets.kind` has a
-  'logo' value but it is optional and unvalidated, so the responsive format
-  would make a square logo a mandatory onboarding step and fail launches for
-  everyone already signed up without one.
+- **Every published aspect ratio goes into the one ad.** Google serves the 9:16
+  cut on Shorts and the 16:9 one in-stream; each creative's
+  `google_ad_resource_name` points at that shared ad.
 - **The ad group and ad are ENABLED inside a PAUSED campaign.** The campaign is
   the single serving gate and it belongs to the advertiser; pausing the ad group
   too would mean enabling the campaign still showed nothing.

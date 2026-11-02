@@ -103,7 +103,7 @@ signup offline.
 
 | Method | Path | Notes |
 |---|---|---|
-| POST | `/campaigns/:campaignId/launch` | **The only route in this codebase that spends money.** |
+| POST | `/campaigns/:campaignId/launch` | **The only route in this codebase that spends money.** Body `{ adAccountId, validateOnly? }`. Builds a paused **Demand Gen** campaign in one atomic Google request. `validateOnly: true` is a dry run: Google checks everything, nothing is created, and the billing and wallet gates are skipped. |
 
 Two guards run in order, and they ask different questions. The **billing gate**
 asks whether Google will accept spend on this account at all; the **wallet
@@ -114,7 +114,9 @@ Failure codes worth handling in a client: `google_ads_not_configured` (503),
 `ad_account_revoked` (409), `billing_not_configured` (409),
 `billing_link_failed` (409), `provisioning_incomplete` (409),
 `insufficient_funds` (402), `no_ready_creatives` (409), `already_launched` (409),
-`no_resolvable_zip_codes` (400), `google_ads_error` (502).
+`no_resolvable_zip_codes` (400), `logo_required` (409), `logo_invalid` (409,
+with `reason`), `manager_account` (409), `google_ads_error` (502, `detail`
+lists Google's per-field reasons).
 
 `billing_not_configured` is the one that matters most: without it, launching
 into a customer-funded account with no card **succeeds** and the campaign then

@@ -72,6 +72,8 @@ export type CustomerDetails = {
   currencyCode: string | null;
   timeZone: string | null;
   isTestAccount: boolean;
+  /** A manager (MCC) account. It holds no campaigns, so it can never be launched into. */
+  isManager: boolean;
 };
 
 // GAQL rather than the REST resource getter, because one search returns every
@@ -89,6 +91,7 @@ export async function getCustomerDetails(
         currencyCode?: string;
         timeZone?: string;
         testAccount?: boolean;
+        manager?: boolean;
       };
     }[];
   }>(`/customers/${customerId}/googleAds:search`, accessToken, {
@@ -97,7 +100,7 @@ export async function getCustomerDetails(
     body: {
       query:
         "SELECT customer.id, customer.descriptive_name, customer.currency_code, " +
-        "customer.time_zone, customer.test_account FROM customer LIMIT 1",
+        "customer.time_zone, customer.test_account, customer.manager FROM customer LIMIT 1",
     },
   });
 
@@ -114,6 +117,7 @@ export async function getCustomerDetails(
     // time turns that into a clear message at launch instead of a confusing
     // permissions error.
     isTestAccount: Boolean(c.testAccount),
+    isManager: Boolean(c.manager),
   };
 }
 

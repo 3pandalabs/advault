@@ -504,6 +504,14 @@ export async function adAccountRoutes(app: FastifyInstance) {
 
       const details = await getCustomerDetails(tokens.access_token, customerId).catch(() => null);
 
+      // A manager (MCC) account holds no campaigns of its own, so every launch
+      // into it fails at Google. It also tends to be the first id in the list
+      // for anyone who manages more than one account, which is how this was
+      // found: the org's own MCC got connected as an advertiser account.
+      if (details?.isManager) {
+        return reply.code(400).send({ error: "manager_account_not_supported" });
+      }
+
       const [row] = await db
         .insert(adAccounts)
         .values({

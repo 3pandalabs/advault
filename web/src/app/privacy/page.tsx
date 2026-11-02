@@ -143,13 +143,15 @@ export default function PrivacyPage() {
             <td>Google Ads (adwords)</td>
             <td>
               The list of Google Ads account IDs you can access; for the account you pick,
-              its customer ID, name, currency and time zone; the campaigns, ad groups and
-              ads AdVault created; and campaign spend figures
+              its customer ID, name, currency, time zone and whether it is a manager
+              account; the campaigns, ad groups and ads AdVault created; and campaign spend
+              figures
             </td>
             <td>
               To let you choose which account to connect, and to create, update, pause and
-              report on the campaigns you asked AdVault to run. We never change a campaign
-              AdVault did not create
+              report on the campaigns you asked AdVault to run. Creating an ad uploads your
+              logo, your ad text and a link to your YouTube video into that account. We
+              never change a campaign AdVault did not create
             </td>
           </tr>
           <tr>

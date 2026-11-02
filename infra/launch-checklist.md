@@ -103,8 +103,11 @@ attached to anything, so this section gates the one below it.
       plays the right video. A budget and a campaign with no ad is a shell that
       can never serve — it is what this app shipped until 2026-10-24, and it
       looks identical to success from the API's side.
-- [ ] Confirm the ad group's type matches the creative's length (bumper ≤6s,
-      non-skippable ≤15s, skippable beyond). The type is immutable at Google.
+- [ ] Run the launch with `"validateOnly": true` first and confirm it returns
+      `ok` — Google checks every operation and creates nothing.
+- [ ] Confirm the campaign is **Demand Gen**, its ad group shows only YouTube
+      placements (in-stream, in-feed, Shorts), and the ad has both cuts and the
+      logo.
 - [ ] Try to edit or retry a creative that is already running and confirm it is
       refused with `creative_is_live` — re-rendering would leave the live ad
       pointing at a video that no longer matches it.

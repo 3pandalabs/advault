@@ -2,7 +2,7 @@
 
 import { useRouter, useSearchParams, type ReadonlyURLSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
-import { api } from "@/lib/api/browser";
+import { ApiError, api } from "@/lib/api/browser";
 import { Button } from "@/components/ui/button";
 import { Card, CardDescription, CardTitle } from "@/components/ui/card";
 
@@ -14,6 +14,17 @@ import { Card, CardDescription, CardTitle } from "@/components/ui/card";
 // The URL must match GOOGLE_ADS redirect settings exactly. It is derived from
 // WEB_ORIGIN on the API side (lib/googleAds/env.ts) so localhost and production
 // cannot drift apart.
+
+// A manager (MCC) account can't hold campaigns. The API refuses it so it never
+// becomes an account every launch fails against.
+const MANAGER_ACCOUNT_MESSAGE =
+  "That is a Google Ads manager account, which can't run campaigns itself. Connect one of the ad accounts it manages instead.";
+
+function connectError(err: unknown, fallback: string): string {
+  return err instanceof ApiError && err.code === "manager_account_not_supported"
+    ? MANAGER_ACCOUNT_MESSAGE
+    : fallback;
+}
 
 type State =
   | { kind: "working" }
@@ -66,10 +77,13 @@ function CallbackInner() {
         setState({ kind: "done" });
         router.replace("/dashboard/settings");
       })
-      .catch(() =>
+      .catch((err) =>
         setState({
           kind: "error",
-          message: "Could not finish connecting your Google Ads account. Please try again.",
+          message: connectError(
+            err,
+            "Could not finish connecting your Google Ads account. Please try again.",
+          ),
         }),
       );
   }, [params, router]);
@@ -83,12 +97,15 @@ function CallbackInner() {
         body: JSON.stringify({ code: state.code, state: state.state, customerId }),
       });
       router.replace("/dashboard/settings");
-    } catch {
+    } catch (err) {
       // An authorization code is single-use, so a failure here cannot be
       // retried with the same code — the advertiser has to start over.
       setState({
         kind: "error",
-        message: "That connection attempt expired. Please start again from Settings.",
+        message: connectError(
+          err,
+          "That connection attempt expired. Please start again from Settings.",
+        ),
       });
     }
   }

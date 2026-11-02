@@ -1,0 +1,197 @@
+import { describe, expect, it } from "vitest";
+import {
+  TEXT_LIMITS,
+  buildAdCopy,
+  buildLaunchOperations,
+  fitText,
+  parseLaunchResponse,
+  type LaunchPlan,
+} from "./demandGen.js";
+
+const basePlan: LaunchPlan = {
+  customerId: "1234567890",
+  nameSuffix: "31415eeb",
+  campaignName: "Spring offer",
+  dailyBudgetCents: 1500,
+  finalUrl: "https://example.com",
+  geoTargetConstants: ["geoTargetConstants/9001", "geoTargetConstants/9002"],
+  copy: {
+    businessName: "Sharma Salon",
+    headlines: ["Haircut ₹499 till Sunday"],
+    longHeadlines: ["Haircut ₹499 till Sunday at Sharma Salon"],
+    descriptions: ["Walk in or call to book."],
+  },
+  videos: [
+    { existing: "customers/1234567890/assets/555" },
+    { youtubeVideoId: "QzBSTfs8_RM", title: "Sharma Salon — Spring offer" },
+  ],
+  logo: { name: "AdVault logo abc", base64: "iVBORw0KGgo=" },
+};
+
+type Op = Record<string, { create: Record<string, unknown> }>;
+const ops = (plan = basePlan) => buildLaunchOperations(plan) as Op[];
+const ofType = (list: Op[], k: string) => list.filter((o) => k in o).map((o) => o[k]!.create);
+
+describe("buildLaunchOperations", () => {
+  // The bug this module replaced: VIDEO campaigns cannot be created through
+  // the API at all, so every launch failed with MUTATE_NOT_ALLOWED.
+  it("creates a DEMAND_GEN campaign, never a VIDEO one", () => {
+    const [campaign] = ofType(ops(), "campaignOperation");
+    expect(campaign!.advertisingChannelType).toBe("DEMAND_GEN");
+    expect(campaign).not.toHaveProperty("advertisingChannelSubType");
+    expect(JSON.stringify(ops())).not.toContain('"VIDEO"');
+  });
+
+  it("creates the campaign PAUSED with the required EU political field", () => {
+    const [campaign] = ofType(ops(), "campaignOperation");
+    expect(campaign!.status).toBe("PAUSED");
+    expect(campaign!.containsEuPoliticalAdvertising).toBe(
+      "DOES_NOT_CONTAIN_EU_POLITICAL_ADVERTISING",
+    );
+  });
+
+  // Off by a thousand here is a 1000x overspend on someone's card.
+  it("sends the budget in micros, unshared", () => {
+    const [budget] = ofType(ops(), "campaignBudgetOperation");
+    expect(budget!.amountMicros).toBe("15000000");
+    expect(budget!.explicitlyShared).toBe(false);
+  });
+
+  it("orders operations so every temp id exists before it is referenced", () => {
+    const keys = ops().map((o) => Object.keys(o)[0]);
+    expect(keys[0]).toBe("campaignBudgetOperation");
+    expect(keys[1]).toBe("campaignOperation");
+    expect(keys[2]).toBe("adGroupOperation");
+    expect(keys.at(-1)).toBe("adGroupAdOperation");
+  });
+
+  it("targets locations on the ad group, one criterion per geo constant", () => {
+    const criteria = ofType(ops(), "adGroupCriterionOperation");
+    expect(criteria).toHaveLength(2);
+    expect(criteria[0]).toEqual({
+      adGroup: "customers/1234567890/adGroups/-3",
+      location: { geoTargetConstant: "geoTargetConstants/9001" },
+    });
+  });
+
+  it("restricts the ad group to YouTube placements", () => {
+    const [adGroup] = ofType(ops(), "adGroupOperation");
+    expect(adGroup!.demandGenAdGroupSettings).toEqual({
+      channelControls: {
+        selectedChannels: {
+          gmail: false,
+          discover: false,
+          display: false,
+          youtubeInFeed: true,
+          youtubeInStream: true,
+          youtubeShorts: true,
+        },
+      },
+    });
+  });
+
+  it("reuses existing assets and creates only the missing ones", () => {
+    const assets = ofType(ops(), "assetOperation");
+    expect(assets).toHaveLength(2); // one new video + the new logo
+    const ad = ofType(ops(), "adGroupAdOperation")[0]!.ad as {
+      demandGenVideoResponsiveAd: { videos: { asset: string }[]; logoImages: { asset: string }[] };
+    };
+    expect(ad.demandGenVideoResponsiveAd.videos.map((v) => v.asset)).toEqual([
+      "customers/1234567890/assets/555",
+      assets[0]!.resourceName,
+    ]);
+    expect(ad.demandGenVideoResponsiveAd.logoImages[0]!.asset).toBe(assets[1]!.resourceName);
+  });
+
+  it("creates no logo asset when one already exists in the account", () => {
+    const list = ops({ ...basePlan, logo: { existing: "customers/1234567890/assets/777" } });
+    expect(ofType(list, "assetOperation")).toHaveLength(1);
+  });
+
+  it("refuses to build a launch with no locations", () => {
+    expect(() => ops({ ...basePlan, geoTargetConstants: [] })).toThrow(/no location/);
+  });
+
+  it("refuses to build a launch with no video", () => {
+    expect(() => ops({ ...basePlan, videos: [] })).toThrow(/no video/);
+  });
+});
+
+describe("fitText", () => {
+  it("leaves short text alone and collapses whitespace", () => {
+    expect(fitText("  Call   now ", 40)).toBe("Call now");
+  });
+
+  it("cuts at a word boundary and drops trailing punctuation", () => {
+    const out = fitText("Fresh haircuts, beard trims, and colour — all week long", 30);
+    expect(out.length).toBeLessThanOrEqual(30);
+    expect(out).toBe("Fresh haircuts, beard trims");
+  });
+
+  it("hard-cuts a single word longer than the limit", () => {
+    expect(fitText("Supercalifragilisticexpialidocious", 10)).toBe("Supercalif");
+  });
+
+  it("returns empty for nothing", () => {
+    expect(fitText(null, 10)).toBe("");
+  });
+});
+
+describe("buildAdCopy", () => {
+  const input = {
+    businessName: "Sharma Family Hair & Beauty Salon",
+    businessCategory: "salon",
+    callToAction: "Call now",
+    offerDetails: null,
+    script: { hook: "Haircut ₹499 till Sunday", body: "Walk in today. No appointment needed." },
+  };
+
+  it("keeps every field within Google's limits", () => {
+    const copy = buildAdCopy(input);
+    expect(copy.businessName.length).toBeLessThanOrEqual(TEXT_LIMITS.businessName);
+    for (const h of copy.headlines) expect(h.length).toBeLessThanOrEqual(TEXT_LIMITS.headline);
+    for (const h of copy.longHeadlines) expect(h.length).toBeLessThanOrEqual(TEXT_LIMITS.longHeadline);
+    for (const d of copy.descriptions) expect(d.length).toBeLessThanOrEqual(TEXT_LIMITS.description);
+  });
+
+  // Google requires at least one of each; a campaign without a script must
+  // still produce a valid ad.
+  it("always has at least one of each, even with no script", () => {
+    const copy = buildAdCopy({ ...input, script: null });
+    expect(copy.headlines.length).toBeGreaterThan(0);
+    expect(copy.longHeadlines.length).toBeGreaterThan(0);
+    expect(copy.descriptions.length).toBeGreaterThan(0);
+  });
+
+  it("leads with the script hook and drops duplicates", () => {
+    const copy = buildAdCopy({ ...input, callToAction: "haircut ₹499 till sunday" });
+    expect(copy.headlines[0]).toBe("Haircut ₹499 till Sunday");
+    expect(copy.headlines.filter((h) => h.toLowerCase() === "haircut ₹499 till sunday")).toHaveLength(1);
+  });
+});
+
+describe("parseLaunchResponse", () => {
+  it("picks the four resource names out of the mixed response", () => {
+    const result = parseLaunchResponse({
+      mutateOperationResponses: [
+        { campaignBudgetResult: { resourceName: "b" } },
+        { campaignResult: { resourceName: "c" } },
+        { adGroupResult: { resourceName: "g" } },
+        {},
+        { adGroupAdResult: { resourceName: "a" } },
+      ],
+    });
+    expect(result).toEqual({
+      budgetResourceName: "b",
+      campaignResourceName: "c",
+      adGroupResourceName: "g",
+      adResourceName: "a",
+    });
+  });
+
+  it("throws when Google returns no ad", () => {
+    expect(() =>
+      parseLaunchResponse({ mutateOperationResponses: [{ campaignResult: { resourceName: "c" } }] }),
+    ).toThrow();
+  });
+});
