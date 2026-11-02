@@ -205,16 +205,19 @@ Things in that chain worth knowing before changing it:
 - **A video ad references an 11-character YouTube video id, never an MP4 URL.**
   The upload is therefore not an optimisation, it is a prerequisite. See
   `infra/youtube-setup.md` for the channel credential.
-- **The ad group's `type` is IMMUTABLE at Google** and must match the creative's
-  length (bumper ≤6s, non-skippable ≤15s, skippable beyond). `videoAdFormatFor()`
-  derives it from the real rendered duration; it is the one piece of pure logic
-  here and it is unit-tested.
-- **`VideoResponsiveAdInfo` is deliberately not used.** It requires
-  `business_name` *and* `logo_images` at ≥128x128 and 1:1. `assets.kind` has a
-  'logo' value but it is optional and unvalidated, so using the responsive format
-  would make a square logo a mandatory onboarding step and fail launches for
-  everyone already signed up without one. `VideoAdInfo` (bumper / in-stream)
-  needs the video and nothing else.
+- **The campaign is DEMAND_GEN, not VIDEO.** The API cannot create Video
+  campaigns at all (`MUTATE_NOT_ALLOWED`); the first real launch on 2026-11-02
+  failed exactly there. The ad group's channel controls restrict Demand Gen to
+  YouTube in-stream, in-feed and Shorts. See `lib/googleAds/demandGen.ts`.
+- **Launch is one atomic `googleAds:mutate`** — budget, campaign, ad group,
+  locations, assets, ad — so a failure leaves nothing behind at Google.
+- **A square logo is required** (`logo_images`, 1:1, ≥128x128). The dashboard
+  fits uploads onto a 512x512 square; launch re-checks it before calling Google.
+- **Dry run first.** `POST /campaigns/:id/launch` with `"validateOnly": true`
+  has Google validate every operation against the real account and create
+  nothing. Do this before the first real launch into any new account.
+- **Never connect the MCC itself as an ad account.** A manager account holds no
+  campaigns; the API now refuses it at connect and at launch.
 - **The ad group and the ad are created ENABLED inside a PAUSED campaign.** The
   campaign is the single serving gate and it belongs to the advertiser. Pausing
   the ad group too would mean enabling the campaign still showed nothing, which

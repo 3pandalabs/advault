@@ -11,9 +11,11 @@ import {
   retryCreative,
   retryYouTubeUpload,
   type AdAccount,
+  type Asset,
   type Campaign,
   type Creative,
 } from "@/lib/api/browser";
+import { SquareLogo } from "./square-logo";
 import { Badge, Card, CardDescription, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { formatDuration, formatMoney } from "@/lib/utils";
@@ -52,6 +54,11 @@ const LAUNCH_ERRORS: Record<string, string> = {
     "Your ad could not be published to YouTube, so Google has nothing to show. Try publishing again from the video below.",
   no_ads_attached:
     "The campaign reached Google but no ad could be attached to it, so it would not serve. Nothing is spending — try launching again.",
+  // Google requires a square logo on every YouTube ad this app can create.
+  logo_required: "Add your logo below first — Google needs one on every YouTube ad.",
+  logo_invalid: "Your logo needs replacing — upload it again below and we'll fit it to a square.",
+  manager_account:
+    "That is a Google Ads manager account, which can't run campaigns itself. Set up an ad account under it instead.",
 };
 
 export default function CampaignDetailPage({
@@ -68,6 +75,7 @@ export default function CampaignDetailPage({
   const [launchNote, setLaunchNote] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [logo, setLogo] = useState<Asset | null>(null);
 
   const refresh = useCallback(
     () => getCampaign(campaignId).then(setCampaign).catch(() => setError("Could not load this campaign.")),
@@ -124,7 +132,15 @@ export default function CampaignDetailPage({
       await refresh();
     } catch (err) {
       const code = err instanceof ApiError ? err.code : "request_failed";
-      setError(LAUNCH_ERRORS[code] ?? `Launch failed (${code}).`);
+      // Google's own reason is more useful than the bare code, which is all
+      // that showed before: "Launch failed (google_ads_error)".
+      const detail = err instanceof ApiError ? err.detail : undefined;
+      setError(
+        LAUNCH_ERRORS[code] ??
+          (code === "google_ads_error" && detail
+            ? `Google Ads rejected the campaign: ${detail}`
+            : `Launch failed (${code}).`),
+      );
     } finally {
       setBusy(false);
     }
@@ -278,12 +294,15 @@ export default function CampaignDetailPage({
         ) : activeAccounts.length === 0 ? (
           <>
             <CardDescription>
-              Connect your Google Ads account to launch this campaign. AdVault creates it paused
-              — you switch it on yourself.
+              Set up a Google Ads account to launch this campaign, or connect one you already
+              have. AdVault creates the campaign paused — you switch it on yourself.
             </CardDescription>
-            <div className="mt-4">
+            <div className="mt-4 flex flex-wrap gap-2">
+              <Link href="/dashboard/onboarding">
+                <Button>Set up an ad account</Button>
+              </Link>
               <Link href="/dashboard/settings">
-                <Button variant="outline">Connect Google Ads</Button>
+                <Button variant="outline">Connect my own account</Button>
               </Link>
             </div>
           </>
@@ -305,9 +324,14 @@ export default function CampaignDetailPage({
               {formatMoney(campaign.dailyBudgetCents, campaign.currencyCode)} daily budget. It
               does not start spending until you enable it there.
             </CardDescription>
+            <SquareLogo onChange={setLogo} />
             <div className="mt-4 flex flex-wrap gap-2">
               {activeAccounts.map((account) => (
-                <Button key={account.id} disabled={busy} onClick={() => onLaunch(account.id)}>
+                <Button
+                  key={account.id}
+                  disabled={busy || !logo}
+                  onClick={() => onLaunch(account.id)}
+                >
                   {busy
                     ? "Launching…"
                     : `Launch to ${account.descriptiveName ?? account.customerId}`}
