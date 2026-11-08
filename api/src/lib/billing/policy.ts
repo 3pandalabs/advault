@@ -281,3 +281,69 @@ export function reminderDue(
   return now.getTime() - account.opsNotifiedAt.getTime() >= REMINDER_EVERY_MS ? "reminder" : null;
 }
 
+// ---------------------------------------------------------------------------
+// Operator-created accounts
+//
+// Google refuses CreateCustomerClient until an account linked to the MCC has
+// spent over $1,000 (CREATION_DENIED_INELIGIBLE_MCC). Until then an operator
+// creates each customer's account by hand with a reference code in its name,
+// links it under the MCC, and the renderer sweep matches it on that code.
+// ---------------------------------------------------------------------------
+
+// No 0/O or 1/I: the operator types this from a phone notification.
+const REF_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+
+export function makeProvisionRef(random: () => number = Math.random): string {
+  let code = "";
+  for (let i = 0; i < 4; i++) code += REF_ALPHABET[Math.floor(random() * REF_ALPHABET.length)];
+  return `AV-${code}`;
+}
+
+/**
+ * True when Google refused to create a child because this MCC is not yet
+ * eligible (no linked account with over $1,000 of compliant spend). The
+ * platform flow then falls back to an operator creating the account by hand.
+ */
+export function isCreationDeniedIneligible(err: unknown): boolean {
+  const details = (err as { details?: unknown })?.details;
+  if (!Array.isArray(details)) return false;
+  return details.some((d: { errors?: { errorCode?: { customerError?: string } }[] }) =>
+    (d.errors ?? []).some((e) => e.errorCode?.customerError === "CREATION_DENIED_INELIGIBLE_MCC"),
+  );
+}
+
+/** The exact name the operator gives the account. The code must survive. */
+export function operatorAccountName(businessName: string, ref: string): string {
+  return `AdVault — ${businessName.slice(0, 80)} [${ref}]`;
+}
+
+export type MccClient = {
+  id: string;
+  descriptiveName: string | null;
+  currencyCode: string | null;
+  manager: boolean;
+  status: string | null;
+};
+
+/**
+ * The linked MCC child carrying this reference code, if the operator has made
+ * it. Case-insensitive and bracket-tolerant, because it was typed by hand;
+ * never an account another customer already has.
+ */
+export function findOperatorAccount(
+  ref: string,
+  clients: MccClient[],
+  takenIds: ReadonlySet<string>,
+): MccClient | null {
+  const code = ref.toUpperCase();
+  return (
+    clients.find(
+      (c) =>
+        !c.manager &&
+        !takenIds.has(c.id) &&
+        c.status !== "CANCELED" &&
+        c.status !== "CLOSED" &&
+        (c.descriptiveName ?? "").toUpperCase().includes(code),
+    ) ?? null
+  );
+}

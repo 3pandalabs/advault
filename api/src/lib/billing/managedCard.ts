@@ -1,7 +1,7 @@
 import { and, eq, inArray, isNotNull } from "drizzle-orm";
 import { db } from "../../db/index.js";
 import { adAccounts, campaigns } from "../../db/schema.js";
-import { mccAccessToken } from "../googleAds/mcc.js";
+import { defaultTimeZone, listMccClients, mccAccessToken } from "../googleAds/mcc.js";
 import {
   attachPlatformBilling,
   billingSetupUrl,
@@ -19,7 +19,13 @@ import {
   unfreezeCard,
 } from "../mercury/index.js";
 import { notifyOps } from "../ops/notify.js";
-import { formatCustomerId, monthlyCardLimitCents, reminderDue } from "./policy.js";
+import {
+  findOperatorAccount,
+  formatCustomerId,
+  monthlyCardLimitCents,
+  operatorAccountName,
+  reminderDue,
+} from "./policy.js";
 
 // ---------------------------------------------------------------------------
 // Platform billing: 3PandaLabs pays Google for a customer's ads.
@@ -47,7 +53,10 @@ function dollars(cents: number): string {
 }
 
 function nameOf(account: AccountRow): string {
-  return account.descriptiveName ?? `account ${formatCustomerId(account.customerId)}`;
+  return (
+    account.descriptiveName ??
+    (account.customerId ? `account ${formatCustomerId(account.customerId)}` : "a new customer")
+  );
 }
 
 async function update(id: string, patch: Partial<AccountRow>): Promise<void> {
@@ -76,7 +85,7 @@ export async function startPlatformBilling(
   const managerId = account.managerCustomerId ?? managerCustomerId();
 
   // 1. Automatic, if a payments account is reachable from the child.
-  if (managerId) {
+  if (managerId && account.customerId) {
     try {
       const accessToken = await mccAccessToken();
       const available = await listPaymentsAccounts({
@@ -145,11 +154,59 @@ export async function ensureCustomerCard(
   }
 }
 
+/**
+ * Google wouldn't let the MCC create this customer's account, so an operator
+ * makes it. Creates their card first so one alert covers the whole job.
+ */
+export async function startOperatorProvisioning(
+  account: AccountRow,
+  opts: { initialDailyBudgetCents?: number } = {},
+): Promise<void> {
+  const fresh = await ensureCustomerCard(account, opts.initialDailyBudgetCents);
+  await notifyAccountNeeded(fresh ?? account, { reminder: false });
+}
+
+/** The operator's to-do when the account itself doesn't exist yet. */
+export async function notifyAccountNeeded(
+  account: AccountRow,
+  opts: { reminder: boolean },
+): Promise<void> {
+  const name = nameOf(account);
+  const ref = account.provisionRef ?? "";
+  const suggested = account.mercuryCardLimitCents ?? monthlyCardLimitCents([]);
+  const mcc = formatCustomerId(account.managerCustomerId ?? managerCustomerId() ?? "");
+
+  const cardLine = account.mercuryCardId
+    ? `2. Billing: pick the 3PandaLabs payments profile and add Mercury card "${cardNickname(name)}" ending ${account.mercuryCardLastFour} (limit ${dollars(suggested)}/month; full number in the Mercury app).`
+    : `2. Billing: create a Mercury virtual debit card "${cardNickname(name)}" (${dollars(suggested)}/month limit) on AdVault Ad Spend, then add it under the 3PandaLabs payments profile.`;
+
+  const delivered = await notifyOps({
+    title: `${opts.reminder ? "Reminder: " : ""}AdVault: create account for ${name}`,
+    message: [
+      `1. In Google Ads (3pandalabs@gmail.com) create a new account named exactly: ${operatorAccountName(name, ref)} | currency USD | time zone ${defaultTimeZone("USD")}. Skip campaign creation.`,
+      cardLine,
+      `3. In the manager account ${mcc}: Accounts > + > Link existing account > enter the new account's ID, then accept the request inside the new account.`,
+      `AdVault finds it by the code ${ref} and unlocks Launch once billing is active.`,
+    ].join("\n"),
+    priority: opts.reminder ? 3 : 4,
+    tags: ["new"],
+    click: "https://ads.google.com/aw/accounts",
+  });
+
+  if (delivered) {
+    await update(account.id, {
+      opsNotifiedAt: new Date(),
+      ...(opts.reminder ? { opsReminderCount: account.opsReminderCount + 1 } : {}),
+    });
+  }
+}
+
 /** The operator's to-do, as a phone notification. */
 export async function notifyCardNeeded(
   account: AccountRow,
   opts: { reminder: boolean },
 ): Promise<void> {
+  if (!account.customerId) return notifyAccountNeeded(account, opts);
   const name = nameOf(account);
   const cid = formatCustomerId(account.customerId);
   const suggested = account.mercuryCardLimitCents ?? monthlyCardLimitCents([]);
@@ -182,7 +239,7 @@ export async function notifyCardNeeded(
 /** Asks Google whether the operator has added the card yet. */
 export async function refreshPlatformBilling(account: AccountRow): Promise<"active" | "pending"> {
   const managerId = account.managerCustomerId ?? managerCustomerId();
-  if (!managerId) return "pending";
+  if (!managerId || !account.customerId) return "pending";
   try {
     const funded = await hasActiveBillingSetup({
       accessToken: await mccAccessToken(),
@@ -303,6 +360,53 @@ export async function runPlatformBillingSweep(now = new Date()): Promise<{ activ
         eq(adAccounts.status, "active"),
       ),
     );
+
+  // Operator-made accounts: one MCC listing per sweep covers all of them.
+  const unmatched = waiting.filter((a) => !a.customerId && a.provisionRef);
+  if (unmatched.length > 0) {
+    try {
+      const clients = await listMccClients();
+      const taken = new Set(
+        (await db.select({ id: adAccounts.customerId }).from(adAccounts).where(isNotNull(adAccounts.customerId)))
+          .map((r) => r.id!),
+      );
+      for (const account of unmatched) {
+        const found = findOperatorAccount(account.provisionRef!, clients, taken);
+        if (!found) continue;
+        if (found.currencyCode && found.currencyCode !== "USD") {
+          // Currency is immutable at Google, so this account can never be
+          // used. Say so once per wrong account, not every five minutes.
+          const marker = `wrong_currency:${found.id}`;
+          if (account.provisionError !== marker) {
+            await update(account.id, { provisionError: marker });
+            await notifyOps({
+              title: `AdVault: wrong currency for ${nameOf(account)}`,
+              message: `Account ${formatCustomerId(found.id)} (${account.provisionRef}) is in ${found.currencyCode}. Platform accounts must be USD. Create a new USD account with the same name and unlink this one.`,
+              priority: 4,
+              tags: ["warning"],
+            });
+          }
+          continue;
+        }
+        taken.add(found.id);
+        const [matched] = await db
+          .update(adAccounts)
+          .set({
+            customerId: found.id,
+            currencyCode: found.currencyCode ?? "USD",
+            provisionStatus: "active",
+            provisionError: null,
+            provisionedAt: new Date(),
+          })
+          .where(eq(adAccounts.id, account.id))
+          .returning();
+        if (matched) Object.assign(account, matched);
+        console.log(JSON.stringify({ msg: "matched operator-created account", accountId: account.id, ref: account.provisionRef }));
+      }
+    } catch (err) {
+      console.warn(JSON.stringify({ msg: "MCC client listing failed", error: String(err) }));
+    }
+  }
 
   let activated = 0;
   let reminded = 0;

@@ -96,6 +96,17 @@ export async function launchRoutes(app: FastifyInstance) {
       const account = await loadOwnedAdAccount(adAccountId, req.userId!, reply);
       if (!account) return;
 
+      // A platform account still waiting for the operator to create it in
+      // Google Ads has no customer id yet. The billing gate would refuse it
+      // too; checking here lets every Google call below use a definite id.
+      const customerId = account.customerId;
+      if (!customerId) {
+        return reply.code(409).send({
+          error: "provisioning_incomplete",
+          detail: "This ad account is still being set up.",
+        });
+      }
+
       // -------------------------------------------------------------------
       // THE BILLING GATE. Can Google accept spend on this account at all?
       //
@@ -272,7 +283,7 @@ export async function launchRoutes(app: FastifyInstance) {
       try {
         const ctx = {
           accessToken,
-          customerId: account.customerId,
+          customerId: customerId,
           loginCustomerId: account.loginCustomerId,
         };
 
@@ -282,7 +293,7 @@ export async function launchRoutes(app: FastifyInstance) {
         // the first real launch attempt was exactly that.
         const details = await getCustomerDetails(
           accessToken,
-          account.customerId,
+          customerId,
           account.loginCustomerId,
         );
         if (details?.isManager) {
@@ -323,7 +334,7 @@ export async function launchRoutes(app: FastifyInstance) {
         ]);
 
         const plan: LaunchPlan = {
-          customerId: account.customerId,
+          customerId: customerId,
           nameSuffix: campaign.id.slice(0, 8),
           campaignName: campaign.name,
           dailyBudgetCents: campaign.dailyBudgetCents,
@@ -369,7 +380,7 @@ export async function launchRoutes(app: FastifyInstance) {
           .update(campaigns)
           .set({
             adAccountId,
-            googleCustomerId: account.customerId,
+            googleCustomerId: customerId,
             googleBudgetResourceName: result.budgetResourceName,
             googleCampaignResourceName: result.campaignResourceName,
             googleAdGroupResourceName: result.adGroupResourceName,

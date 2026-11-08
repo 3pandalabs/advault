@@ -22,6 +22,12 @@ import type { BillingLinkStatus } from "./policy.js";
 
 type AccountRow = typeof adAccounts.$inferSelect;
 
+/** Every function here runs after the child account exists at Google. */
+function idOf(account: AccountRow): string {
+  if (!idOf(account)) throw new Error("account_not_provisioned");
+  return idOf(account);
+}
+
 async function setLinkState(
   accountId: string,
   patch: Partial<{
@@ -58,7 +64,7 @@ export async function startCustomerBillingLink(
   email: string,
 ): Promise<CustomerLinkStart> {
   const managerId = account.managerCustomerId ?? managerCustomerId();
-  const billingUrl = billingSetupUrl(account.customerId);
+  const billingUrl = billingSetupUrl(idOf(account));
 
   if (!managerId) {
     await setLinkState(account.id, { billingLinkStatus: "failed", provisionError: "no_manager_customer_id" });
@@ -69,7 +75,7 @@ export async function startCustomerBillingLink(
     const accessToken = await mccAccessToken();
     const resourceName = await inviteCustomerUser({
       accessToken,
-      customerId: account.customerId,
+      customerId: idOf(account),
       email,
       loginCustomerId: managerId,
     });
@@ -119,7 +125,7 @@ export async function refreshCustomerBillingLink(
   email: string,
 ): Promise<BillingLinkSnapshot> {
   const managerId = account.managerCustomerId ?? managerCustomerId();
-  const billingUrl = billingSetupUrl(account.customerId);
+  const billingUrl = billingSetupUrl(idOf(account));
 
   if (!managerId) {
     return { status: account.billingLinkStatus as BillingLinkStatus, billingUrl, billingConfigured: false };
@@ -130,7 +136,7 @@ export async function refreshCustomerBillingLink(
 
     const configured = await hasActiveBillingSetup({
       accessToken,
-      customerId: account.customerId,
+      customerId: idOf(account),
       loginCustomerId: managerId,
     });
 
@@ -146,7 +152,7 @@ export async function refreshCustomerBillingLink(
 
     const invitationState = await getInvitationState({
       accessToken,
-      customerId: account.customerId,
+      customerId: idOf(account),
       email,
       loginCustomerId: managerId,
     });

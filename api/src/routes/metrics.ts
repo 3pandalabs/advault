@@ -37,6 +37,7 @@ type CountsRow = {
   customer_funded_accounts: number;
   billing_link_incomplete: number;
   platform_awaiting_card: number;
+  platform_awaiting_account: number;
   active_sessions: number;
   paying_subscribers: number;
   past_due_subscribers: number;
@@ -104,7 +105,8 @@ export async function metricsRoutes(app: FastifyInstance) {
         (select count(*) from ad_accounts where status = 'active' and billing_mode = 'platform')::int as platform_funded_accounts,
         (select count(*) from ad_accounts where status = 'active' and billing_mode = 'customer')::int as customer_funded_accounts,
         (select count(*) from ad_accounts where status = 'active' and billing_link_status in ('pending','invited'))::int as billing_link_incomplete,
-        (select count(*) from ad_accounts where status = 'active' and billing_mode = 'platform' and billing_link_status = 'pending')::int as platform_awaiting_card,
+        (select count(*) from ad_accounts where status = 'active' and billing_mode = 'platform' and billing_link_status = 'pending' and customer_id is not null)::int as platform_awaiting_card,
+        (select count(*) from ad_accounts where status = 'active' and billing_mode = 'platform' and provision_status = 'pending' and customer_id is null)::int as platform_awaiting_account,
         (select count(*) from sessions where expires_at > now())::int as active_sessions,
         -- Revenue. Until subscriptions existed these were all structurally zero:
         -- every plan carried a monthly fee of 0 and no 'fee' ledger row was ever
@@ -175,6 +177,9 @@ export async function metricsRoutes(app: FastifyInstance) {
         // A work item, not a statistic: customers waiting on an operator to
         // add their Mercury card in Google Ads before they can launch.
         platformAwaitingCard: c.platform_awaiting_card,
+        // Earlier step: the operator still has to create the account itself,
+        // because Google won't let the MCC create accounts until $1,000 spend.
+        platformAwaitingAccount: c.platform_awaiting_account,
         // The onboarding funnel's leak, and the second thing worth alerting on.
         // These advertisers finished signup, got an ad account, and then never
         // completed the Google billing step — so they can never launch and

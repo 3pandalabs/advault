@@ -212,7 +212,8 @@ export type AdAccount = {
   provisionStatus: string | null;
   provisionError: string | null;
   id: string;
-  customerId: string;
+  // Null while 3PandaLabs is still creating the account in Google Ads.
+  customerId: string | null;
   descriptiveName: string | null;
   currencyCode: string | null;
   isTestAccount: "yes" | "no" | "unknown";

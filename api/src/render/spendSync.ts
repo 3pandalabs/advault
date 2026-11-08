@@ -79,6 +79,7 @@ export async function runSpendSync(): Promise<{ synced: number; paused: number }
   const byCustomer = new Map<string, typeof rows>();
   for (const row of rows) {
     const id = row.account.customerId;
+    if (!id) continue;
     byCustomer.set(id, [...(byCustomer.get(id) ?? []), row]);
   }
 

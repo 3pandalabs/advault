@@ -181,3 +181,40 @@ export async function enableCampaign(args: {
     },
   });
 }
+
+/** Non-manager accounts linked directly under the MCC. */
+export async function listMccClients(): Promise<
+  { id: string; descriptiveName: string | null; currencyCode: string | null; manager: boolean; status: string | null }[]
+> {
+  const managerId = googleAdsEnv.loginCustomerId!.replace(/-/g, "");
+  const body = await googleAdsCall<{
+    results?: {
+      customerClient?: {
+        id?: string;
+        descriptiveName?: string;
+        currencyCode?: string;
+        manager?: boolean;
+        status?: string;
+      };
+    }[];
+  }>(`/customers/${managerId}/googleAds:search`, await mccAccessToken(), {
+    method: "POST",
+    loginCustomerId: managerId,
+    body: {
+      query:
+        "SELECT customer_client.id, customer_client.descriptive_name, customer_client.currency_code, " +
+        "customer_client.manager, customer_client.status FROM customer_client " +
+        "WHERE customer_client.level = 1",
+    },
+  });
+  return (body.results ?? [])
+    .map((r) => r.customerClient)
+    .filter((c): c is NonNullable<typeof c> => Boolean(c?.id))
+    .map((c) => ({
+      id: String(c.id),
+      descriptiveName: c.descriptiveName ?? null,
+      currencyCode: c.currencyCode ?? null,
+      manager: Boolean(c.manager),
+      status: c.status ?? null,
+    }));
+}
