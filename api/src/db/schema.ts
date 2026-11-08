@@ -149,14 +149,16 @@ export const adAccounts = pgTable(
     // 'customer' by construction — we could not bill it if we wanted to.
     billingMode: text("billing_mode").$type<BillingMode>().notNull().default("customer"),
 
-    // Only meaningful for isManaged + 'customer': the child exists under our
-    // MCC but the advertiser has to accept an account invitation and then enter
-    // a card in Google's own UI, because the Ads API has no method that adds a
-    // payment instrument. Until this reaches 'active' the account cannot spend,
-    // so launch must refuse rather than create a campaign that will never serve.
+    // Managed accounts only. The Ads API has no method that adds a payment
+    // instrument, so someone has to enter a card in Google's own UI. Until this
+    // reaches 'active' the account cannot spend, so launch must refuse rather
+    // than create a campaign that will never serve.
     //
-    // null -> pending -> invited -> active
-    //                          \-> failed
+    //   'customer': the advertiser accepts an invitation and adds their card.
+    //               null -> pending -> invited -> active  (or -> failed)
+    //   'platform': a 3PandaLabs operator adds the customer's Mercury card.
+    //               pending -> active. null = billing attached automatically
+    //               (only possible once the MCC has monthly invoicing).
     billingLinkStatus: text("billing_link_status").$type<
       "pending" | "invited" | "active" | "failed"
     >(),
@@ -168,6 +170,20 @@ export const adAccounts = pgTable(
     // the same reason as managerCustomerId: a future billing migration must not
     // silently reinterpret historical rows.
     billingPaymentsAccountId: text("billing_payments_account_id"),
+
+    // --- The customer's Mercury virtual card (platform billing) -------------
+    // One USD debit card per platform-billed account. Mercury's API never
+    // returns the full card number, so an operator copies it from the Mercury
+    // app into Google Ads; the last four is what the alert names.
+    mercuryCardId: text("mercury_card_id"),
+    mercuryCardLastFour: text("mercury_card_last_four"),
+    // Mercury's own status: active | frozen | cancelled | ...
+    mercuryCardStatus: text("mercury_card_status"),
+    mercuryCardLimitCents: integer("mercury_card_limit_cents"),
+    // When the operator was told this account needs its card, and how many
+    // reminders have gone out since.
+    opsNotifiedAt: timestamp("ops_notified_at", { withTimezone: true }),
+    opsReminderCount: integer("ops_reminder_count").notNull().default(0),
 
     // 'active' | 'revoked' — set to 'revoked' when Google answers
     // invalid_grant, so the dashboard can prompt a reconnect instead of
@@ -209,13 +225,11 @@ export const adAccounts = pgTable(
       sql`${t.billingLinkStatus} is null
           or ${t.billingLinkStatus} in ('pending','invited','active','failed')`,
     ),
-    // The invitation handshake only exists for managed accounts the customer
-    // pays for. Platform-billed and BYO accounts must leave it null so the
-    // launch guard can read it as "not applicable" rather than "not done".
+    // Only managed accounts have a billing handshake. BYO accounts must leave
+    // it null so the launch guard reads it as "not applicable", not "not done".
     check(
       "ad_accounts_billing_link_applicability_check",
-      sql`${t.billingLinkStatus} is null
-          or (${t.isManaged} = true and ${t.billingMode} = 'customer')`,
+      sql`${t.billingLinkStatus} is null or ${t.isManaged} = true`,
     ),
     check("ad_accounts_test_check", sql`${t.isTestAccount} in ('yes','no','unknown')`),
     // Digits only. A customer id with dashes reaches Google as a 400 that reads

@@ -22,6 +22,7 @@ import {
 } from "./jobs.js";
 import { renderCreative, type AspectRatio } from "./ffmpeg.js";
 import { startSpendSync } from "./spendSync.js";
+import { startPlatformBillingSweep } from "../lib/billing/managedCard.js";
 import { startOfferScheduler } from "./offerCycles.js";
 import { startCinematicWorker, stopCinematicWorker } from "./cinematic.js";
 import { enqueueYoutubeUpload } from "./youtubeJobs.js";
@@ -306,6 +307,8 @@ async function main(): Promise<void> {
   // Runs here rather than in the API: this is already a long-lived process, so
   // the job needs no new container, and the API would fire it once per replica.
   startSpendSync();
+  // Polls platform accounts waiting for their card and re-alerts the operator.
+  startPlatformBillingSweep();
   // Same reasoning: the monthly offer conversation, subscription renewals and
   // offer expiry are all periodic work that needs a long-lived process and must
   // fire exactly once, not once per API replica.

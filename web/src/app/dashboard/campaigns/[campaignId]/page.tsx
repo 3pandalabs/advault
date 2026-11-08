@@ -6,8 +6,10 @@ import {
   ApiError,
   creativeDownloadUrl,
   getCampaign,
+  isAwaitingPlatformSetup,
   launchCampaign,
   listAdAccounts,
+  provisionManagedAccount,
   retryCreative,
   retryYouTubeUpload,
   type AdAccount,
@@ -59,6 +61,11 @@ const LAUNCH_ERRORS: Record<string, string> = {
   logo_invalid: "Your logo needs replacing — upload it again below and we'll fit it to a square.",
   manager_account:
     "That is a Google Ads manager account, which can't run campaigns itself. Set up an ad account under it instead.",
+  billing_setup_pending:
+    "We're finishing your ad account's setup. Launch unlocks automatically, usually within a few hours.",
+  currency_mismatch:
+    "This campaign's budget currency doesn't match the ad account's. Create the campaign again in the account's currency.",
+  provisioning_failed: "We couldn't set up your ad account just now. Please try again in a few minutes.",
 };
 
 export default function CampaignDetailPage({
@@ -68,9 +75,12 @@ export default function CampaignDetailPage({
 }) {
   const { campaignId } = use(params);
   const [campaign, setCampaign] = useState<Loaded | null>(null);
-  const [adAccounts, setAdAccounts] = useState<{ configured: boolean; accounts: AdAccount[] } | null>(
-    null,
-  );
+  const [adAccounts, setAdAccounts] = useState<{
+    configured: boolean;
+    managedOffered?: boolean;
+    accounts: AdAccount[];
+  } | null>(null);
+  const [settingUp, setSettingUp] = useState(false);
   const [previews, setPreviews] = useState<Record<string, string>>({});
   const [launchNote, setLaunchNote] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -108,6 +118,33 @@ export default function CampaignDetailPage({
     const timer = setInterval(refresh, 5000);
     return () => clearInterval(timer);
   }, [pending, refresh]);
+
+  // While 3PandaLabs is adding the card to a new ad account, re-check once a
+  // minute so Launch appears without a reload. The renderer polls Google every
+  // five minutes; this only reads the result.
+  const awaitingSetup = adAccounts?.accounts.some(isAwaitingPlatformSetup) ?? false;
+  useEffect(() => {
+    if (!awaitingSetup) return;
+    const timer = setInterval(() => {
+      listAdAccounts().then(setAdAccounts).catch(() => undefined);
+    }, 60_000);
+    return () => clearInterval(timer);
+  }, [awaitingSetup]);
+
+  // One click: AdVault creates and pays for the customer's Google Ads account.
+  async function onSetUpAccount() {
+    setSettingUp(true);
+    setError(null);
+    try {
+      await provisionManagedAccount("platform", campaignId);
+      setAdAccounts(await listAdAccounts());
+    } catch (err) {
+      const code = err instanceof ApiError ? err.code : "request_failed";
+      setError(LAUNCH_ERRORS[code] ?? `Setup failed (${code}).`);
+    } finally {
+      setSettingUp(false);
+    }
+  }
 
   // Preview URLs expire in ten minutes, so they are fetched per rendered
   // creative rather than stored.
@@ -159,6 +196,11 @@ export default function CampaignDetailPage({
     (c) => c.renderStatus === "ready" && !c.youtubeVideoId,
   );
   const activeAccounts = adAccounts?.accounts.filter((a) => a.status === "active") ?? [];
+  // Accounts a campaign can go into right now. One still waiting for its card
+  // gets the "being set up" message instead of a button that would 409.
+  const launchableAccounts = activeAccounts.filter((a) => !isAwaitingPlatformSetup(a));
+  const launchedAccount = adAccounts?.accounts.find((a) => a.id === campaign.adAccountId);
+  const launchedForCustomer = launchedAccount?.billingMode === "platform";
 
   return (
     <div>
@@ -286,26 +328,52 @@ export default function CampaignDetailPage({
         <CardTitle>Launch</CardTitle>
         {campaign.googleCampaignResourceName ? (
           <CardDescription>
-            Sent to Google Ads. Open your Google Ads account to review it and switch it on — it
-            was created paused and is not spending yet.
+            {launchedForCustomer
+              ? "Your campaign is live. Google reviews new ads first, usually within a day, then they start showing in your area."
+              : "Sent to Google Ads. Open your Google Ads account to review it and switch it on — it was created paused and is not spending yet."}
           </CardDescription>
         ) : adAccounts && !adAccounts.configured ? (
           <CardDescription>{LAUNCH_ERRORS.google_ads_not_configured}</CardDescription>
         ) : activeAccounts.length === 0 ? (
-          <>
-            <CardDescription>
-              Set up a Google Ads account to launch this campaign, or connect one you already
-              have. AdVault creates the campaign paused — you switch it on yourself.
-            </CardDescription>
-            <div className="mt-4 flex flex-wrap gap-2">
-              <Link href="/dashboard/onboarding">
-                <Button>Set up an ad account</Button>
-              </Link>
-              <Link href="/dashboard/settings">
-                <Button variant="outline">Connect my own account</Button>
-              </Link>
-            </div>
-          </>
+          adAccounts?.managedOffered ? (
+            // The default path: the customer never needs a Google or YouTube
+            // account. AdVault creates the ad account and pays Google for it.
+            <>
+              <CardDescription>
+                AdVault runs your ads for you — no Google or YouTube account needed. We set up
+                your ad account once, which usually takes a few hours.
+              </CardDescription>
+              <div className="mt-4">
+                <Button disabled={settingUp} onClick={onSetUpAccount}>
+                  {settingUp ? "Setting up…" : "Set up my ad account"}
+                </Button>
+              </div>
+              <p className="mt-3 text-xs text-zinc-500">
+                Already run your own Google Ads?{" "}
+                <Link href="/dashboard/settings" className="underline">
+                  Connect it in Settings
+                </Link>
+                .
+              </p>
+            </>
+          ) : (
+            <>
+              <CardDescription>
+                Connect your Google Ads account to launch this campaign. AdVault creates the
+                campaign paused — you switch it on yourself.
+              </CardDescription>
+              <div className="mt-4">
+                <Link href="/dashboard/settings">
+                  <Button variant="outline">Connect Google Ads</Button>
+                </Link>
+              </div>
+            </>
+          )
+        ) : launchableAccounts.length === 0 ? (
+          <CardDescription>
+            We&apos;re setting up your ad account — nothing for you to do. Launch unlocks here
+            automatically, usually within a few hours.
+          </CardDescription>
         ) : ready.length === 0 ? (
           // Distinguishes the two waits, because they have different answers:
           // rendering finishes on its own, whereas a failed publish needs the
@@ -320,13 +388,13 @@ export default function CampaignDetailPage({
         ) : (
           <>
             <CardDescription>
-              This creates a paused campaign in your Google Ads account with a{" "}
-              {formatMoney(campaign.dailyBudgetCents, campaign.currencyCode)} daily budget. It
-              does not start spending until you enable it there.
+              {launchableAccounts.some((a) => a.billingMode === "platform")
+                ? `Launching starts your ads with a ${formatMoney(campaign.dailyBudgetCents, campaign.currencyCode)} daily budget, paid from your AdVault balance. Google reviews new ads first, usually within a day.`
+                : `This creates a paused campaign in your Google Ads account with a ${formatMoney(campaign.dailyBudgetCents, campaign.currencyCode)} daily budget. It does not start spending until you enable it there.`}
             </CardDescription>
             <SquareLogo onChange={setLogo} />
             <div className="mt-4 flex flex-wrap gap-2">
-              {activeAccounts.map((account) => (
+              {launchableAccounts.map((account) => (
                 <Button
                   key={account.id}
                   disabled={busy || !logo}
@@ -334,7 +402,9 @@ export default function CampaignDetailPage({
                 >
                   {busy
                     ? "Launching…"
-                    : `Launch to ${account.descriptiveName ?? account.customerId}`}
+                    : account.billingMode === "platform"
+                      ? "Launch my ads"
+                      : `Launch to ${account.descriptiveName ?? account.customerId}`}
                 </Button>
               ))}
             </div>

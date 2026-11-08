@@ -1,3 +1,4 @@
+import { freezeCardsForUser } from "../lib/billing/managedCard.js";
 import { and, eq, isNotNull } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { adAccounts, campaigns } from "../db/schema.js";
@@ -149,6 +150,14 @@ export async function runSpendSync(): Promise<{ synced: number; paused: number }
             campaignId: row.campaign.id,
             error: String(err),
           });
+          // The backstop: freeze their Mercury card so Google's next charge
+          // declines. Only here, not after a successful pause — Google still
+          // bills for ads already shown, and a declined charge flags the
+          // account.
+          await freezeCardsForUser(
+            row.campaign.userId,
+            `wallet empty and pausing campaign ${row.campaign.id} at Google failed`,
+          ).catch((e) => log("card freeze threw", { error: String(e) }));
         }
       }
     }

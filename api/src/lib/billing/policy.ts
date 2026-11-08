@@ -127,7 +127,8 @@ export type LaunchGate =
         | "account_revoked"
         | "provisioning_incomplete"
         | "billing_not_configured"
-        | "billing_link_failed";
+        | "billing_link_failed"
+        | "billing_setup_pending";
     };
 
 /**
@@ -149,14 +150,25 @@ export function billingGate(account: BillingAccountView): LaunchGate {
     return { ok: false, code: "provisioning_incomplete" };
   }
 
-  // Only the managed + customer-funded shape has a handshake to be mid-way
-  // through. BYO accounts already have billing (they predate us) and
-  // platform-funded ones are backed by the MCC.
+  // BYO accounts already have billing (they predate us), so only managed
+  // accounts have a handshake to be mid-way through.
   if (account.isManaged && account.billingMode === "customer") {
     if (account.billingLinkStatus === "failed") return { ok: false, code: "billing_link_failed" };
     if (account.billingLinkStatus !== "active") {
       return { ok: false, code: "billing_not_configured" };
     }
+  }
+
+  // Platform-funded: waiting for a 3PandaLabs operator to add the customer's
+  // card in Google Ads. Null means billing was attached automatically (an MCC
+  // with monthly invoicing), which needs no wait.
+  if (
+    account.isManaged &&
+    account.billingMode === "platform" &&
+    account.billingLinkStatus !== null &&
+    account.billingLinkStatus !== "active"
+  ) {
+    return { ok: false, code: "billing_setup_pending" };
   }
 
   return { ok: true };
@@ -169,11 +181,27 @@ export function requiresWalletCheck(account: Pick<BillingAccountView, "billingMo
 
 /** Rows the billing-link poller should re-check against Google. */
 export function needsBillingLinkPolling(account: BillingAccountView): boolean {
-  return (
-    account.isManaged &&
-    account.billingMode === "customer" &&
-    (account.billingLinkStatus === "pending" || account.billingLinkStatus === "invited")
-  );
+  if (!account.isManaged) return false;
+  if (account.billingMode === "platform") return account.billingLinkStatus === "pending";
+  return account.billingLinkStatus === "pending" || account.billingLinkStatus === "invited";
+}
+
+/**
+ * Monthly spending limit for a customer's Mercury card, in cents.
+ *
+ * A hard cap at the bank that sits behind the wallet guard: 31 days of every
+ * live daily budget plus 25% headroom, because Google charges whenever spend
+ * crosses a threshold and a declined charge pauses the ads and flags the
+ * account. Rounded up to $10 and never below $50, so a first charge with no
+ * campaign live yet still clears.
+ */
+export const CARD_LIMIT_FLOOR_CENTS = 5_000;
+
+export function monthlyCardLimitCents(dailyBudgetsCents: number[]): number {
+  const daily = dailyBudgetsCents.reduce((sum, c) => sum + Math.max(0, c), 0);
+  const raw = Math.ceil(daily * 31 * 1.25);
+  const rounded = Math.ceil(raw / 1_000) * 1_000;
+  return Math.max(CARD_LIMIT_FLOOR_CENTS, rounded);
 }
 
 // ---------------------------------------------------------------------------
@@ -228,3 +256,28 @@ export function canSwitchMode(
   if (!account.isManaged) return { ok: false, code: "unsupported_switch" };
   return { ok: true, requiresBillingLink: target === "customer" };
 }
+
+// ---------------------------------------------------------------------------
+// Platform billing: the operator's card step
+// ---------------------------------------------------------------------------
+
+/** How often the operator is reminded while a card is still missing. */
+export const REMINDER_EVERY_MS = 6 * 60 * 60 * 1000;
+export const MAX_REMINDERS = 8;
+
+/** 1234567890 -> 123-456-7890, the way Google Ads shows account ids. */
+export function formatCustomerId(id: string): string {
+  return /^\d{10}$/.test(id) ? `${id.slice(0, 3)}-${id.slice(3, 6)}-${id.slice(6)}` : id;
+}
+
+/** Pure: whether an account waiting for its card should alert now. */
+export function reminderDue(
+  account: { opsNotifiedAt: Date | null; opsReminderCount: number },
+  now: Date,
+): "first" | "reminder" | null {
+  // The first alert failed to deliver (ntfy down, not configured yet).
+  if (!account.opsNotifiedAt) return "first";
+  if (account.opsReminderCount >= MAX_REMINDERS) return null;
+  return now.getTime() - account.opsNotifiedAt.getTime() >= REMINDER_EVERY_MS ? "reminder" : null;
+}
+

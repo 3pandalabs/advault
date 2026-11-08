@@ -24,6 +24,7 @@ import { getObjectBytes } from "../plugins/r2.js";
 import { loadOwnedAdAccount, loadOwnedCampaign } from "../lib/ownership.js";
 import { canLaunch, MIN_FUNDED_DAYS } from "../lib/wallet/index.js";
 import { billingGate, requiresWalletCheck } from "../lib/billing/policy.js";
+import { syncCardLimit } from "../lib/billing/managedCard.js";
 
 // ---------------------------------------------------------------------------
 // THE ONLY ROUTE IN THIS CODEBASE THAT SPENDS MONEY.
@@ -32,10 +33,11 @@ import { billingGate, requiresWalletCheck } from "../lib/billing/policy.js";
 // reversible. This is the boundary. Keep it that way: no other route may call
 // the Google Ads mutate API, and `campaigns.status` reaches 'live' here alone.
 //
-// The campaign is created PAUSED at Google (see lib/googleAds/demandGen.ts). AdVault
-// hands the advertiser a fully-built, geotargeted, budgeted campaign; the
-// advertiser presses go in their own Google Ads account. Nothing here starts
-// serving impressions on its own.
+// For customer-billed and BYO accounts the campaign is created PAUSED at Google
+// (see lib/googleAds/demandGen.ts): the advertiser presses go in their own
+// Google Ads account. A platform-billed customer has no Google access, so for
+// them this Launch press IS the go-ahead and the campaign is created ENABLED —
+// only after the wallet guard below has required funds.
 //
 // ⚠️ WHAT THIS ROUTE GOT WRONG UNTIL 2026-10-24, because the shape of the bug
 // is worth keeping: it created a budget, a campaign and geo targets and then
@@ -113,10 +115,25 @@ export async function launchRoutes(app: FastifyInstance) {
               ? "The Google account invitation could not be completed. Resend it from Settings."
               : gate.code === "provisioning_incomplete"
                 ? "This ad account is still being set up."
-                : "This ad account is no longer connected.";
+                : gate.code === "billing_setup_pending"
+                  ? "We're finishing your ad account's setup. Launch unlocks automatically, usually within a few hours."
+                  : "This ad account is no longer connected.";
         return reply
           .code(gate.code === "account_revoked" ? 409 : 409)
           .send({ error: gate.code === "account_revoked" ? "ad_account_revoked" : gate.code, detail });
+      }
+
+      // -------------------------------------------------------------------
+      // CURRENCY. The budget is minor units of the CAMPAIGN's currency, and
+      // Google reads micros in the ACCOUNT's currency. A USD campaign launched
+      // into an INR account would spend 1/83rd of what was asked; the reverse,
+      // 83 times as much. Refuse rather than convert.
+      // -------------------------------------------------------------------
+      if (account.currencyCode && account.currencyCode !== campaign.currencyCode) {
+        return reply.code(409).send({
+          error: "currency_mismatch",
+          detail: `This campaign's budget is in ${campaign.currencyCode} but the ad account bills in ${account.currencyCode}.`,
+        });
       }
 
       // -------------------------------------------------------------------
@@ -320,6 +337,11 @@ export async function launchRoutes(app: FastifyInstance) {
             script: (uploaded[0]!.script ?? null) as AdCopyInput["script"],
           }),
           videos,
+          // A platform-billed customer has no Google Ads access, so a paused
+          // campaign is one nobody could ever switch on. Their Launch press is
+          // the go-ahead; the wallet guard above has already required funds,
+          // and spendSync pauses the campaign when they run out.
+          campaignStatus: account.billingMode === "platform" ? "ENABLED" : "PAUSED",
           logo: existingLogo
             ? { existing: existingLogo }
             : { name: logoAssetName(logo.id), base64: logoBytes.toString("base64") },
@@ -366,14 +388,23 @@ export async function launchRoutes(app: FastifyInstance) {
           .set({ googleAdResourceName: result.adResourceName })
           .where(inArray(creatives.id, uploaded.map((c) => c.id)));
 
+        // A platform customer's card limit tracks what they have live. Never
+        // throws; a failure is logged and the old limit stays.
+        if (account.billingMode === "platform") {
+          await syncCardLimit(req.userId!).catch((err) =>
+            req.log.error({ err }, "card limit sync after launch failed"),
+          );
+        }
+
         return {
           campaign: updated,
           ...zipCodes,
           adsAttached: uploaded.length,
-          // Said plainly in the response as well as the UI: the campaign is
-          // built, has its ad in it, and is not serving — enabling it is the
-          // advertiser's call.
-          note: "Campaign created in PAUSED state with its ad attached. Review it in Google Ads and enable it when ready.",
+          // Said plainly in the response as well as the UI.
+          note:
+            plan.campaignStatus === "ENABLED"
+              ? "Your campaign is live. Google reviews new ads first, usually within a day, then they start showing."
+              : "Campaign created in PAUSED state with its ad attached. Review it in Google Ads and enable it when ready.",
         };
       } catch (err) {
         const detail = describeGoogleAdsError(err);
