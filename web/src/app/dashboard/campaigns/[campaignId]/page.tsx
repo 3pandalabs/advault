@@ -348,13 +348,9 @@ export default function CampaignDetailPage({
                   {settingUp ? "Setting up…" : "Set up my ad account"}
                 </Button>
               </div>
-              <p className="mt-3 text-xs text-zinc-500">
-                Already run your own Google Ads?{" "}
-                <Link href="/dashboard/settings" className="underline">
-                  Connect it in Settings
-                </Link>
-                .
-              </p>
+              {/* Deliberately no "connect your own Google Ads" link here: the
+                  managed path is the product. Bring-your-own stays reachable
+                  in Settings for the rare advertiser who insists. */}
             </>
           ) : (
             <>
