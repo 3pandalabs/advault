@@ -15,15 +15,22 @@ import { issueOAuthState, verifyOAuthState } from "../lib/googleAds/oauthState.j
 import { getCustomerDetails, listAccessibleCustomers } from "../lib/googleAds/client.js";
 import { decryptToken } from "../lib/crypto.js";
 import { loadOwnedAdAccount } from "../lib/ownership.js";
-import { createChildAccount, defaultTimeZone, isMccConfigured } from "../lib/googleAds/mcc.js";
-import { billingSetupUrl } from "../lib/googleAds/billingLink.js";
+import {
+  createChildAccount,
+  defaultTimeZone,
+  isMccConfigured,
+} from "../lib/googleAds/mcc.js";
+import { billingSetupUrl, managerCustomerId } from "../lib/googleAds/billingLink.js";
 import { refreshCustomerBillingLink, startCustomerBillingLink } from "../lib/billing/link.js";
 import {
   cancelCardForAccount,
   refreshPlatformBilling,
+  startOperatorProvisioning,
   startPlatformBilling,
 } from "../lib/billing/managedCard.js";
 import {
+  isCreationDeniedIneligible,
+  makeProvisionRef,
   offeredModes,
   offeredModeList,
   resolveRequestedMode,
@@ -73,7 +80,9 @@ function toPublicAdAccount(row: typeof adAccounts.$inferSelect) {
     // Only meaningful mid-handshake, but cheap and stable, and it saves the
     // dashboard from reconstructing a Google URL itself.
     billingUrl:
-      row.isManaged && row.billingMode === "customer" ? billingSetupUrl(row.customerId) : null,
+      row.isManaged && row.billingMode === "customer" && row.customerId
+        ? billingSetupUrl(row.customerId)
+        : null,
   };
 }
 
@@ -139,6 +148,31 @@ export async function adAccountRoutes(app: FastifyInstance) {
     // Mercury cards, so they are USD accounts whatever the customer's market.
     // Account currency is immutable at Google.
     const currency = (billingMode === "platform" ? "USD" : user.currencyCode) as Currency;
+
+    // Earlier failed attempts are placeholders with nothing behind them at
+    // Google. Clear them so Settings doesn't list a dead "reconnect" account.
+    await db
+      .delete(adAccounts)
+      .where(
+        and(
+          eq(adAccounts.userId, req.userId!),
+          eq(adAccounts.isManaged, true),
+          eq(adAccounts.provisionStatus, "failed"),
+        ),
+      );
+
+    // The campaign that prompted setup sizes the first card limit. Looked up
+    // server-side rather than taking a number from the client: it is our cap.
+    let initialDailyBudgetCents: number | undefined;
+    if (body.data.campaignId) {
+      const [c] = await db
+        .select({ cents: campaigns.dailyBudgetCents })
+        .from(campaigns)
+        .where(and(eq(campaigns.id, body.data.campaignId), eq(campaigns.userId, req.userId!)))
+        .limit(1);
+      initialDailyBudgetCents = c?.cents;
+    }
+
     try {
       const result = await createChildAccount({
         descriptiveName: user.businessName ?? user.email,
@@ -184,15 +218,6 @@ export async function adAccountRoutes(app: FastifyInstance) {
       // successful provision — so it is recorded on the row and surfaced, not
       // thrown. Both branches return 201.
       if (billingMode === "platform") {
-        let initialDailyBudgetCents: number | undefined;
-        if (body.data.campaignId) {
-          const [c] = await db
-            .select({ cents: campaigns.dailyBudgetCents })
-            .from(campaigns)
-            .where(and(eq(campaigns.id, body.data.campaignId), eq(campaigns.userId, req.userId!)))
-            .limit(1);
-          initialDailyBudgetCents = c?.cents;
-        }
         // Never throws: creates the Mercury card and alerts the operator, or
         // attaches billing automatically where Google allows it.
         await startPlatformBilling(row, { initialDailyBudgetCents });
@@ -211,6 +236,54 @@ export async function adAccountRoutes(app: FastifyInstance) {
       const [fresh] = await db.select().from(adAccounts).where(eq(adAccounts.id, row.id)).limit(1);
       return reply.code(201).send(toPublicAdAccount(fresh ?? row));
     } catch (err) {
+      // ---------------------------------------------------------------
+      // Google won't let this MCC create accounts yet (none of its linked
+      // accounts has spent $1,000). For a platform customer that is OUR
+      // problem, not theirs: an operator creates the account by hand with a
+      // reference code in its name, and the renderer sweep picks it up. The
+      // customer just sees "being set up". Disappears by itself once the MCC
+      // becomes eligible, because the automatic path above is tried first.
+      // ---------------------------------------------------------------
+      if (billingMode === "platform" && isCreationDeniedIneligible(err)) {
+        req.log.warn({ userId: req.userId }, "MCC not eligible to create accounts; operator will create it");
+        const mcc = managerCustomerId();
+        let row: typeof adAccounts.$inferSelect | undefined;
+        // A reference code collision is astronomically rare; retry anyway.
+        for (let attempt = 0; attempt < 3 && !row; attempt++) {
+          try {
+            [row] = await db
+              .insert(adAccounts)
+              .values({
+                userId: req.userId!,
+                provider: "google_ads",
+                customerId: null,
+                descriptiveName: user.businessName ?? null,
+                currencyCode: "USD",
+                timeZone: defaultTimeZone("USD"),
+                loginCustomerId: mcc,
+                managerCustomerId: mcc,
+                isManaged: true,
+                refreshTokenCiphertext: null,
+                isTestAccount: "unknown",
+                status: "active",
+                provisionStatus: "pending",
+                provisionRef: makeProvisionRef(),
+                billingMode: "platform",
+                billingLinkStatus: "pending",
+              })
+              .returning();
+          } catch (insertErr) {
+            if ((insertErr as { code?: string }).code !== "23505") throw insertErr;
+          }
+        }
+        if (!row) throw new Error("could not allocate a provision reference");
+
+        // Never throws: creates the card and alerts the operator.
+        await startOperatorProvisioning(row, { initialDailyBudgetCents });
+        const [fresh] = await db.select().from(adAccounts).where(eq(adAccounts.id, row.id)).limit(1);
+        return reply.code(201).send(toPublicAdAccount(fresh ?? row));
+      }
+
       const detail = err instanceof Error ? err.message : String(err);
       req.log.error({ err }, "MCC child account provisioning failed");
 

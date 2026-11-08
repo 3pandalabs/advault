@@ -262,6 +262,15 @@ Platform specifics worth not undoing:
   account. A top-up unfreezes.
 - Mercury's API never returns full card numbers, so the operator copies the
   number from the Mercury app. That step is irreducible, not unfinished.
+- **Until the MCC is eligible, the operator also creates the account.** Google
+  refuses `CreateCustomerClient` (`CREATION_DENIED_INELIGIBLE_MCC`) until an
+  account linked to the MCC has spent over $1,000. The platform path then
+  inserts a row with `customer_id` NULL, `provision_status` 'pending' and a
+  `provision_ref` like `AV-7K2Q`; the operator creates the account with that
+  code in its name and links it, and the renderer sweep matches it
+  (`findOperatorAccount`). Automatic creation is always tried first, so this
+  disappears by itself once Google allows creation. Don't make `customer_id`
+  non-null again without handling these rows.
 
 Which modes a deployment offers is `ADVAULT_BILLING_MODES`. Offering one is a
 single-path onboarding; offering both adds the choice step. Removing the choice

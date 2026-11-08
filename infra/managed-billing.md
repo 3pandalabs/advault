@@ -9,7 +9,40 @@ customer's prepaid AdVault wallet.
 monthly invoicing, each new customer's account needs a card added by hand. That
 is the one manual step, and it is the operator's, never the customer's.
 
-## The flow
+## Right now: you also create the account (until $1,000 of spend)
+
+Google refuses to let a new manager account create accounts — UI and API
+alike — until an account linked under it has spent **over $1,000** with a clean
+policy record (`CREATION_DENIED_INELIGIBLE_MCC`, since March 2025). AdVault
+tries automatic creation first every time, and when Google refuses it falls
+back to you:
+
+1. The customer presses **Set up my ad account** and sees "being set up".
+   AdVault gives them a reference code (e.g. `AV-7K2Q`), creates their Mercury
+   card, and your phone gets **"AdVault: create account for <business>"**.
+2. In **Google Ads**, signed in as 3pandalabs@gmail.com, create a **new
+   account** (not under the manager). Name it **exactly** as the alert says —
+   `AdVault — <business> [AV-7K2Q]` — currency **USD**, time zone
+   **America/New_York**. When it pushes you to make a campaign, switch to
+   Expert mode and choose to create the account without a campaign.
+3. In that new account: **Billing → 3PandaLabs payments profile → add the
+   card** named in the alert (full number from the Mercury app).
+4. In the **manager account (641-518-4348)**: Accounts → **+** → **Link
+   existing account** → enter the new account's ID. Then, inside the new
+   account, accept the manager's request (Admin → Access and security →
+   Managers).
+5. Within 5 minutes the renderer finds the linked account by the `AV-` code in
+   its name, attaches it to the customer, sees the card, and unlocks Launch.
+
+If the account was created in the wrong currency, you get a "wrong currency"
+alert: currency can't be changed, so make a new USD account with the same name
+and unlink the wrong one. `counts.platformAwaitingAccount` on the admin page is
+this step's to-do list.
+
+Once linked accounts pass $1,000 of spend, Google allows creation, AdVault's
+first attempt succeeds, and this whole section stops applying — no code change.
+
+## The flow (once the manager can create accounts)
 
 1. The customer presses **Set up my ad account** on a campaign's Launch card
    (or goes through `/dashboard/onboarding`).

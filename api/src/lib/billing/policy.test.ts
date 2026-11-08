@@ -2,7 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
   billingGate,
   canSwitchMode,
+  findOperatorAccount,
   formatCustomerId,
+  isCreationDeniedIneligible,
+  makeProvisionRef,
+  operatorAccountName,
   invoiceShapeFor,
   monthlyCardLimitCents,
   needsBillingLinkPolling,
@@ -333,5 +337,46 @@ describe("formatCustomerId", () => {
 
   it("leaves anything else alone", () => {
     expect(formatCustomerId("12345")).toBe("12345");
+  });
+});
+
+describe("operator-created accounts", () => {
+  it("makes AV- codes without look-alike characters", () => {
+    for (let i = 0; i < 200; i++) expect(makeProvisionRef()).toMatch(/^AV-[A-HJ-NP-Z2-9]{4}$/);
+    expect(makeProvisionRef(() => 0)).toBe("AV-AAAA");
+  });
+
+  it("keeps the code in the name even for a long business name", () => {
+    expect(operatorAccountName("Sharma Salon", "AV-7K2Q")).toBe("AdVault — Sharma Salon [AV-7K2Q]");
+    expect(operatorAccountName("x".repeat(300), "AV-7K2Q").endsWith("[AV-7K2Q]")).toBe(true);
+  });
+
+  const client = (id: string, name: string | null, extra: object = {}) => ({
+    id,
+    descriptiveName: name,
+    currencyCode: "USD",
+    manager: false,
+    status: "ENABLED",
+    ...extra,
+  });
+
+  it("finds the account by its code, case-insensitively and without brackets", () => {
+    const clients = [client("111", "Other"), client("222", "advault - sharma salon av-7k2q")];
+    expect(findOperatorAccount("AV-7K2Q", clients, new Set())?.id).toBe("222");
+  });
+
+  it("never matches an account another customer already has, a manager, or a closed one", () => {
+    const tagged = "AdVault — X [AV-7K2Q]";
+    expect(findOperatorAccount("AV-7K2Q", [client("222", tagged)], new Set(["222"]))).toBeNull();
+    expect(findOperatorAccount("AV-7K2Q", [client("222", tagged, { manager: true })], new Set())).toBeNull();
+    expect(findOperatorAccount("AV-7K2Q", [client("222", tagged, { status: "CANCELED" })], new Set())).toBeNull();
+  });
+
+  it("recognises Google's not-eligible-to-create error and nothing else", () => {
+    const denied = { details: [{ errors: [{ errorCode: { customerError: "CREATION_DENIED_INELIGIBLE_MCC" } }] }] };
+    const other = { details: [{ errors: [{ errorCode: { fieldError: "REQUIRED" } }] }] };
+    expect(isCreationDeniedIneligible(denied)).toBe(true);
+    expect(isCreationDeniedIneligible(other)).toBe(false);
+    expect(isCreationDeniedIneligible(new Error("x"))).toBe(false);
   });
 });

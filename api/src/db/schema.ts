@@ -105,8 +105,10 @@ export const adAccounts = pgTable(
     provider: text("provider").notNull().default("google_ads"),
 
     // The advertiser's own Google Ads customer id, digits only, no dashes —
-    // dashes are display formatting and the API rejects them.
-    customerId: text("customer_id").notNull(),
+    // dashes are display formatting and the API rejects them. NULL only while a
+    // platform account waits for an operator to create it in Google Ads
+    // (provision_status = 'pending'; see provisionRef).
+    customerId: text("customer_id"),
     descriptiveName: text("descriptive_name"),
     currencyCode: text("currency_code"),
     timeZone: text("time_zone"),
@@ -134,6 +136,10 @@ export const adAccounts = pgTable(
     provisionStatus: text("provision_status"),
     provisionError: text("provision_error"),
     provisionedAt: timestamp("provisioned_at", { withTimezone: true }),
+    // Short code ("AV-7K2Q") an operator puts in the account's name when
+    // Google won't let the MCC create accounts itself; the renderer sweep
+    // matches linked MCC children on it.
+    provisionRef: text("provision_ref"),
 
     // --- Who pays Google ----------------------------------------------------
     // Orthogonal to isManaged, which only says whether *we* provisioned the
@@ -234,7 +240,13 @@ export const adAccounts = pgTable(
     check("ad_accounts_test_check", sql`${t.isTestAccount} in ('yes','no','unknown')`),
     // Digits only. A customer id with dashes reaches Google as a 400 that reads
     // like an auth failure.
-    check("ad_accounts_customer_id_check", sql`${t.customerId} ~ '^[0-9]{5,20}$'`),
+    check(
+      "ad_accounts_customer_id_check",
+      sql`${t.customerId} ~ '^[0-9]{5,20}$' or (${t.customerId} is null and ${t.provisionStatus} = 'pending')`,
+    ),
+    uniqueIndex("uq_ad_accounts_provision_ref")
+      .on(t.provisionRef)
+      .where(sql`${t.provisionRef} is not null`),
   ],
 );
 
