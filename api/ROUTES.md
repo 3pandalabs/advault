@@ -63,10 +63,10 @@ CLAUDE.md.
 
 | Method | Path | Notes |
 |---|---|---|
-| GET | `/ad-accounts` | `{ configured, accounts }` — `configured` is false until the developer token is set. |
+| GET | `/ad-accounts` | `{ configured, managedOffered, accounts }` — `configured` is false until Google Ads credentials are set; `managedOffered` says AdVault can create and pay for an account itself (platform billing). |
 | GET | `/ad-accounts/google/authorize-url` | 503 `google_ads_not_configured`. Issues the signed, single-use state. |
 | POST | `/ad-accounts/google/callback` | Exchanges the code server-side. May return `{ needsSelection, customerIds }`. |
-| POST | `/ad-accounts/managed` | Creates an MCC child. Body `{ billingMode }` — required when both modes are offered, refused when the requested one is not. Idempotent per user. 503 `google_ads_mcc_not_configured`. |
+| POST | `/ad-accounts/managed` | Creates an MCC child. Body `{ billingMode, campaignId? }` — `billingMode` required when both modes are offered, refused when the requested one is not; `campaignId` sizes the first Mercury card limit. Platform accounts are created in USD, get a Mercury card and an operator alert, and wait in `billingLinkStatus: 'pending'` until the card is on (see infra/managed-billing.md). Idempotent per user. 503 `google_ads_mcc_not_configured`. |
 | DELETE | `/ad-accounts/:adAccountId` | Revokes at Google best-effort, then deletes the row. The managed child is **not** deleted at Google. |
 
 `ad_accounts` responses are shaped exclusively by `toPublicAdAccount()` in
@@ -103,7 +103,7 @@ signup offline.
 
 | Method | Path | Notes |
 |---|---|---|
-| POST | `/campaigns/:campaignId/launch` | **The only route in this codebase that spends money.** Body `{ adAccountId, validateOnly? }`. Builds a paused **Demand Gen** campaign in one atomic Google request. `validateOnly: true` is a dry run: Google checks everything, nothing is created, and the billing and wallet gates are skipped. |
+| POST | `/campaigns/:campaignId/launch` | **The only route in this codebase that spends money.** Body `{ adAccountId, validateOnly? }`. Builds a **Demand Gen** campaign in one atomic Google request: PAUSED for customer-billed and BYO accounts, ENABLED for platform-billed ones (the customer has no Google access to switch it on). `validateOnly: true` is a dry run: Google checks everything, nothing is created, and the billing and wallet gates are skipped. |
 
 Two guards run in order, and they ask different questions. The **billing gate**
 asks whether Google will accept spend on this account at all; the **wallet
@@ -113,6 +113,7 @@ guard** asks whether we can afford it, and applies only to
 Failure codes worth handling in a client: `google_ads_not_configured` (503),
 `ad_account_revoked` (409), `billing_not_configured` (409),
 `billing_link_failed` (409), `provisioning_incomplete` (409),
+`billing_setup_pending` (409, waiting for the operator's card), `currency_mismatch` (409),
 `insufficient_funds` (402), `no_ready_creatives` (409), `already_launched` (409),
 `no_resolvable_zip_codes` (400), `logo_required` (409), `logo_invalid` (409,
 with `reason`), `manager_account` (409), `google_ads_error` (502, `detail`

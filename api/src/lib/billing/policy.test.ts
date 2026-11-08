@@ -2,10 +2,15 @@ import { describe, expect, it } from "vitest";
 import {
   billingGate,
   canSwitchMode,
+  formatCustomerId,
   invoiceShapeFor,
+  monthlyCardLimitCents,
   needsBillingLinkPolling,
   offeredModeList,
   offeredModes,
+  reminderDue,
+  REMINDER_EVERY_MS,
+  MAX_REMINDERS,
   requiresWalletCheck,
   resolveRequestedMode,
   shouldPromptForMode,
@@ -265,5 +270,68 @@ describe("canSwitchMode", () => {
     expect(
       canSwitchMode(account({ billingMode: "platform", billingLinkStatus: null }), "customer", both),
     ).toEqual({ ok: true, requiresBillingLink: true });
+  });
+});
+
+describe("platform billing awaiting the operator's card", () => {
+  const platform = (billingLinkStatus: "pending" | "active" | null) =>
+    account({ billingMode: "platform", billingLinkStatus });
+
+  it("blocks launch until the card is on the Google Ads account", () => {
+    expect(billingGate(platform("pending"))).toEqual({ ok: false, code: "billing_setup_pending" });
+    expect(billingGate(platform("active"))).toEqual({ ok: true });
+  });
+
+  it("polls Google while waiting, and stops once active", () => {
+    expect(needsBillingLinkPolling(platform("pending"))).toBe(true);
+    expect(needsBillingLinkPolling(platform("active"))).toBe(false);
+  });
+});
+
+describe("monthlyCardLimitCents", () => {
+  it("covers 31 days of every live budget with 25% headroom, rounded up to $10", () => {
+    // $15/day -> $465 -> $581.25 -> $590
+    expect(monthlyCardLimitCents([1_500])).toBe(59_000);
+    // $15 + $10 -> $25/day -> $968.75 -> $970
+    expect(monthlyCardLimitCents([1_500, 1_000])).toBe(97_000);
+  });
+
+  it("never goes below the $50 floor, even with nothing live", () => {
+    expect(monthlyCardLimitCents([])).toBe(5_000);
+    expect(monthlyCardLimitCents([100])).toBe(5_000);
+  });
+
+  it("ignores negative budgets rather than lowering the limit", () => {
+    expect(monthlyCardLimitCents([1_500, -10_000])).toBe(59_000);
+  });
+});
+
+describe("reminderDue", () => {
+  const now = new Date("2026-11-08T12:00:00Z");
+  const ago = (ms: number) => new Date(now.getTime() - ms);
+
+  it("sends the first alert when none was ever delivered", () => {
+    expect(reminderDue({ opsNotifiedAt: null, opsReminderCount: 0 }, now)).toBe("first");
+  });
+
+  it("waits the full interval between alerts", () => {
+    expect(reminderDue({ opsNotifiedAt: ago(REMINDER_EVERY_MS - 1), opsReminderCount: 0 }, now)).toBeNull();
+    expect(reminderDue({ opsNotifiedAt: ago(REMINDER_EVERY_MS), opsReminderCount: 0 }, now)).toBe("reminder");
+  });
+
+  it("stops after the reminder cap", () => {
+    expect(
+      reminderDue({ opsNotifiedAt: ago(REMINDER_EVERY_MS * 10), opsReminderCount: MAX_REMINDERS }, now),
+    ).toBeNull();
+  });
+});
+
+describe("formatCustomerId", () => {
+  it("dashes a 10-digit id the way Google Ads shows it", () => {
+    expect(formatCustomerId("6415184348")).toBe("641-518-4348");
+  });
+
+  it("leaves anything else alone", () => {
+    expect(formatCustomerId("12345")).toBe("12345");
   });
 });

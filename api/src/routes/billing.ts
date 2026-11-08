@@ -1,3 +1,4 @@
+import { unfreezeCardsForUser } from "../lib/billing/managedCard.js";
 import { and, eq } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
@@ -370,6 +371,13 @@ export async function billingRoutes(app: FastifyInstance) {
           return reply.code(200).send({ ok: true, duplicate: true });
         }
         throw err;
+      }
+
+      // Money is back: undo any freeze on their Mercury card. Never throws.
+      if (payment.purpose === "topup") {
+        await unfreezeCardsForUser(payment.userId).catch((err) =>
+          req.log.error({ err }, "card unfreeze after top-up failed"),
+        );
       }
 
       return reply.code(200).send({ ok: true });

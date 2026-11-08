@@ -108,6 +108,12 @@ describe("buildLaunchOperations", () => {
     expect(ofType(list, "assetOperation")).toHaveLength(1);
   });
 
+  // Platform-billed customers cannot reach Google Ads to switch it on.
+  it("creates the campaign ENABLED only when asked to", () => {
+    const [campaign] = ofType(ops({ ...basePlan, campaignStatus: "ENABLED" }), "campaignOperation");
+    expect(campaign!.status).toBe("ENABLED");
+  });
+
   it("refuses to build a launch with no locations", () => {
     expect(() => ops({ ...basePlan, geoTargetConstants: [] })).toThrow(/no location/);
   });

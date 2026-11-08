@@ -179,6 +179,12 @@ export type LaunchPlan = {
   /** One per published creative: an existing asset, or a video to create. */
   videos: ({ existing: string } | { youtubeVideoId: string; title: string })[];
   logo: { existing: string } | { name: string; base64: string };
+  /**
+   * PAUSED unless the customer has no Google access to switch it on: a
+   * platform-billed customer's Launch press IS the go-ahead, and the wallet
+   * guard has already required funds. Defaults to PAUSED.
+   */
+  campaignStatus?: "PAUSED" | "ENABLED";
 };
 
 // Temp ids. Negative numbers are Google's convention for "created in this
@@ -229,9 +235,10 @@ export function buildLaunchOperations(plan: LaunchPlan): unknown[] {
         targetSpend: {},
         // Required on every new campaign since the EU political ads rules.
         containsEuPoliticalAdvertising: "DOES_NOT_CONTAIN_EU_POLITICAL_ADVERTISING",
-        // PAUSED, always. Enabling is the advertiser's deliberate second step
-        // in their own Google Ads account.
-        status: "PAUSED",
+        // PAUSED by default: enabling is the advertiser's deliberate second
+        // step in their own Google Ads account. Platform-billed customers have
+        // no Google access, so for them Launch is that step (see LaunchPlan).
+        status: plan.campaignStatus ?? "PAUSED",
       },
     },
   });

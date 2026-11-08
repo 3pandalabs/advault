@@ -6,6 +6,7 @@ import {
   disconnectYouTubeChannel,
   getYouTubeChannel,
   googleAuthorizeUrl,
+  isAwaitingPlatformSetup,
   listAdAccounts,
   youtubeAuthorizeUrl,
   type AdAccount,
@@ -168,6 +169,8 @@ export default function SettingsPage() {
                     account.billingLinkStatus !== "active" && (
                       <Badge tone="pending">Billing incomplete</Badge>
                     )}
+                  {/* Waiting on 3PandaLabs, not on the advertiser. */}
+                  {isAwaitingPlatformSetup(account) && <Badge tone="pending">Being set up</Badge>}
                   {account.status === "revoked" ? (
                     <>
                       <Badge tone="danger">Reconnect needed</Badge>

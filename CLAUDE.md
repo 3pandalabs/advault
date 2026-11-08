@@ -233,13 +233,35 @@ either on `is_managed` would demand a wallet balance from an advertiser whose
 card Google already has, and would auto-pause campaigns we never funded.
 
 **There is no Google Ads API that adds a payment method.** `BillingSetupService`
-only links a payments account that already exists. So `platform` is fully
-automatic and `customer` is not automatable at all: the advertiser accepts an
-account invitation and enters a card in Google's own UI, and the only signal
-available is polling for a funded `billing_setup`. Do not add a "mark as done"
-control — a self-reported yes produces a campaign that launches successfully and
-then silently never serves, which is strictly worse than an honest blocked
-state.
+only links a payments account that already exists. For `customer`, the
+advertiser accepts an account invitation and enters a card in Google's own UI.
+For `platform` — the default, where customers never touch Google — a payments
+account is only listable from a CHILD account once the MCC has monthly
+invoicing, which it doesn't yet. So `lib/billing/managedCard.ts` creates a
+per-customer **Mercury virtual debit card**, alerts an operator via ntfy to add
+it in Google Ads, and polls until a funded `billing_setup` appears
+(`billing_link_status` 'pending' → 'active'; `billing_setup_pending` at launch
+until then). Full runbook: `infra/managed-billing.md`.
+
+Either way the only signal is polling for a funded `billing_setup`. Do not add
+a "mark as done" control — a self-reported yes produces a campaign that
+launches successfully and then silently never serves, which is strictly worse
+than an honest blocked state.
+
+Platform specifics worth not undoing:
+
+- **Platform campaigns launch ENABLED.** The customer has no Google access, so
+  a paused campaign is one nobody could ever switch on. Their Launch press is
+  the go-ahead; the wallet guard has already required funds. Customer-billed
+  and BYO launches stay PAUSED.
+- **Platform accounts are USD** (US payments profile, USD Mercury cards), and
+  launch refuses a campaign whose currency differs from the account's
+  (`currency_mismatch`) — a mismatch silently multiplies or divides spend.
+- **The card freeze is a backstop for a FAILED pause only.** After a successful
+  pause Google still bills for ads already shown; a declined charge flags the
+  account. A top-up unfreezes.
+- Mercury's API never returns full card numbers, so the operator copies the
+  number from the Mercury app. That step is irreducible, not unfinished.
 
 Which modes a deployment offers is `ADVAULT_BILLING_MODES`. Offering one is a
 single-path onboarding; offering both adds the choice step. Removing the choice

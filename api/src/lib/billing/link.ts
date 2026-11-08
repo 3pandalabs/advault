@@ -3,18 +3,16 @@ import { db } from "../../db/index.js";
 import { adAccounts } from "../../db/schema.js";
 import { mccAccessToken } from "../googleAds/mcc.js";
 import {
-  attachPlatformBilling,
   billingSetupUrl,
   getInvitationState,
   hasActiveBillingSetup,
   inviteCustomerUser,
-  listPaymentsAccounts,
   managerCustomerId,
 } from "../googleAds/billingLink.js";
 import type { BillingLinkStatus } from "./policy.js";
 
-// Orchestration for putting a payment source behind a freshly provisioned child
-// account. The pure decisions live in ./policy.ts; this is the part that talks
+// Orchestration for the CUSTOMER-billed handshake on a freshly provisioned
+// child account (platform billing lives in ./managedCard.ts). The pure decisions live in ./policy.ts; this is the part that talks
 // to Google and writes rows.
 //
 // Every function here is written to RECORD failure rather than throw it at the
@@ -23,12 +21,6 @@ import type { BillingLinkStatus } from "./policy.js";
 // leave a retryable row, not an orphaned customer.
 
 type AccountRow = typeof adAccounts.$inferSelect;
-
-export class NoMccPaymentsAccount extends Error {
-  constructor() {
-    super("mcc_has_no_payments_account");
-  }
-}
 
 async function setLinkState(
   accountId: string,
@@ -43,52 +35,6 @@ async function setLinkState(
   }>,
 ): Promise<void> {
   await db.update(adAccounts).set(patch).where(eq(adAccounts.id, accountId));
-}
-
-/**
- * Points a managed child at the MCC's payments account — the whole of Option A's
- * billing setup, and the only part of onboarding that needs no human.
- *
- * Throws NoMccPaymentsAccount when nobody has ever entered a card for the
- * manager account. That is a deployment problem rather than an advertiser one,
- * and it should be loud: every platform-funded signup will fail the same way
- * until it is fixed.
- */
-export async function attachPlatformBillingToAccount(account: AccountRow): Promise<string> {
-  const managerId = account.managerCustomerId ?? managerCustomerId();
-  if (!managerId) throw new Error("no_manager_customer_id");
-
-  const accessToken = await mccAccessToken();
-
-  const paymentsAccounts = await listPaymentsAccounts({
-    accessToken,
-    customerId: managerId,
-    loginCustomerId: managerId,
-  });
-  if (paymentsAccounts.length === 0) throw new NoMccPaymentsAccount();
-
-  // Prefer a payments account whose currency matches the child. Google will
-  // reject a mismatch, and the error it returns names neither account.
-  const match =
-    paymentsAccounts.find((p) => p.currencyCode && p.currencyCode === account.currencyCode) ??
-    paymentsAccounts[0];
-
-  await attachPlatformBilling({
-    accessToken,
-    childCustomerId: account.customerId,
-    paymentsAccountResourceName: match.resourceName,
-    loginCustomerId: managerId,
-  });
-
-  await setLinkState(account.id, {
-    billingPaymentsAccountId: match.paymentsAccountId,
-    billingConfirmedAt: new Date(),
-    // Platform-funded accounts have no invitation handshake, and the schema
-    // CHECK requires this stay null for them.
-    billingLinkStatus: null,
-  });
-
-  return match.paymentsAccountId;
 }
 
 export type CustomerLinkStart = {

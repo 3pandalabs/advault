@@ -37,12 +37,17 @@ export type PaymentsAccount = {
 };
 
 /**
- * Payments accounts visible to `customerId` — in practice the MCC, which is the
- * only account in this system that has one.
+ * Payments accounts usable by `customerId`, which MUST be a serving (child)
+ * account, reached with the MCC as `loginCustomerId`. Google lists the
+ * payments accounts of every manager between the two.
  *
- * A manager with no payments account returns an empty list rather than an
- * error, which is the case worth handling: it means nobody has ever entered a
- * card for the MCC, and platform billing cannot work until someone does.
+ * Asking the MCC itself fails with NOT_SUPPORTED_FOR_MANAGER_CUSTOMER, and the
+ * path is `/paymentsAccounts`, not `:list` (which 404s). Both were wrong here
+ * until 2026-11-08, so platform billing had never worked.
+ *
+ * An empty list is the normal answer today: the MCC has no monthly invoicing,
+ * so platform-billed accounts get a per-customer card added by an operator
+ * instead (lib/billing/managedCard.ts).
  */
 export async function listPaymentsAccounts(args: {
   accessToken: string;
@@ -56,7 +61,7 @@ export async function listPaymentsAccounts(args: {
       name?: string;
       currencyCode?: string;
     }[];
-  }>(`/customers/${args.customerId}/paymentsAccounts:list`, args.accessToken, {
+  }>(`/customers/${args.customerId}/paymentsAccounts`, args.accessToken, {
     method: "GET",
     loginCustomerId: args.loginCustomerId,
   });

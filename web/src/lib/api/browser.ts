@@ -126,6 +126,8 @@ export type Asset = {
 export type CampaignStatus = "draft" | "rendering" | "ready" | "live" | "paused" | "failed";
 
 export type Campaign = {
+  /** The ad account it was launched into; null until launch. */
+  adAccountId: string | null;
   spendMinorToDate: number;
   pausedForFundsAt: string | null;
   id: string;
@@ -248,7 +250,7 @@ export const getCampaign = (id: string) =>
 export const listAssets = () => api<Asset[]>("/assets");
 
 export const listAdAccounts = () =>
-  api<{ configured: boolean; accounts: AdAccount[] }>("/ad-accounts");
+  api<{ configured: boolean; managedOffered?: boolean; accounts: AdAccount[] }>("/ad-accounts");
 
 export function login(email: string, password: string) {
   return api<{ accessToken: string; refreshToken: string }>("/auth/login", {
@@ -412,11 +414,27 @@ export function topUp(amountMinor: number) {
 // `billingMode` is required whenever the deployment offers both — the API
 // refuses to guess, because defaulting would silently put an advertiser on
 // AdVault's credit card. Call billingOptions() first.
-export const provisionManagedAccount = (billingMode?: BillingMode) =>
+// `campaignId` is the campaign that prompted setup; its budget sizes the first
+// spending limit on the customer's card (platform billing).
+export const provisionManagedAccount = (billingMode?: BillingMode, campaignId?: string) =>
   api<AdAccount & { invitationSent?: boolean; billingWarning?: string; billingDetail?: string }>(
     "/ad-accounts/managed",
-    { method: "POST", body: JSON.stringify(billingMode ? { billingMode } : {}) },
+    {
+      method: "POST",
+      body: JSON.stringify({
+        ...(billingMode ? { billingMode } : {}),
+        ...(campaignId ? { campaignId } : {}),
+      }),
+    },
   );
+
+/**
+ * A platform-billed account waiting for 3PandaLabs to add its card in Google
+ * Ads. The customer has nothing to do; launch unlocks on its own.
+ */
+export function isAwaitingPlatformSetup(a: AdAccount): boolean {
+  return a.isManaged && a.billingMode === "platform" && a.billingLinkStatus === "pending";
+}
 
 export const billingOptions = () => api<BillingOptions>("/ad-accounts/billing-options");
 

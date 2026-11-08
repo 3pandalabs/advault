@@ -36,6 +36,7 @@ type CountsRow = {
   platform_funded_accounts: number;
   customer_funded_accounts: number;
   billing_link_incomplete: number;
+  platform_awaiting_card: number;
   active_sessions: number;
   paying_subscribers: number;
   past_due_subscribers: number;
@@ -103,6 +104,7 @@ export async function metricsRoutes(app: FastifyInstance) {
         (select count(*) from ad_accounts where status = 'active' and billing_mode = 'platform')::int as platform_funded_accounts,
         (select count(*) from ad_accounts where status = 'active' and billing_mode = 'customer')::int as customer_funded_accounts,
         (select count(*) from ad_accounts where status = 'active' and billing_link_status in ('pending','invited'))::int as billing_link_incomplete,
+        (select count(*) from ad_accounts where status = 'active' and billing_mode = 'platform' and billing_link_status = 'pending')::int as platform_awaiting_card,
         (select count(*) from sessions where expires_at > now())::int as active_sessions,
         -- Revenue. Until subscriptions existed these were all structurally zero:
         -- every plan carried a monthly fee of 0 and no 'fee' ledger row was ever
@@ -170,6 +172,9 @@ export async function metricsRoutes(app: FastifyInstance) {
         // recovered from wallets; customerFunded ones cost the org nothing.
         platformFundedAccounts: c.platform_funded_accounts,
         customerFundedAccounts: c.customer_funded_accounts,
+        // A work item, not a statistic: customers waiting on an operator to
+        // add their Mercury card in Google Ads before they can launch.
+        platformAwaitingCard: c.platform_awaiting_card,
         // The onboarding funnel's leak, and the second thing worth alerting on.
         // These advertisers finished signup, got an ad account, and then never
         // completed the Google billing step — so they can never launch and

@@ -280,6 +280,14 @@ export default function PrivacyPage() {
             <td>To run the ad, and to host the video the ad plays</td>
           </tr>
           <tr>
+            <td>Mercury (our bank)</td>
+            <td>Your business name, as the label on the payment card we use for your ads</td>
+            <td>
+              When AdVault pays Google for your ads, each customer gets their own card so
+              spending is capped and accounted for separately
+            </td>
+          </tr>
+          <tr>
             <td>Cloudflare</td>
             <td>Your uploaded photos and finished videos; site traffic</td>
             <td>File storage, and serving the website</td>

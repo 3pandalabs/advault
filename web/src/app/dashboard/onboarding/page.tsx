@@ -6,6 +6,7 @@ import {
   adAccountBillingStatus,
   billingOptions,
   listAdAccounts,
+  isAwaitingPlatformSetup,
   provisionManagedAccount,
   resendBillingInvite,
   type AdAccount,
@@ -67,17 +68,6 @@ export default function OnboardingPage() {
         const created = await provisionManagedAccount(mode);
         setAccount(created);
         if (typeof created.invitationSent === "boolean") setInvitationSent(created.invitationSent);
-
-        if (created.billingWarning === "mcc_has_no_payments_account") {
-          // An operator problem, not this advertiser's. Say so plainly rather
-          // than blaming their setup: every platform signup fails identically
-          // until someone adds a card to the manager account.
-          setError(
-            "Your ad account was created, but AdVault's own billing is not set up yet. We have been notified — there is nothing more for you to do here.",
-          );
-          setPhase("done");
-          return;
-        }
 
         setPhase(needsLinking(created) ? "linking" : "done");
       } catch (err) {
@@ -309,15 +299,21 @@ export default function OnboardingPage() {
       {phase === "done" && account && (
         <Card className="mt-6">
           <div className="flex items-center justify-between gap-3">
-            <CardTitle>Your ad account is ready</CardTitle>
+            <CardTitle>
+              {isAwaitingPlatformSetup(account)
+                ? "We're setting up your ad account"
+                : "Your ad account is ready"}
+            </CardTitle>
             <Badge tone="success">
               {account.billingMode === "platform" ? "We pay Google" : "You pay Google"}
             </Badge>
           </div>
           <CardDescription>
-            {account.billingMode === "platform"
-              ? "Top up your balance and your campaigns can go live. We pause them automatically if the balance runs out, so nothing overspends."
-              : "Google bills your card for ad spend. We bill you for your plan separately."}
+            {isAwaitingPlatformSetup(account)
+              ? "Nothing for you to do: we finish the setup on our side, usually within a few hours. Meanwhile, create your first ad and top up your balance — Launch unlocks by itself once we're done."
+              : account.billingMode === "platform"
+                ? "Top up your balance and your campaigns can go live. We pause them automatically if the balance runs out, so nothing overspends."
+                : "Google bills your card for ad spend. We bill you for your plan separately."}
           </CardDescription>
           <div className="mt-5 flex flex-wrap gap-3">
             <Button onClick={() => router.push("/dashboard/campaigns/new")}>

@@ -3,7 +3,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { requireAuth } from "../auth/plugin.js";
 import { db } from "../db/index.js";
-import { adAccounts, users } from "../db/schema.js";
+import { adAccounts, campaigns, users } from "../db/schema.js";
 import { encryptToken } from "../lib/crypto.js";
 import { isOAuthConfigured, isGoogleAdsConfigured } from "../lib/googleAds/env.js";
 import {
@@ -17,12 +17,12 @@ import { decryptToken } from "../lib/crypto.js";
 import { loadOwnedAdAccount } from "../lib/ownership.js";
 import { createChildAccount, defaultTimeZone, isMccConfigured } from "../lib/googleAds/mcc.js";
 import { billingSetupUrl } from "../lib/googleAds/billingLink.js";
+import { refreshCustomerBillingLink, startCustomerBillingLink } from "../lib/billing/link.js";
 import {
-  attachPlatformBillingToAccount,
-  NoMccPaymentsAccount,
-  refreshCustomerBillingLink,
-  startCustomerBillingLink,
-} from "../lib/billing/link.js";
+  cancelCardForAccount,
+  refreshPlatformBilling,
+  startPlatformBilling,
+} from "../lib/billing/managedCard.js";
 import {
   offeredModes,
   offeredModeList,
@@ -97,7 +97,13 @@ export async function adAccountRoutes(app: FastifyInstance) {
     }
 
     const body = z
-      .object({ billingMode: z.enum(["platform", "customer"]).optional() })
+      .object({
+        billingMode: z.enum(["platform", "customer"]).optional(),
+        // The campaign that prompted the setup, if any. Its budget sizes the
+        // first monthly limit on the customer's card. Looked up server-side
+        // rather than taking a number from the client: the limit is our cap.
+        campaignId: z.string().uuid().optional(),
+      })
       .safeParse(req.body ?? {});
     if (!body.success) return reply.code(400).send({ error: "invalid_billing_mode" });
 
@@ -129,7 +135,10 @@ export async function adAccountRoutes(app: FastifyInstance) {
       return reply.code(200).send(toPublicAdAccount(existing));
     }
 
-    const currency = user.currencyCode as Currency;
+    // Platform accounts are paid with 3PandaLabs' US payments profile and USD
+    // Mercury cards, so they are USD accounts whatever the customer's market.
+    // Account currency is immutable at Google.
+    const currency = (billingMode === "platform" ? "USD" : user.currencyCode) as Currency;
     try {
       const result = await createChildAccount({
         descriptiveName: user.businessName ?? user.email,
@@ -159,9 +168,10 @@ export async function adAccountRoutes(app: FastifyInstance) {
           provisionStatus: "active",
           provisionedAt: new Date(),
           billingMode,
-          // Customer-funded children start the invitation handshake below;
-          // platform-funded ones must leave this null (schema CHECK).
-          billingLinkStatus: billingMode === "customer" ? "pending" : null,
+          // Both start waiting: customer-funded on the advertiser's card,
+          // platform-funded on the operator adding the Mercury card (or
+          // straight to 'active' if Google can attach billing automatically).
+          billingLinkStatus: "pending",
         })
         .onConflictDoUpdate({
           target: [adAccounts.userId, adAccounts.provider, adAccounts.customerId],
@@ -174,26 +184,18 @@ export async function adAccountRoutes(app: FastifyInstance) {
       // successful provision — so it is recorded on the row and surfaced, not
       // thrown. Both branches return 201.
       if (billingMode === "platform") {
-        try {
-          await attachPlatformBillingToAccount(row);
-        } catch (err) {
-          const detail = err instanceof Error ? err.message : String(err);
-          req.log.error({ err, adAccountId: row.id }, "platform billing attach failed");
-
-          // No payments account on the MCC is an operator problem that will
-          // break every platform signup identically until someone fixes it.
-          // Surfaced distinctly so it does not read as this advertiser's fault.
-          const code =
-            err instanceof NoMccPaymentsAccount ? "mcc_has_no_payments_account" : "billing_attach_failed";
-          const [fresh] = await db
-            .select()
-            .from(adAccounts)
-            .where(eq(adAccounts.id, row.id))
+        let initialDailyBudgetCents: number | undefined;
+        if (body.data.campaignId) {
+          const [c] = await db
+            .select({ cents: campaigns.dailyBudgetCents })
+            .from(campaigns)
+            .where(and(eq(campaigns.id, body.data.campaignId), eq(campaigns.userId, req.userId!)))
             .limit(1);
-          return reply
-            .code(201)
-            .send({ ...toPublicAdAccount(fresh ?? row), billingWarning: code, billingDetail: detail });
+          initialDailyBudgetCents = c?.cents;
         }
+        // Never throws: creates the Mercury card and alerts the operator, or
+        // attaches billing automatically where Google allows it.
+        await startPlatformBilling(row, { initialDailyBudgetCents });
       } else {
         const link = await startCustomerBillingLink(row, user.email);
         const [fresh] = await db.select().from(adAccounts).where(eq(adAccounts.id, row.id)).limit(1);
@@ -265,6 +267,20 @@ export async function adAccountRoutes(app: FastifyInstance) {
           ...toPublicAdAccount(account),
           billingConfigured: account.billingLinkStatus === "active",
           polling: false,
+        };
+      }
+
+      if (account.billingMode === "platform") {
+        const status = await refreshPlatformBilling(account);
+        const [fresh] = await db
+          .select()
+          .from(adAccounts)
+          .where(eq(adAccounts.id, account.id))
+          .limit(1);
+        return {
+          ...toPublicAdAccount(fresh ?? account),
+          billingConfigured: status === "active",
+          polling: status !== "active",
         };
       }
 
@@ -362,7 +378,7 @@ export async function adAccountRoutes(app: FastifyInstance) {
         // guard does not catch — so it is surfaced as a warning, loudly.
         await db
           .update(adAccounts)
-          .set({ billingMode: "platform", billingLinkStatus: null })
+          .set({ billingMode: "platform", billingLinkStatus: "pending" })
           .where(eq(adAccounts.id, account.id));
 
         const [flipped] = await db
@@ -371,13 +387,7 @@ export async function adAccountRoutes(app: FastifyInstance) {
           .where(eq(adAccounts.id, account.id))
           .limit(1);
 
-        try {
-          await attachPlatformBillingToAccount(flipped);
-        } catch (err) {
-          const detail = err instanceof Error ? err.message : String(err);
-          req.log.error({ err, adAccountId: account.id }, "billing mode switch to platform failed");
-          return reply.code(502).send({ error: "billing_attach_failed", detail });
-        }
+        await startPlatformBilling(flipped);
       } else {
         await db
           .update(adAccounts)
@@ -420,6 +430,9 @@ export async function adAccountRoutes(app: FastifyInstance) {
       // infra/google-ads-setup.md — the developer token is a manual review and
       // is the slow part of standing this app up.
       configured: isGoogleAdsConfigured(),
+      // Whether AdVault can set up and pay for an account itself, so the
+      // campaign page offers one-click setup instead of "connect Google Ads".
+      managedOffered: currentOfferedModes().platform,
       accounts: rows.map(toPublicAdAccount),
     };
   });
@@ -573,6 +586,10 @@ export async function adAccountRoutes(app: FastifyInstance) {
           req.log.warn({ err, adAccountId }, "failed to revoke the Google refresh token");
         }
       }
+
+      // A platform account's Mercury card is useless without it. Best-effort;
+      // a failure alerts the operator to cancel it by hand.
+      if (account.mercuryCardId) await cancelCardForAccount(account);
 
       await db.delete(adAccounts).where(eq(adAccounts.id, adAccountId));
       return reply.code(204).send();
