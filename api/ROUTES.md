@@ -55,9 +55,11 @@ CLAUDE.md.
 |---|---|---|
 | POST | `/campaigns/:campaignId/creatives/generate` | **202.** Writes the scripts, queues the renders, returns. One creative per requested aspect ratio. |
 | GET | `/campaigns/:campaignId/creatives` | |
-| PATCH | `/creatives/:creativeId/script` | Hand-edited copy, re-validated against the generator's own schema. Re-queues the render. |
+| PATCH | `/creatives/:creativeId/script` | Hand-edited copy, re-validated against the generator's own schema. Re-queues the render. 409 `creative_is_upload` for uploaded videos. |
 | POST | `/creatives/:creativeId/retry` | 409 `already_rendering`. |
 | POST | `/creatives/download-url` | Authorized by the key's `campaigns/<id>/` prefix. |
+| POST | `/campaigns/:campaignId/creatives/upload-url` | **Admin only**, own campaigns only. Body `{width, height, durationSeconds}` (read in the browser); refuses non-9:16/16:9, <720p, <5s or >180s. Returns `{creativeId, uploadUrl, contentType}` for a PUT to R2. |
+| POST | `/campaigns/:campaignId/creatives/upload` | **Admin only.** Confirms the PUT: HEADs the object (exists, video/mp4, ≤200 MB), inserts a `kind='upload'` creative already `ready`, queues the YouTube upload. 201. |
 
 ## Google Ads
 

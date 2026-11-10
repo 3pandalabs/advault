@@ -6,6 +6,7 @@ import {
   ApiError,
   creativeDownloadUrl,
   getCampaign,
+  getMe,
   isAwaitingPlatformSetup,
   launchCampaign,
   listAdAccounts,
@@ -18,6 +19,7 @@ import {
   type Creative,
 } from "@/lib/api/browser";
 import { SquareLogo } from "./square-logo";
+import { AdminVideoUpload } from "./admin-video-upload";
 import { Badge, Card, CardDescription, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { formatDuration, formatMoney } from "@/lib/utils";
@@ -86,6 +88,7 @@ export default function CampaignDetailPage({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [logo, setLogo] = useState<Asset | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
 
   const refresh = useCallback(
     () => getCampaign(campaignId).then(setCampaign).catch(() => setError("Could not load this campaign.")),
@@ -95,6 +98,7 @@ export default function CampaignDetailPage({
   useEffect(() => {
     refresh();
     listAdAccounts().then(setAdAccounts).catch(() => undefined);
+    getMe().then((me) => setIsAdmin(me.role === "admin")).catch(() => undefined);
   }, [refresh]);
 
   // Poll while anything is still encoding. The API returns 202 from the
@@ -237,7 +241,9 @@ export default function CampaignDetailPage({
                   {creative.aspectRatio === "9:16" ? "Shorts (9:16)" : "Pre-roll (16:9)"}
                 </CardTitle>
                 <CardDescription>
-                  {creative.script?.hook ?? "Writing the script…"}
+                  {creative.kind === "upload"
+                    ? "Uploaded video"
+                    : (creative.script?.hook ?? "Writing the script…")}
                   {creative.renderStatus === "ready" &&
                     ` · ${formatDuration(creative.durationSeconds)}`}
                 </CardDescription>
@@ -323,6 +329,10 @@ export default function CampaignDetailPage({
           </Card>
         ))}
       </div>
+
+      {isAdmin && !campaign.googleCampaignResourceName && (
+        <AdminVideoUpload campaignId={campaignId} onUploaded={refresh} />
+      )}
 
       <Card className="mt-6">
         <CardTitle>Launch</CardTitle>

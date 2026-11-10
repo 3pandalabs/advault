@@ -161,6 +161,15 @@ export async function creativeRoutes(app: FastifyInstance) {
       const owned = await loadOwnedCreative(creativeId, req.userId!, reply);
       if (!owned) return;
 
+      // An uploaded video has no script or photos to render from; re-rendering
+      // would overwrite the uploaded MP4 with an empty slideshow.
+      if (owned.creative.kind === "upload") {
+        return reply.code(409).send({
+          error: "creative_is_upload",
+          detail: "This video was uploaded, not made by AdVault, so it cannot be edited. Upload a new version instead.",
+        });
+      }
+
       // A creative that is already an ad at Google cannot be edited in place.
       // The ad references a YouTube video asset, and re-rendering would produce
       // a different video that the live ad does not point at — so the edit
@@ -216,6 +225,15 @@ export async function creativeRoutes(app: FastifyInstance) {
       const { creativeId } = req.params as { creativeId: string };
       const owned = await loadOwnedCreative(creativeId, req.userId!, reply);
       if (!owned) return;
+
+      // An uploaded video has no script or photos to render from; re-rendering
+      // would overwrite the uploaded MP4 with an empty slideshow.
+      if (owned.creative.kind === "upload") {
+        return reply.code(409).send({
+          error: "creative_is_upload",
+          detail: "This video was uploaded, not made by AdVault, so it cannot be re-rendered. Upload a new version instead.",
+        });
+      }
       if (owned.creative.renderStatus === "rendering") {
         return reply.code(409).send({ error: "already_rendering" });
       }

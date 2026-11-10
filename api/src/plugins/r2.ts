@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { DeleteObjectCommand, GetObjectCommand, HeadObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { env } from "../env.js";
 
@@ -70,6 +70,20 @@ export async function putObject(key: string, body: Buffer, contentType: string):
   await r2.send(
     new PutObjectCommand({ Bucket: env.R2_BUCKET, Key: key, Body: body, ContentType: contentType }),
   );
+}
+
+// Size and type of an object as R2 stored it, or null if it does not exist.
+// Used to check a browser upload actually landed (and how big it really is)
+// before a row points at it.
+export async function headObject(key: string): Promise<{ sizeBytes: number; contentType: string | null } | null> {
+  try {
+    const res = await r2.send(new HeadObjectCommand({ Bucket: env.R2_BUCKET, Key: key }));
+    return { sizeBytes: res.ContentLength ?? 0, contentType: res.ContentType ?? null };
+  } catch (err) {
+    const status = (err as { $metadata?: { httpStatusCode?: number } }).$metadata?.httpStatusCode;
+    if (status === 404) return null;
+    throw err;
+  }
 }
 
 // Best-effort delete — called when an advertiser removes an asset, so the
