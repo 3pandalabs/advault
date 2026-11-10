@@ -576,6 +576,9 @@ export const creatives = pgTable(
     //   different cost per unit, and a different failure policy (a cinematic
     //   render that fails is a refund, not a downgraded ad), so the renderer has
     //   to be able to tell them apart before it starts.
+    // 'upload' — a finished MP4 an admin uploaded (routes/uploads.ts). Never
+    //   rendered: it is inserted ready and goes straight to the YouTube queue,
+    //   so the edit and re-render routes refuse it.
     kind: text("kind").notNull().default("standard"),
     // The order that paid for this creative. Null for everything the
     // subscription produces.
@@ -624,6 +627,7 @@ export const creatives = pgTable(
     check("creatives_aspect_check", sql`${t.aspectRatio} in ('16:9','9:16')`),
     check("creatives_motion_source_check", sql`${t.motionSource} in ('none','kling','luma')`),
     check("creatives_voice_source_check", sql`${t.voiceSource} in ('none','edge-tts','elevenlabs')`),
+    check("creatives_kind_check", sql`${t.kind} in ('standard','cinematic','upload')`),
     check(
       "creatives_render_status_check",
       sql`${t.renderStatus} in ('queued','rendering','ready','failed')`,

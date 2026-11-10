@@ -191,6 +191,19 @@ a green path with a broken product at the end of it.
 `counts.renderedNotOnYouTube` and `counts.liveCampaignsWithoutAds` in `/metrics`
 exist to make this visible; the second should be **0 forever**.
 
+## Uploaded videos are admin-only (step 1)
+
+`routes/uploads.ts` lets an **admin** attach a finished MP4 (e.g. AdVault's own
+brand ad) to **their own** campaign as a `kind = 'upload'` creative. It is inserted
+`ready` only after a HEAD proves the object is in R2, skips the renderer, and
+joins the normal YouTube queue and launch. Uploads are always flagged as
+synthetic media on YouTube. Edit and re-render refuse them (`creative_is_upload`):
+there is nothing to render from, and a render would overwrite the MP4.
+
+Opening this to customers needs a human review queue first — a bad video in a
+paid placement is the advertiser's money and our name. Don't just drop
+`requireAdmin`.
+
 ## Google Ads API access: developer tokens are gone, and the version pin is load-bearing
 
 **Developer tokens were sunset on 9 Sep 2026.** API access level is now a

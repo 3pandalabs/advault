@@ -168,6 +168,9 @@ export type Creative = {
   thumbnailKey: string | null;
   durationSeconds: number | null;
   createdAt: string;
+  // 'upload' = a finished MP4 an admin uploaded; it has no script and cannot
+  // be edited or re-rendered.
+  kind: "standard" | "cinematic" | "upload";
 
   // Whether this ad exists on YouTube yet, which is a harder requirement than
   // it sounds: a Google Ads video ad references a YouTube video id, never an
@@ -377,6 +380,42 @@ export async function uploadAsset(file: File, kind: "photo" | "logo" = "photo"):
       sizeBytes: file.size,
       originalFilename: file.name,
     }),
+  });
+}
+
+// Width, height and length of a local video file, read by the browser.
+function readVideoMeta(file: File): Promise<{ width: number; height: number; durationSeconds: number }> {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const v = document.createElement("video");
+    v.preload = "metadata";
+    v.onloadedmetadata = () => {
+      resolve({ width: v.videoWidth, height: v.videoHeight, durationSeconds: v.duration });
+      URL.revokeObjectURL(url);
+    };
+    v.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("unreadable"));
+    };
+    v.src = url;
+  });
+}
+
+// Admin-only: upload a finished MP4 as a ready creative of this campaign.
+// Same three steps as uploadAsset: presign, PUT straight to R2, confirm.
+export async function uploadCreativeVideo(campaignId: string, file: File): Promise<Creative> {
+  if (file.type !== "video/mp4") throw new Error("not_mp4");
+  if (file.size > 200 * 1024 * 1024) throw new Error("too_large");
+  const meta = await readVideoMeta(file);
+  const { creativeId, uploadUrl, contentType } = await api<{ creativeId: string; uploadUrl: string; contentType: string }>(
+    `/campaigns/${campaignId}/creatives/upload-url`,
+    { method: "POST", body: JSON.stringify(meta) },
+  );
+  const put = await fetch(uploadUrl, { method: "PUT", headers: { "content-type": contentType }, body: file });
+  if (!put.ok) throw new ApiError(put.status, "upload_failed");
+  return api<Creative>(`/campaigns/${campaignId}/creatives/upload`, {
+    method: "POST",
+    body: JSON.stringify({ ...meta, creativeId }),
   });
 }
 

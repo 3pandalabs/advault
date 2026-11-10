@@ -176,6 +176,7 @@ export async function loadCreativeForUpload(creativeId: string) {
       youtubeVideoId: creatives.youtubeVideoId,
       youtubeChannelSource: creatives.youtubeChannelSource,
       motionSource: creatives.motionSource,
+      kind: creatives.kind,
       voiceSource: creatives.voiceSource,
       businessName: campaigns.businessName,
       campaignName: campaigns.name,

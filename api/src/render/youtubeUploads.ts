@@ -91,7 +91,9 @@ async function processJob(job: YouTubeUploadJob): Promise<void> {
     // clip, or a synthesised voiceover, is altered/synthetic media. The default
     // pipeline (Ken Burns stills, no voice) is neither, so this is derived from
     // what the render actually used rather than hardcoded either way.
-    synthetic: creative.motionSource !== "none" || creative.voiceSource !== "none",
+    // Admin uploads (kind 'upload') are AdVault's own AI-made ads, so they
+    // always disclose. Revisit when customers can upload their own footage.
+    synthetic: creative.kind === "upload" || creative.motionSource !== "none" || creative.voiceSource !== "none",
   });
 
   await completeUploadJob(job, { youtubeVideoId, source: credential.source });
