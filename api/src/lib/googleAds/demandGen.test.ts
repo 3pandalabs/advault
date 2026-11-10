@@ -114,6 +114,11 @@ describe("buildLaunchOperations", () => {
     expect(campaign!.status).toBe("ENABLED");
   });
 
+  it("targets only people present in the locations, not those interested in them", () => {
+    const [campaign] = ofType(ops(), "campaignOperation");
+    expect(campaign!.geoTargetTypeSetting).toEqual({ positiveGeoTargetType: "PRESENCE" });
+  });
+
   it("refuses to build a launch with no locations", () => {
     expect(() => ops({ ...basePlan, geoTargetConstants: [] })).toThrow(/no location/);
   });

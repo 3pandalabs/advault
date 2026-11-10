@@ -235,6 +235,11 @@ export function buildLaunchOperations(plan: LaunchPlan): unknown[] {
         targetSpend: {},
         // Required on every new campaign since the EU political ads rules.
         containsEuPoliticalAdvertising: "DOES_NOT_CONTAIN_EU_POLITICAL_ADVERTISING",
+        // Only people IN (or regularly in) the chosen ZIP codes. Google
+        // defaults to presence-or-interest, which also shows the ad to people
+        // elsewhere who merely search about the area: wasted budget for a
+        // walk-in shop, and it would make "local views" untrue.
+        geoTargetTypeSetting: { positiveGeoTargetType: "PRESENCE" },
         // PAUSED by default: enabling is the advertiser's deliberate second
         // step in their own Google Ads account. Platform-billed customers have
         // no Google access, so for them Launch is that step (see LaunchPlan).

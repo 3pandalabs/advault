@@ -136,6 +136,10 @@ orphaned a budget on every failure. Don't split it back up.
   `assets.kind = 'logo'` with `lib/imageSize.ts` before any Google call
   (`logo_required` / `logo_invalid`).
 - **Location targeting lives on the ad group** for Demand Gen, not the campaign.
+- **Location targeting is PRESENCE only** (`geoTargetTypeSetting` on the campaign).
+  Google defaults to presence-or-interest, which also serves people elsewhere who
+  merely search about the area. A walk-in shop pays for those views, and the
+  brand ad promises *local* views.
 - **Ad text is derived, not asked for.** `buildAdCopy()` takes the script's hook
   and body plus the business fields, fitted to Google's limits (business name
   25, headline 40, long headline 90, description 90) — Google rejects
