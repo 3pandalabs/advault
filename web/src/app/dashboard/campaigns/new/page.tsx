@@ -10,6 +10,7 @@ import {
   getMe,
   listAssets,
   uploadAsset,
+  uploadCreativeVideo,
   type Asset,
 } from "@/lib/api/browser";
 import { Button } from "@/components/ui/button";
@@ -56,6 +57,11 @@ export default function NewCampaignPage() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
+  // Admins choose where the ad video comes from: photos (AdVault makes it) or a
+  // finished MP4 they upload, in which case nothing is generated.
+  const [source, setSource] = useState<"photos" | "video">("photos");
+  const [videoFile, setVideoFile] = useState<File | null>(null);
+  const useVideo = isAdmin && source === "video";
 
   // Step 1 — assets
   const [assets, setAssets] = useState<Asset[]>([]);
@@ -154,10 +160,7 @@ export default function NewCampaignPage() {
     );
   }
 
-  // withVideos=false is the admin path: create the campaign only, then upload a
-  // finished video on the campaign page. Generating as well would put
-  // AdVault-made videos into the same ad as the uploaded one.
-  async function onFinish(withVideos = true) {
+  async function onFinish() {
     setBusy(true);
     setError(null);
 
@@ -184,7 +187,19 @@ export default function NewCampaignPage() {
       // 202 — the API writes the scripts and queues the renders, then returns.
       // Encoding takes ~30s per creative, so the campaign page polls rather
       // than this request blocking on ffmpeg.
-      if (withVideos) {
+      if (useVideo && videoFile) {
+        // The upload replaces generation entirely: generating as well would put
+        // AdVault-made videos into the same ad as the uploaded one.
+        try {
+          await uploadCreativeVideo(campaign.id, videoFile);
+        } catch (err) {
+          const code = err instanceof ApiError ? err.code : err instanceof Error ? err.message : "error";
+          // The campaign exists; send the admin to it, where the upload card retries.
+          setError(`The campaign was created, but the video upload failed (${code}). Opening the campaign so you can upload it again…`);
+          setTimeout(() => router.push(`/dashboard/campaigns/${campaign.id}`), 2500);
+          return;
+        }
+      } else {
         await generateCreatives(campaign.id, { assetIds: selectedAssetIds, aspectRatios });
       }
       router.push(`/dashboard/campaigns/${campaign.id}`);
@@ -203,7 +218,7 @@ export default function NewCampaignPage() {
     }
   }
 
-  const canAdvanceFrom1 = selectedAssetIds.length >= 1;
+  const canAdvanceFrom1 = useVideo ? videoFile !== null : selectedAssetIds.length >= 1;
   const canAdvanceFrom2 =
     form.name.trim() &&
     form.businessName.trim() &&
@@ -220,7 +235,7 @@ export default function NewCampaignPage() {
       <h1 className="text-2xl font-semibold tracking-tight">New campaign</h1>
 
       <ol className="mt-6 mb-8 flex items-center gap-2 text-sm">
-        {["Photos", "Where & how much", "Formats"].map((label, i) => (
+        {(useVideo ? ["Video", "Where & how much"] : ["Photos", "Where & how much", "Formats"]).map((label, i, all) => (
           <li key={label} className="flex items-center gap-2">
             <span
               className={
@@ -233,7 +248,7 @@ export default function NewCampaignPage() {
             >
               {i + 1}. {label}
             </span>
-            {i < 2 && <span className="text-zinc-700">—</span>}
+            {i < all.length - 1 && <span className="text-zinc-700">—</span>}
           </li>
         ))}
       </ol>
@@ -244,7 +259,65 @@ export default function NewCampaignPage() {
         </p>
       )}
 
-      {step === 1 && (
+      {step === 1 && isAdmin && (
+        <div className="mb-4 flex gap-2" role="radiogroup" aria-label="Ad video source">
+          {(
+            [
+              ["photos", "Use photos — AdVault makes the video"],
+              ["video", "Upload a finished video (admin)"],
+            ] as const
+          ).map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              role="radio"
+              aria-checked={source === value}
+              onClick={() => setSource(value)}
+              className={`rounded-lg border px-4 py-2 text-sm ${
+                source === value
+                  ? "border-amber-400 bg-amber-400/10 text-amber-200"
+                  : "border-white/10 text-zinc-400 hover:border-white/25"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {step === 1 && useVideo && (
+        <Card>
+          <CardTitle>Upload the finished ad video</CardTitle>
+          <CardDescription>
+            MP4, vertical (9:16) or wide (16:9), at least 720p, 5 seconds to 3 minutes, up to 200
+            MB. AdVault makes no videos for this campaign; this one is published to YouTube
+            (labelled as AI-made) and used by Launch.
+          </CardDescription>
+          <div className="mt-5">
+            <label className="inline-flex cursor-pointer items-center rounded-lg border border-white/15 bg-white/5 px-4 py-2 text-sm hover:bg-white/10">
+              <input
+                type="file"
+                accept="video/mp4"
+                className="hidden"
+                onChange={(e) => setVideoFile(e.target.files?.[0] ?? null)}
+              />
+              {videoFile ? "Choose a different video" : "Choose video"}
+            </label>
+            {videoFile && (
+              <p className="mt-3 text-sm text-zinc-300">
+                {videoFile.name} · {(videoFile.size / (1024 * 1024)).toFixed(1)} MB
+              </p>
+            )}
+          </div>
+          <div className="mt-6 flex justify-end">
+            <Button onClick={() => setStep(2)} disabled={!canAdvanceFrom1}>
+              Continue
+            </Button>
+          </div>
+        </Card>
+      )}
+
+      {step === 1 && !useVideo && (
         <Card>
           <CardTitle>Add photos of your business</CardTitle>
           <CardDescription>
@@ -453,9 +526,15 @@ export default function NewCampaignPage() {
             <Button variant="ghost" onClick={() => setStep(1)}>
               Back
             </Button>
-            <Button onClick={() => setStep(3)} disabled={!canAdvanceFrom2}>
-              Continue
-            </Button>
+            {useVideo ? (
+              <Button onClick={onFinish} disabled={busy || !canAdvanceFrom2}>
+                {busy ? "Creating and uploading…" : "Create campaign and upload video"}
+              </Button>
+            ) : (
+              <Button onClick={() => setStep(3)} disabled={!canAdvanceFrom2}>
+                Continue
+              </Button>
+            )}
           </div>
         </Card>
       )}
@@ -502,16 +581,9 @@ export default function NewCampaignPage() {
             <Button variant="ghost" onClick={() => setStep(2)}>
               Back
             </Button>
-            <div className="flex gap-3">
-              {isAdmin && (
-                <Button variant="outline" onClick={() => onFinish(false)} disabled={busy}>
-                  Create without videos (admin)
-                </Button>
-              )}
-              <Button onClick={() => onFinish()} disabled={busy || aspectRatios.length === 0}>
-                {busy ? "Creating…" : "Generate my ads"}
-              </Button>
-            </div>
+            <Button onClick={onFinish} disabled={busy || aspectRatios.length === 0}>
+              {busy ? "Creating…" : "Generate my ads"}
+            </Button>
           </div>
         </Card>
       )}
