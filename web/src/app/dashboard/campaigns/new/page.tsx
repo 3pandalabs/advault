@@ -55,6 +55,7 @@ export default function NewCampaignPage() {
   const [step, setStep] = useState(1);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
 
   // Step 1 — assets
   const [assets, setAssets] = useState<Asset[]>([]);
@@ -82,14 +83,15 @@ export default function NewCampaignPage() {
     // Prefill from the profile so an advertiser who filled this in at signup
     // does not type it again.
     getMe()
-      .then((me) =>
+      .then((me) => {
+        setIsAdmin(me.role === "admin");
         setForm((f) => ({
           ...f,
           businessName: f.businessName || (me.businessName ?? ""),
           businessCategory: f.businessCategory || (me.businessCategory ?? ""),
           name: f.name || (me.businessName ? `${me.businessName} — local reach` : ""),
-        })),
-      )
+        }));
+      })
       .catch(() => undefined);
 
     listAssets().then(setAssets).catch(() => undefined);
@@ -152,7 +154,10 @@ export default function NewCampaignPage() {
     );
   }
 
-  async function onFinish() {
+  // withVideos=false is the admin path: create the campaign only, then upload a
+  // finished video on the campaign page. Generating as well would put
+  // AdVault-made videos into the same ad as the uploaded one.
+  async function onFinish(withVideos = true) {
     setBusy(true);
     setError(null);
 
@@ -179,7 +184,9 @@ export default function NewCampaignPage() {
       // 202 — the API writes the scripts and queues the renders, then returns.
       // Encoding takes ~30s per creative, so the campaign page polls rather
       // than this request blocking on ffmpeg.
-      await generateCreatives(campaign.id, { assetIds: selectedAssetIds, aspectRatios });
+      if (withVideos) {
+        await generateCreatives(campaign.id, { assetIds: selectedAssetIds, aspectRatios });
+      }
       router.push(`/dashboard/campaigns/${campaign.id}`);
     } catch (err) {
       if (err instanceof ApiError && err.code === "invalid_request") {
@@ -495,9 +502,16 @@ export default function NewCampaignPage() {
             <Button variant="ghost" onClick={() => setStep(2)}>
               Back
             </Button>
-            <Button onClick={onFinish} disabled={busy || aspectRatios.length === 0}>
-              {busy ? "Creating…" : "Generate my ads"}
-            </Button>
+            <div className="flex gap-3">
+              {isAdmin && (
+                <Button variant="outline" onClick={() => onFinish(false)} disabled={busy}>
+                  Create without videos (admin)
+                </Button>
+              )}
+              <Button onClick={() => onFinish()} disabled={busy || aspectRatios.length === 0}>
+                {busy ? "Creating…" : "Generate my ads"}
+              </Button>
+            </div>
           </div>
         </Card>
       )}
