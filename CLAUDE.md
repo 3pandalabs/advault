@@ -100,6 +100,10 @@ Treat it accordingly:
   the user id (`src/lib/googleAds/oauthState.ts`, shared by the YouTube flow).
   Without it the callback is a CSRF primitive that attaches an attacker's ad
   account — or YouTube channel — to a victim's login.
+- **Launch requires a plan that buys media** (`launchPlanBlock`, managed or
+  evergreen; 402 `plan_required` / `plan_has_no_ads`). Admins and at_cost
+  accounts are exempt. Until 2026-11-11 launch never checked, so anyone could
+  run ads without paying the fee.
 - `campaigns.status` only reaches `live` through `POST /campaigns/:id/launch`,
   which is the single place that spends money. Keep it that way — no other
   route may call the Google Ads mutate API.

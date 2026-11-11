@@ -6,7 +6,7 @@
 // `fetch` belongs in ./index.ts instead.
 
 import type { BillingMode } from "../billing/policy.js";
-import type { ProductLine } from "../pricing/index.js";
+import { buysMedia, type ProductLine } from "../pricing/index.js";
 
 export type SubscriptionStatus = "pending" | "active" | "past_due" | "canceled" | "expired";
 
@@ -119,6 +119,31 @@ export function dunningDecision(args: {
  */
 export function entitlesToService(status: SubscriptionStatus): boolean {
   return status === "active" || status === "past_due";
+}
+
+// ---------------------------------------------------------------------------
+// May this user launch (spend money at Google)?
+//
+// Until 2026-11-11 launch never checked for a plan at all: anyone with a
+// funded ad account could run ads without ever paying the fee. A plan that
+// buys media (managed or Keep it running) is now required.
+//
+// Two deliberate exemptions: admins (AdVault's own brand campaigns run on the
+// org's account) and at_cost users, who by design get no subscription row at
+// all (see routes/subscriptions.ts).
+// ---------------------------------------------------------------------------
+
+export type LaunchPlanBlock = "plan_required" | "plan_has_no_ads";
+
+export function launchPlanBlock(args: {
+  role: string | undefined;
+  marginMode: string | null | undefined;
+  sub: { line: string; status: string } | null;
+}): LaunchPlanBlock | null {
+  if (args.role === "admin" || args.marginMode === "at_cost") return null;
+  if (!args.sub || !entitlesToService(args.sub.status as SubscriptionStatus)) return "plan_required";
+  if (!buysMedia(args.sub.line as ProductLine)) return "plan_has_no_ads";
+  return null;
 }
 
 // ---------------------------------------------------------------------------
