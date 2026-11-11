@@ -1,12 +1,16 @@
 "use client";
 
 import Link from "next/link";
-import { use, useCallback, useEffect, useState } from "react";
+import { use, useCallback, useEffect, useRef, useState } from "react";
 import {
   ApiError,
   creativeDownloadUrl,
   getCampaign,
+  generatePaidNewAd,
   getMe,
+  getNewAdStatus,
+  orderNewAd,
+  type NewAdStatus,
   isAwaitingPlatformSetup,
   launchCampaign,
   listAdAccounts,
@@ -92,6 +96,9 @@ export default function CampaignDetailPage({
   const [isAdmin, setIsAdmin] = useState(false);
   // Two-click remove: the first click arms it, so a stray click can't delete.
   const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
+  // Keep it running: the campaign's paid-ad order, if this user pays per ad.
+  const [newAd, setNewAd] = useState<NewAdStatus | null>(null);
+  const generatingRef = useRef(false);
 
   const refresh = useCallback(
     () => getCampaign(campaignId).then(setCampaign).catch(() => setError("Could not load this campaign.")),
@@ -102,7 +109,30 @@ export default function CampaignDetailPage({
     refresh();
     listAdAccounts().then(setAdAccounts).catch(() => undefined);
     getMe().then((me) => setIsAdmin(me.role === "admin")).catch(() => undefined);
-  }, [refresh]);
+    getNewAdStatus(campaignId).then(setNewAd).catch(() => undefined);
+  }, [refresh, campaignId]);
+
+  // After checkout the payment webhook marks the order paid; until then, poll.
+  // Once paid, make the ad from the photos and formats saved on the order.
+  const orderStatus = newAd?.order?.status;
+  useEffect(() => {
+    if (!newAd?.order) return;
+    if (orderStatus === "pending") {
+      const timer = setInterval(() => {
+        getNewAdStatus(campaignId).then(setNewAd).catch(() => undefined);
+      }, 4000);
+      return () => clearInterval(timer);
+    }
+    if (orderStatus === "paid" && !generatingRef.current) {
+      generatingRef.current = true;
+      generatePaidNewAd(newAd.order.id)
+        .then(() => Promise.all([refresh(), getNewAdStatus(campaignId).then(setNewAd)]))
+        .catch(() => setError("Your payment went through, but making the ad failed. Reload the page to try again."))
+        .finally(() => {
+          generatingRef.current = false;
+        });
+    }
+  }, [newAd, orderStatus, campaignId, refresh]);
 
   // Poll while anything is still encoding. The API returns 202 from the
   // generate call and the renderer works through a queue on a separate
@@ -233,6 +263,40 @@ export default function CampaignDetailPage({
         <p className="mb-4 rounded-lg border border-emerald-400/30 bg-emerald-400/10 px-3 py-2 text-sm text-emerald-200">
           {launchNote}
         </p>
+      )}
+
+      {newAd?.required && campaign.creatives.length === 0 && (
+        <Card className="mb-4">
+          {orderStatus === "pending" ? (
+            <CardDescription>Waiting for your {newAd.display} payment to confirm…</CardDescription>
+          ) : orderStatus === "paid" || orderStatus === "producing" ? (
+            <CardDescription>Payment received. Making your ad…</CardDescription>
+          ) : (
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <CardDescription>
+                This campaign has no ad yet. Your plan charges {newAd.display} per ad.
+              </CardDescription>
+              {newAd.order && (
+                <Button
+                  size="sm"
+                  disabled={busy}
+                  onClick={() => {
+                    setBusy(true);
+                    orderNewAd(campaign.id)
+                      .then(({ checkout }) => {
+                        if (checkout.redirectUrl) window.location.href = checkout.redirectUrl;
+                        else return getNewAdStatus(campaignId).then(setNewAd);
+                      })
+                      .catch(() => setError("Could not start the payment. Please try again."))
+                      .finally(() => setBusy(false));
+                  }}
+                >
+                  Pay {newAd.display} and make my ad
+                </Button>
+              )}
+            </div>
+          )}
+        </Card>
       )}
 
       <div className="space-y-3">
