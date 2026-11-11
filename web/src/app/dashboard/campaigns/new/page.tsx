@@ -35,7 +35,7 @@ const MAX_PHOTOS = 5;
 
 // Mirror the API's dailyBudgetCents bounds (api/src/routes/campaigns.ts) so the
 // form says so up front instead of the server rejecting it after submit.
-const MIN_DAILY_BUDGET_CENTS = 500;
+const MIN_DAILY_BUDGET_CENTS = 100;
 const MAX_DAILY_BUDGET_CENTS = 50_000;
 
 // API field names -> the label the advertiser sees, for naming rejected fields.

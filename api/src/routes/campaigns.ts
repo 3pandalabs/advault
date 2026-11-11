@@ -42,10 +42,11 @@ const campaignInput = z.object({
       message: "mix of US ZIP and Indian PIN codes",
     }),
   radiusMiles: z.number().int().min(1).max(50).default(10),
-  // Minor units. A $5/day floor because Google's own minimums and this app's
-  // per-impression maths both stop being meaningful below it; the $500/day
-  // ceiling is a guardrail against a mistyped budget, not a product limit.
-  dailyBudgetCents: z.number().int().min(500).max(50_000),
+  // Minor units. A $1/day floor (lowered from $5 on 2026-11-10 so a shop can
+  // start tiny; Google spends very small budgets slowly, which is why the
+  // wizard suggests $15). The $500/day ceiling is a guardrail against a
+  // mistyped budget, not a product limit. Matches us-managed in lib/pricing.
+  dailyBudgetCents: z.number().int().min(100).max(50_000),
   currencyCode: z.string().length(3).default("USD"),
 });
 
