@@ -1,16 +1,17 @@
+import { eq } from "drizzle-orm";
 import crypto from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { requireAdmin, requireAuth } from "../auth/plugin.js";
 import { db } from "../db/index.js";
 import { creatives } from "../db/schema.js";
-import { loadOwnedCampaign } from "../lib/ownership.js";
+import { loadOwnedCampaign, loadOwnedCreative } from "../lib/ownership.js";
 import {
   MAX_UPLOAD_VIDEO_BYTES,
   UPLOAD_VIDEO_CONTENT_TYPE,
   checkUploadedVideo,
 } from "../lib/uploads/policy.js";
-import { creativeVideoKey, headObject, presignUpload } from "../plugins/r2.js";
+import { creativeVideoKey, deleteObject, headObject, presignUpload } from "../plugins/r2.js";
 import { enqueueYoutubeUpload } from "../render/youtubeJobs.js";
 
 // Admin-only: attach a finished MP4 (made outside AdVault, e.g. our own brand
@@ -106,6 +107,38 @@ export async function uploadRoutes(app: FastifyInstance) {
       await enqueueYoutubeUpload(row.id);
       req.log.info({ campaignId, creativeId: row.id, sizeBytes: object.sizeBytes }, "admin video uploaded");
       return reply.code(201).send(row);
+    },
+  );
+
+  // Remove an uploaded video before launch (e.g. to replace it with a new cut).
+  // Only uploads, only admins, only on their own campaigns, and never once the
+  // campaign or the ad exists at Google: a live ad points at this video.
+  // The YouTube copy stays on the channel; it is unlisted and serves nothing.
+  app.delete(
+    "/creatives/:creativeId",
+    { preHandler: requireAdmin, schema: { params: z.object({ creativeId: z.string().uuid() }) } },
+    async (req, reply) => {
+      const { creativeId } = req.params as { creativeId: string };
+      const owned = await loadOwnedCreative(creativeId, req.userId!, reply);
+      if (!owned) return;
+      const { creative, campaign } = owned;
+      if (creative.kind !== "upload") return reply.code(409).send({ error: "not_an_upload" });
+      if (creative.googleAdResourceName || campaign.status === "live") {
+        return reply.code(409).send({ error: "creative_is_live" });
+      }
+      if (creative.youtubeUploadStatus === "uploading") {
+        return reply.code(409).send({ error: "upload_in_progress" });
+      }
+
+      // Render and upload jobs cascade with the row.
+      await db.delete(creatives).where(eq(creatives.id, creativeId));
+      if (creative.videoKey) {
+        await deleteObject(creative.videoKey).catch((err) =>
+          req.log.warn({ err, creativeId }, "uploaded video object not deleted"),
+        );
+      }
+      req.log.info({ creativeId, campaignId: campaign.id }, "admin removed uploaded video");
+      return reply.code(204).send();
     },
   );
 }

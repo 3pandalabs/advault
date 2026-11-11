@@ -60,6 +60,7 @@ CLAUDE.md.
 | POST | `/creatives/download-url` | Authorized by the key's `campaigns/<id>/` prefix. |
 | POST | `/campaigns/:campaignId/creatives/upload-url` | **Admin only**, own campaigns only. Body `{width, height, durationSeconds}` (read in the browser); refuses non-9:16/16:9, <720p, <5s or >180s. Returns `{creativeId, uploadUrl, contentType}` for a PUT to R2. |
 | POST | `/campaigns/:campaignId/creatives/upload` | **Admin only.** Confirms the PUT: HEADs the object (exists, video/mp4, ≤200 MB), inserts a `kind='upload'` creative already `ready`, queues the YouTube upload. 201. |
+| DELETE | `/creatives/:creativeId` | **Admin only**, uploads only, own campaigns. 409 `creative_is_live` once the campaign/ad exists at Google, `upload_in_progress` mid-publish. Deletes the row (jobs cascade) and the R2 object; the YouTube copy stays. 204. |
 
 ## Google Ads
 
