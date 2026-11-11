@@ -12,6 +12,7 @@ import {
   sendPreview,
 } from "../lib/offers/index.js";
 import { inferOfferExpiry } from "../lib/offers/policy.js";
+import { hasMonthlyOffers, type ProductLine } from "../lib/pricing/index.js";
 import { liveSubscriptionFor } from "../lib/subscriptions/index.js";
 import {
   isWhatsAppConfigured,
@@ -140,6 +141,9 @@ export async function offerRoutes(app: FastifyInstance) {
 
         const sub = await liveSubscriptionFor(req.userId!);
         if (!sub) return reply.code(402).send({ error: "no_subscription" });
+        // An offer sets an expiry that pauses the campaign; Keep it running
+        // promises the opposite.
+        if (!hasMonthlyOffers(sub.line as ProductLine)) return reply.code(409).send({ error: "plan_has_no_offers" });
 
         const cycle = await ensureCycleForMonth({
           userId: req.userId!,

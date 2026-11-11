@@ -872,7 +872,7 @@ export const subscriptions = pgTable(
     uniqueIndex("uq_subscriptions_one_live")
       .on(t.userId)
       .where(sql`status in ('pending','active','past_due')`),
-    check("subscriptions_line_check", sql`${t.line} in ('offer','managed')`),
+    check("subscriptions_line_check", sql`${t.line} in ('offer','managed','evergreen')`),
     check("subscriptions_currency_check", sql`${t.currencyCode} in ('INR','USD')`),
     check(
       "subscriptions_provider_check",

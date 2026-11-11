@@ -32,6 +32,12 @@ function fmt(minor: number, currency: string) {
   }).format(minor / 100);
 }
 
+const LINE_LABEL: Record<string, string> = {
+  offer: "Monthly offer",
+  managed: "Managed ads",
+  evergreen: "Keep it running",
+};
+
 const STATUS_COPY: Record<string, string> = {
   pending: "Waiting for your first payment",
   active: "Active",
@@ -132,7 +138,7 @@ export default function SubscriptionPage() {
                 {sub.currentPeriodEnd ? ` · renews ${formatDate(sub.currentPeriodEnd)}` : ""}
               </CardDescription>
             </div>
-            <Badge>{sub.line === "offer" ? "Monthly offer" : "Managed ads"}</Badge>
+            <Badge>{LINE_LABEL[sub.line] ?? sub.line}</Badge>
           </div>
 
           {/* past_due keeps serving on purpose — that is what the grace window
@@ -171,7 +177,7 @@ export default function SubscriptionPage() {
           ) : null}
         </Card>
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {plans.map((plan) => (
             <Card key={plan.key}>
               <CardTitle>{plan.label}</CardTitle>
@@ -181,7 +187,9 @@ export default function SubscriptionPage() {
                 <span className="text-base font-normal text-zinc-400"> / month</span>
               </p>
               <p className="mt-1 text-sm text-zinc-400">
-                {plan.includedCreativesPerMonth} fresh videos a month
+                {plan.line === "evergreen"
+                  ? `Your ad keeps running · ${plan.display.allIn} all-in at $1/day ad budget`
+                  : `${plan.includedCreativesPerMonth} fresh videos a month`}
                 {plan.line === "managed" ? ` · ${plan.display.allIn} all-in with ad spend` : ""}
               </p>
               <Button className="mt-4" onClick={() => onSubscribe(plan.key)} disabled={busy}>

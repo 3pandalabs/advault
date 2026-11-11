@@ -45,6 +45,7 @@ const PRICE_IDS: Record<string, string | undefined> = {
   "us-offer": process.env.PADDLE_PRICE_US_OFFER,
   "in-managed": process.env.PADDLE_PRICE_IN_MANAGED,
   "us-managed": process.env.PADDLE_PRICE_US_MANAGED,
+  "us-evergreen": process.env.PADDLE_PRICE_US_EVERGREEN,
 };
 
 /**

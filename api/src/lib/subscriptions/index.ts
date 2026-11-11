@@ -176,7 +176,7 @@ export async function markInvoicePaid(args: {
   const currency = invoice.currencyCode as Currency;
   const funding = feeFunding(
     sub.line as Plan["line"],
-    sub.line === "managed" ? await billingModeFor(invoice.userId) : null,
+    sub.line === "offer" ? null : await billingModeFor(invoice.userId),
   );
   const refs = feeLedgerRefs(invoice.id);
 

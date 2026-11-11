@@ -62,7 +62,7 @@ export async function subscriptionRoutes(app: FastifyInstance) {
             // ₹2,000 of spend invites the 75%-fee-ratio arithmetic that no
             // agency comparison survives.
             allIn:
-              p.line === "managed"
+              p.line !== "offer"
                 ? formatMinor(p.monthlyFeeMinor + p.suggestedAdBudgetMinor, p.currency)
                 : formatMinor(p.monthlyFeeMinor, p.currency),
           },

@@ -511,7 +511,7 @@ export type PricingEstimate = {
 
 export type Plan = {
   key: string;
-  line: "offer" | "managed";
+  line: "offer" | "managed" | "evergreen";
   label: string;
   blurb: string;
   currency: "INR" | "USD";
@@ -531,7 +531,7 @@ export type SubscriptionView = {
   subscription: {
     id: string;
     planKey: string;
-    line: "offer" | "managed";
+    line: "offer" | "managed" | "evergreen";
     status: string;
     amountMinor: number;
     currencyCode: string;

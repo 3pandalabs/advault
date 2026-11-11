@@ -21,6 +21,7 @@ const API = "https://api.stripe.com/v1";
 const PRICE_IDS: Record<string, string | undefined> = {
   "us-offer": process.env.STRIPE_PRICE_US_OFFER,
   "us-managed": process.env.STRIPE_PRICE_US_MANAGED,
+  "us-evergreen": process.env.STRIPE_PRICE_US_EVERGREEN,
 };
 
 /**

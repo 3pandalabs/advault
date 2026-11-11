@@ -144,6 +144,11 @@ describe("feeFunding", () => {
     expect(feeFunding("offer", "platform")).toBe("external");
   });
 
+  it("funds Keep it running like managed: it buys media too", () => {
+    expect(feeFunding("evergreen", "platform")).toBe("wallet");
+    expect(feeFunding("evergreen", "customer")).toBe("external");
+  });
+
   it("does not default a missing billing mode to the wallet", () => {
     // A managed subscriber with no active ad account has no prepaid balance to
     // draw on. Defaulting to 'wallet' here would block their very first charge.
