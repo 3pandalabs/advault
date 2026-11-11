@@ -118,7 +118,14 @@ export async function openCyclesForEntitledSubscribers(at = new Date()) {
   const subs = await db
     .select({ id: subscriptions.id, userId: subscriptions.userId })
     .from(subscriptions)
-    .where(inArray(subscriptions.status, ["active", "past_due"]));
+    .where(
+      and(
+        inArray(subscriptions.status, ["active", "past_due"]),
+        // Evergreen ("Keep it running") has no monthly offer: no prompt, and
+        // no offer expiry that would pause the ad it promises to keep running.
+        inArray(subscriptions.line, ["offer", "managed"]),
+      ),
+    );
 
   let opened = 0;
   for (const sub of subs) {

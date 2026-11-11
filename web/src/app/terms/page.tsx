@@ -74,7 +74,7 @@ export default function TermsPage() {
       </p>
 
       <h2>4. Plans and fees</h2>
-      <p>Two plans, charged monthly in advance:</p>
+      <p>Three plans, charged monthly in advance:</p>
       <table>
         <thead>
           <tr>
@@ -97,10 +97,19 @@ export default function TermsPage() {
             <td>$79/month</td>
             <td>The same videos, plus a live campaign we run for you.</td>
           </tr>
+          <tr>
+            <td>Keep it running</td>
+            <td>Not offered</td>
+            <td>$19/month</td>
+            <td>
+              One ad kept running in a campaign we run for you, with no monthly offer.
+              Each ad we make for this plan is a one-off $19 charge, including the first.
+            </td>
+          </tr>
         </tbody>
       </table>
       <p>
-        The managed figure is <strong>our fee only</strong>. It does not include what
+        The managed and Keep it running figures are <strong>our fee only</strong>. It does not include what
         Google charges to show your advertisement — see the next section, which is the
         most important part of this page.
       </p>

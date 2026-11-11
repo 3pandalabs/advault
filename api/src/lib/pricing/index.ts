@@ -34,13 +34,33 @@ export const MINOR_PER_MAJOR = 100;
 // `managed` is the full product: creatives plus a live, geo-targeted Google Ads
 // campaign.
 //
+// `evergreen` ("Keep it running", US only, added 2026-11-11) is for the shop
+// that wants ONE ad kept on air, not a new offer every month: a low monthly fee
+// plus their ad budget, no monthly offer messages, and no offer expiry, so the
+// campaign runs until they stop it. Each ad made for it is a separate one-off
+// charge (the new-ad purchase), not part of the fee.
+//
 // This is orthogonal to `ad_accounts.billing_mode`, which answers a different
 // question (whose card Google charges). A managed subscriber can be platform-
 // or customer-billed; an offer subscriber has no ad account at all.
 // ---------------------------------------------------------------------------
 
-export const PRODUCT_LINES = ["offer", "managed"] as const;
+export const PRODUCT_LINES = ["offer", "managed", "evergreen"] as const;
 export type ProductLine = (typeof PRODUCT_LINES)[number];
+
+/**
+ * Does this line run the monthly offer loop (WhatsApp prompt, offer text,
+ * expiry that pauses the campaign)? Evergreen deliberately does not: its whole
+ * promise is that the same ad keeps running with nothing to answer each month.
+ */
+export function hasMonthlyOffers(line: ProductLine): boolean {
+  return line === "offer" || line === "managed";
+}
+
+/** Does this line buy media, i.e. carry an ad budget and a live campaign? */
+export function buysMedia(line: ProductLine): boolean {
+  return line !== "offer";
+}
 
 // ---------------------------------------------------------------------------
 // Margin modes.
@@ -132,9 +152,23 @@ export const PLANS: Record<string, Plan> = {
     label: "US — Managed Ads",
     blurb: "Your offer running on YouTube around your business, handled end to end.",
   },
+  "us-evergreen": {
+    key: "us-evergreen",
+    currency: "USD",
+    line: "evergreen",
+    monthlyFeeMinor: 1_900, // $19/month platform fee
+    // Ads are bought one at a time ($19 each), never bundled into the fee.
+    includedCreativesPerMonth: 0,
+    suggestedAdBudgetMinor: 3_000, // $30 = $1/day, the floor
+    minDailyBudgetMinor: 100, // $1/day
+    label: "US — Keep it running",
+    blurb: "One ad kept running on YouTube around your business. $19 per ad, no monthly offers.",
+  },
 };
 
-export function planFor(currency: Currency, line: ProductLine): Plan {
+// Only the lines sold in every market: evergreen is US-only, so it is looked
+// up by key (planByKey) rather than through here.
+export function planFor(currency: Currency, line: "offer" | "managed"): Plan {
   return PLANS[`${currency === "INR" ? "in" : "us"}-${line}`];
 }
 

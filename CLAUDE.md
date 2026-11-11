@@ -303,12 +303,18 @@ Postgres nor Google Ads API access.
 For most of this repo's life AdVault could not earn money at any customer
 count. Every plan carried `monthlyFeeMinor: 0`, `applyEntry` was never called
 with `type: 'fee'`, and the plan prices on the marketing page were display-only
-strings. `lib/pricing` now holds four SKUs and one of them has to be sold:
+strings. `lib/pricing` now holds five SKUs and one of them has to be sold:
 
 | Line | India | US |
 |---|---|---|
 | `offer` — 3 fresh videos/month, **no Google at all** | ₹999/mo | $39/mo |
 | `managed` — creatives plus a live campaign | ₹1,499/mo fee | $79/mo fee |
+| `evergreen` ("Keep it running") — one ad kept live, no monthly offer, $19 per ad | not sold | $19/mo fee |
+
+**Evergreen never enters the offer loop.** No offer cycles, no WhatsApp prompt,
+and `POST /offers/current` refuses it (`plan_has_no_offers`): an offer sets an
+expiry that pauses the campaign, which is the opposite of what the plan sells.
+Use `hasMonthlyOffers(line)` rather than comparing line names.
 
 **The offer line is the one that can be sold today.** It needs no Google Ads API
 access, no YouTube channel, no ad account and no Indian entity — which is
