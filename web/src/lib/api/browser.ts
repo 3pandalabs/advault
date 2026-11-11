@@ -171,6 +171,7 @@ export type Creative = {
   // 'upload' = a finished MP4 an admin uploaded; it has no script and cannot
   // be edited or re-rendered.
   kind: "standard" | "cinematic" | "upload";
+  googleAdResourceName: string | null;
 
   // Whether this ad exists on YouTube yet, which is a harder requirement than
   // it sounds: a Google Ads video ad references a YouTube video id, never an
@@ -418,6 +419,10 @@ export async function uploadCreativeVideo(campaignId: string, file: File): Promi
     body: JSON.stringify({ ...meta, creativeId }),
   });
 }
+
+// Admin-only: remove an uploaded video from a campaign that is not live.
+export const removeUploadedCreative = (creativeId: string) =>
+  api<void>(`/creatives/${creativeId}`, { method: "DELETE" });
 
 // --- billing ---------------------------------------------------------------
 

@@ -12,6 +12,7 @@ import {
   listAdAccounts,
   provisionManagedAccount,
   retryCreative,
+  removeUploadedCreative,
   retryYouTubeUpload,
   type AdAccount,
   type Asset,
@@ -89,6 +90,8 @@ export default function CampaignDetailPage({
   const [busy, setBusy] = useState(false);
   const [logo, setLogo] = useState<Asset | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
+  // Two-click remove: the first click arms it, so a stray click can't delete.
+  const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
 
   const refresh = useCallback(
     () => getCampaign(campaignId).then(setCampaign).catch(() => setError("Could not load this campaign.")),
@@ -326,6 +329,33 @@ export default function CampaignDetailPage({
                 Written from a template — you can edit the wording before launching.
               </p>
             )}
+
+            {isAdmin &&
+              creative.kind === "upload" &&
+              !creative.googleAdResourceName &&
+              !campaign.googleCampaignResourceName &&
+              creative.youtubeUploadStatus !== "uploading" && (
+                <div className="mt-3 flex items-center gap-3">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      if (confirmRemove !== creative.id) return setConfirmRemove(creative.id);
+                      setConfirmRemove(null);
+                      removeUploadedCreative(creative.id)
+                        .then(refresh)
+                        .catch(() => setError("Could not remove this video."));
+                    }}
+                  >
+                    {confirmRemove === creative.id ? "Click again to remove" : "Remove video"}
+                  </Button>
+                  {confirmRemove === creative.id && (
+                    <button type="button" className="text-xs text-zinc-500 hover:text-zinc-300" onClick={() => setConfirmRemove(null)}>
+                      Cancel
+                    </button>
+                  )}
+                </div>
+              )}
           </Card>
         ))}
       </div>
