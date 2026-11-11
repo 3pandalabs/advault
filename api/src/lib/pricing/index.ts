@@ -126,7 +126,9 @@ export const PLANS: Record<string, Plan> = {
     monthlyFeeMinor: 7_900, // $79/month platform fee
     includedCreativesPerMonth: 2,
     suggestedAdBudgetMinor: 10_000, // $100
-    minDailyBudgetMinor: 500, // $5/day
+    // $1/day (was $5 until 2026-11-10): lets the ad say "from $1 a day". The
+    // wizard still suggests $15; tiny budgets deliver slowly, so nudge up.
+    minDailyBudgetMinor: 100, // $1/day
     label: "US — Managed Ads",
     blurb: "Your offer running on YouTube around your business, handled end to end.",
   },
