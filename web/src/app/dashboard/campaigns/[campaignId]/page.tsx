@@ -276,7 +276,9 @@ export default function CampaignDetailPage({
           ) : (
             <div className="flex flex-wrap items-center justify-between gap-3">
               <CardDescription>
-                This campaign has no ad yet. Your plan charges {newAd.display} per ad.
+                {newAd.freeLaunchOffer
+                  ? "This campaign has no ad yet. Your first ad is free (launch offer)."
+                  : `This campaign has no ad yet. Your plan charges ${newAd.display} per ad.`}
               </CardDescription>
               {newAd.order && (
                 <Button
@@ -293,7 +295,7 @@ export default function CampaignDetailPage({
                       .finally(() => setBusy(false));
                   }}
                 >
-                  Pay {newAd.display} and make my ad
+                  {newAd.freeLaunchOffer ? "Make my free ad" : `Pay ${newAd.display} and make my ad`}
                 </Button>
               )}
             </div>

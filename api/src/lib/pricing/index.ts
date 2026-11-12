@@ -319,6 +319,24 @@ export const ADD_ONS: Record<string, AddOn> = {
   },
 };
 
+// ---------------------------------------------------------------------------
+// Launch offer (2026-11-12): the first ad is free for the first 30 Keep it
+// running customers. Counted from free ads actually claimed, never from
+// orders opened, so an abandoned order cannot use up a place. Two people
+// claiming the last place at the same instant can take it to 31; that errs in
+// the customer's favour and is not worth a lock.
+// ---------------------------------------------------------------------------
+
+export const FREE_FIRST_AD_LIMIT = 30;
+
+export function freeFirstAd(args: { priorAdsClaimed: number; freeAdsClaimedByAnyone: number }): boolean {
+  return args.priorAdsClaimed === 0 && args.freeAdsClaimedByAnyone < FREE_FIRST_AD_LIMIT;
+}
+
+export function freeFirstAdPlacesLeft(freeAdsClaimedByAnyone: number): number {
+  return Math.max(0, FREE_FIRST_AD_LIMIT - freeAdsClaimedByAnyone);
+}
+
 export function addOnFor(currency: Currency, sku: AddOnSku): AddOn {
   return ADD_ONS[`${currency === "INR" ? "in" : "us"}-${sku}`];
 }

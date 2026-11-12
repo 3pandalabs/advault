@@ -16,6 +16,7 @@ import {
   sumEntriesByType,
 } from "../lib/wallet/index.js";
 import { providerByName, providerFor } from "../lib/payments/index.js";
+import { freeFirstAdPlaces } from "../lib/newAd/index.js";
 import {
   addOnFor,
   effectiveMonthlyFeeMinor,
@@ -105,6 +106,8 @@ export async function billingRoutes(app: FastifyInstance) {
         // One-off price of each ad on Keep it running; null where ads are
         // included in the fee.
         newAdMinor: newAd ? newAd.priceMinor : null,
+        // Launch offer: free first ad while places remain (US only).
+        freeFirstAdPlacesLeft: newAd ? await freeFirstAdPlaces() : 0,
         display: {
           adBudget: formatMinor(q.adBudgetMinor, q.currency),
           monthlyFee: formatMinor(effectiveMonthlyFeeMinor(plan, q.marginMode), q.currency),

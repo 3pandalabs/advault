@@ -20,6 +20,7 @@ type Estimate = {
   monthlyTotalMinor: number;
   reach: { low: number; high: number };
   newAdMinor: number | null;
+  freeFirstAdPlacesLeft?: number;
   display: { adBudget: string; monthlyFee: string; monthlyTotal: string; newAd: string | null };
 };
 
@@ -110,6 +111,11 @@ export function BudgetCalculator() {
             </p>
             {est.display.newAd && (
               <p className="mt-1 text-sm text-zinc-400">Plus {est.display.newAd} one-time for each ad we make.</p>
+            )}
+            {(est.freeFirstAdPlacesLeft ?? 0) > 0 && (
+              <p className="mt-2 inline-block rounded-md bg-emerald-400/10 px-2 py-1 text-sm font-medium text-emerald-300">
+                Launch offer: first ad free for our first 30 customers ({est.freeFirstAdPlacesLeft} left)
+              </p>
             )}
           </div>
         </div>

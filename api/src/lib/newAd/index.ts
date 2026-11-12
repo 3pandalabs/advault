@@ -3,8 +3,36 @@ import { db } from "../../db/index.js";
 import { purchases } from "../../db/schema.js";
 import { entitlesToService, type SubscriptionStatus } from "../subscriptions/policy.js";
 import { liveSubscriptionFor } from "../subscriptions/index.js";
-import { formatMinor } from "../pricing/index.js";
-import { quoteFor } from "../cinematic/index.js";
+import { formatMinor, freeFirstAd, freeFirstAdPlacesLeft } from "../pricing/index.js";
+import { quoteFor, type Quote } from "../cinematic/index.js";
+
+const CLAIMED = ["paid", "producing", "delivered"] as const;
+
+/** Free ads claimed so far by anyone (the launch offer's counter). */
+export async function freeAdsClaimed(): Promise<number> {
+  const [row] = await db
+    .select({ n: sql<number>`count(distinct ${purchases.userId})::int` })
+    .from(purchases)
+    .where(and(eq(purchases.sku, "new_ad"), eq(purchases.amountMinor, 0), inArray(purchases.status, [...CLAIMED])));
+  return row?.n ?? 0;
+}
+
+export type NewAdQuote = Quote & { freeLaunchOffer: boolean };
+
+/** The $19 ad, or $0 while the launch offer has places and this is their first. */
+export async function quoteNewAd(userId: string): Promise<NewAdQuote> {
+  const quote = await quoteFor(userId, "new_ad");
+  const [mine] = await db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(purchases)
+    .where(and(eq(purchases.userId, userId), eq(purchases.sku, "new_ad"), inArray(purchases.status, [...CLAIMED])));
+  const free = freeFirstAd({ priorAdsClaimed: mine?.n ?? 0, freeAdsClaimedByAnyone: await freeAdsClaimed() });
+  return free ? { ...quote, amountMinor: 0, freeLaunchOffer: true } : { ...quote, freeLaunchOffer: false };
+}
+
+export async function freeFirstAdPlaces(): Promise<number> {
+  return freeFirstAdPlacesLeft(await freeAdsClaimed());
+}
 
 // The $19 new ad for Keep it running (evergreen) subscribers.
 //
@@ -46,12 +74,13 @@ export async function campaignHasPaidAd(campaignId: string): Promise<boolean> {
 export async function newAdGate(userId: string, campaignId: string) {
   if (!(await paysPerAd(userId))) return null;
   if (await campaignHasPaidAd(campaignId)) return null;
-  const quote = await quoteFor(userId, "new_ad");
+  const quote = await quoteNewAd(userId);
   return {
     error: "new_ad_payment_required",
     amountMinor: quote.amountMinor,
     currency: quote.currency,
     display: formatMinor(quote.amountMinor, quote.currency),
+    freeLaunchOffer: quote.freeLaunchOffer,
   };
 }
 
