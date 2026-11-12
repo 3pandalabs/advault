@@ -183,12 +183,12 @@ export default function SubscriptionPage() {
               <CardTitle>{plan.label}</CardTitle>
               <CardDescription>{plan.blurb}</CardDescription>
               <p className="mt-4 text-3xl font-semibold">
-                {plan.display.monthlyFee}
+                {plan.line === "evergreen" ? `from ${plan.display.allIn}` : plan.display.monthlyFee}
                 <span className="text-base font-normal text-zinc-400"> / month</span>
               </p>
               <p className="mt-1 text-sm text-zinc-400">
                 {plan.line === "evergreen"
-                  ? `Your ad keeps running · ${plan.display.allIn} all-in at $1/day ad budget`
+                  ? `$30 goes to your ads (about $1/day) + ${plan.display.monthlyFee} AdVault fee. $19 one-time for each ad we make. Add budget any time for more views.`
                   : `${plan.includedCreativesPerMonth} fresh videos a month`}
                 {plan.line === "managed" ? ` · ${plan.display.allIn} all-in with ad spend` : ""}
               </p>

@@ -17,11 +17,13 @@ import {
 } from "../lib/wallet/index.js";
 import { providerByName, providerFor } from "../lib/payments/index.js";
 import {
+  addOnFor,
   effectiveMonthlyFeeMinor,
   estimateReach,
   formatMinor,
   isCurrency,
   monthlyQuoteMinor,
+  planByKey,
   planFor,
   type Currency,
 } from "../lib/pricing/index.js";
@@ -81,9 +83,11 @@ export async function billingRoutes(app: FastifyInstance) {
       const q = req.query as { currency: string; adBudgetMinor: number; marginMode: "standard" | "at_cost" };
       if (!isCurrency(q.currency)) return reply.code(400).send({ error: "unsupported_currency" });
 
-      // Always the managed plan: this endpoint exists for the budget slider,
-      // and the offer line has no ad budget to estimate against.
-      const plan = planFor(q.currency, "managed");
+      // US: Keep it running ($19 + budget), the plan the brand ad sells.
+      // India: managed, the only plan there that buys media. Never the offer
+      // line, which has no ad budget to estimate against.
+      const plan = q.currency === "USD" ? planByKey("us-evergreen")! : planFor(q.currency, "managed");
+      const newAd = q.currency === "USD" ? addOnFor("USD", "new_ad") : null;
       const monthlyTotal = monthlyQuoteMinor(plan, {
         marginMode: q.marginMode,
         bundledAdBudgetMinor: q.adBudgetMinor,
@@ -97,9 +101,15 @@ export async function billingRoutes(app: FastifyInstance) {
         // specific neighbourhood is a claim we cannot back — same honesty
         // constraint as MealMargin's dataset.
         reach: estimateReach(q.adBudgetMinor, q.currency),
+        planKey: plan.key,
+        // One-off price of each ad on Keep it running; null where ads are
+        // included in the fee.
+        newAdMinor: newAd ? newAd.priceMinor : null,
         display: {
           adBudget: formatMinor(q.adBudgetMinor, q.currency),
+          monthlyFee: formatMinor(effectiveMonthlyFeeMinor(plan, q.marginMode), q.currency),
           monthlyTotal: formatMinor(monthlyTotal, q.currency),
+          newAd: newAd ? formatMinor(newAd.priceMinor, q.currency) : null,
         },
       };
     },
