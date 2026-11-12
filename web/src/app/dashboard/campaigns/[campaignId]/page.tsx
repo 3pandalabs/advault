@@ -35,6 +35,8 @@ type Loaded = Campaign & { creatives: Creative[] };
 // unmapped falls through to the raw code rather than a generic message —
 // a code is at least searchable, where "something went wrong" is not.
 const LAUNCH_ERRORS: Record<string, string> = {
+  plan_required: "Choose a plan before launching. See Subscription in the menu.",
+  plan_has_no_ads: "Your plan makes videos but doesn't run ads. Switch to Managed or Keep it running to launch.",
   google_ads_not_configured:
     "Google Ads launching is not switched on for this account yet. Everything else works — your videos are rendered and ready.",
   ad_account_revoked:

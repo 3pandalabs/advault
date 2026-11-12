@@ -53,6 +53,7 @@ CLAUDE.md.
 
 | Method | Path | Notes |
 |---|---|---|
+| — | (launch) | `POST /campaigns/:id/launch` answers **402 `plan_required`** without a live plan, **402 `plan_has_no_ads`** on the offer line. Admins and at_cost accounts are exempt; skipped on `validateOnly`. |
 | POST | `/campaigns/:campaignId/creatives/generate` | **202.** Writes the scripts, queues the renders, returns. One creative per requested aspect ratio. **402 `new_ad_payment_required`** for a Keep it running subscriber whose campaign has no paid ad yet. |
 | GET | `/new-ad/quote` | `{required, display}`: does this user pay per ad (Keep it running), and how much. |
 | GET | `/campaigns/:campaignId/new-ad` | `{required, display, order}`: the campaign's latest new-ad order. |

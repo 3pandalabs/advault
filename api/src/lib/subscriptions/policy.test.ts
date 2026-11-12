@@ -5,6 +5,7 @@ import {
   entitlesToService,
   feeFunding,
   feeLedgerRefs,
+  launchPlanBlock,
   firstPeriod,
   GRACE_DAYS,
   isDue,
@@ -124,6 +125,34 @@ describe("entitlesToService", () => {
     expect(entitlesToService("pending")).toBe(false);
     expect(entitlesToService("canceled")).toBe(false);
     expect(entitlesToService("expired")).toBe(false);
+  });
+});
+
+describe("launchPlanBlock", () => {
+  const sub = (line: string, status = "active") => ({ line, status });
+  const base = { role: "user", marginMode: "standard" };
+
+  it("refuses a launch with no plan", () => {
+    expect(launchPlanBlock({ ...base, sub: null })).toBe("plan_required");
+  });
+
+  it("refuses a lapsed plan but keeps serving past_due (grace window)", () => {
+    expect(launchPlanBlock({ ...base, sub: sub("managed", "expired") })).toBe("plan_required");
+    expect(launchPlanBlock({ ...base, sub: sub("managed", "past_due") })).toBeNull();
+  });
+
+  it("refuses the offer line, which buys no media", () => {
+    expect(launchPlanBlock({ ...base, sub: sub("offer") })).toBe("plan_has_no_ads");
+  });
+
+  it("allows managed and Keep it running", () => {
+    expect(launchPlanBlock({ ...base, sub: sub("managed") })).toBeNull();
+    expect(launchPlanBlock({ ...base, sub: sub("evergreen") })).toBeNull();
+  });
+
+  it("exempts admins and at_cost accounts, which have no subscription", () => {
+    expect(launchPlanBlock({ role: "admin", marginMode: "standard", sub: null })).toBeNull();
+    expect(launchPlanBlock({ role: "user", marginMode: "at_cost", sub: null })).toBeNull();
   });
 });
 

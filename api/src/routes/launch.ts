@@ -3,7 +3,9 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { requireAuth } from "../auth/plugin.js";
 import { db } from "../db/index.js";
-import { adAccounts, assets, campaigns, creatives } from "../db/schema.js";
+import { adAccounts, assets, campaigns, creatives, users } from "../db/schema.js";
+import { liveSubscriptionFor } from "../lib/subscriptions/index.js";
+import { launchPlanBlock } from "../lib/subscriptions/policy.js";
 import { decryptToken } from "../lib/crypto.js";
 import { isGoogleAdsConfigured } from "../lib/googleAds/env.js";
 import { mccAccessToken } from "../lib/googleAds/mcc.js";
@@ -91,6 +93,19 @@ export async function launchRoutes(app: FastifyInstance) {
       // this table only remembers one of them.
       if (campaign.googleCampaignResourceName) {
         return reply.code(409).send({ error: "already_launched" });
+      }
+
+      // A paid plan that includes ads. Skipped on a dry run, like the billing
+      // and wallet gates: nothing can spend.
+      if (!validateOnly) {
+        const [user] = await db
+          .select({ marginMode: users.marginMode })
+          .from(users)
+          .where(eq(users.id, req.userId!))
+          .limit(1);
+        const sub = await liveSubscriptionFor(req.userId!);
+        const block = launchPlanBlock({ role: req.userRole, marginMode: user?.marginMode, sub });
+        if (block) return reply.code(402).send({ error: block });
       }
 
       const account = await loadOwnedAdAccount(adAccountId, req.userId!, reply);
