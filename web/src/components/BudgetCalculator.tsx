@@ -19,14 +19,15 @@ type Estimate = {
   monthlyFeeMinor: number;
   monthlyTotalMinor: number;
   reach: { low: number; high: number };
-  display: { adBudget: string; monthlyTotal: string };
+  newAdMinor: number | null;
+  display: { adBudget: string; monthlyFee: string; monthlyTotal: string; newAd: string | null };
 };
 
 const PRESETS: Record<"INR" | "USD", number[]> = {
   // ₹2,000 / ₹5,000 / ₹10,000
   INR: [200_000, 500_000, 1_000_000],
-  // $100 / $250 / $500
-  USD: [10_000, 25_000, 50_000],
+  // $30 / $90 / $150 a month = $1 / $3 / $5 a day (Keep it running)
+  USD: [3_000, 9_000, 15_000],
 };
 
 function fmt(n: number) {
@@ -66,7 +67,11 @@ export function BudgetCalculator() {
   return (
     <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-6 backdrop-blur-sm">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h3 className="text-lg font-semibold">What does ₹2,000 actually buy?</h3>
+        <h3 className="text-lg font-semibold">
+          {currency === "USD"
+            ? "$19 makes your ad. From $49/month keeps it running."
+            : "What does ₹2,000 actually buy?"}
+        </h3>
         <div className="flex rounded-lg border border-white/15 p-0.5 text-sm">
           {(["INR", "USD"] as const).map((c) => (
             <button
@@ -87,6 +92,7 @@ export function BudgetCalculator() {
 
       <p className="mt-2 text-sm text-zinc-400">
         Pick a monthly ad budget. We&apos;ll show what it reaches in your neighbourhood.
+        {currency === "USD" && " More budget means more views; your ad price stays the same."}
       </p>
 
       <div className="mt-5 flex flex-wrap gap-2">
@@ -143,9 +149,12 @@ export function BudgetCalculator() {
                   wins — and the customer is buying the whole thing existing,
                   not media buying by the hour. */}
               {est.monthlyFeeMinor > 0
-                ? `${est.display.adBudget} of ads, everything handled`
+                ? `${est.display.adBudget} goes to your ads + ${est.display.monthlyFee} AdVault fee`
                 : `${est.display.adBudget} ad budget · no platform fee`}
             </p>
+            {est.display.newAd && (
+              <p className="mt-1 text-sm text-zinc-400">Plus {est.display.newAd} one-time for each ad we make.</p>
+            )}
           </div>
         </div>
       ) : (
@@ -159,7 +168,7 @@ export function BudgetCalculator() {
       <p className="mt-5 text-xs leading-relaxed text-zinc-500">
         Reach is an estimate based on typical CPMs for local video, not a guarantee. Real
         results depend on your area, audience and competition. You keep full control of the
-        budget and can stop any time.
+        budget and can stop any time. No contract.
       </p>
 
       <div className="mt-5">
