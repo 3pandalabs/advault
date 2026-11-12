@@ -7,6 +7,8 @@ import {
   assetDownloadUrl,
   createCampaign,
   generateCreatives,
+  getNewAdQuote,
+  orderNewAd,
   getMe,
   listAssets,
   uploadAsset,
@@ -84,6 +86,8 @@ export default function NewCampaignPage() {
 
   // Step 3 — formats
   const [aspectRatios, setAspectRatios] = useState<("16:9" | "9:16")[]>(["16:9", "9:16"]);
+  // Keep it running subscribers pay per ad; null means the ad is included.
+  const [newAdPrice, setNewAdPrice] = useState<string | null>(null);
 
   useEffect(() => {
     // Prefill from the profile so an advertiser who filled this in at signup
@@ -101,6 +105,9 @@ export default function NewCampaignPage() {
       .catch(() => undefined);
 
     listAssets().then(setAssets).catch(() => undefined);
+    getNewAdQuote()
+      .then((q) => setNewAdPrice(q.required ? (q.display ?? null) : null))
+      .catch(() => undefined);
   }, []);
 
   // Thumbnails are short-lived presigned URLs fetched one per asset. Kept in
@@ -197,6 +204,13 @@ export default function NewCampaignPage() {
           // The campaign exists; send the admin to it, where the upload card retries.
           setError(`The campaign was created, but the video upload failed (${code}). Opening the campaign so you can upload it again…`);
           setTimeout(() => router.push(`/dashboard/campaigns/${campaign.id}`), 2500);
+          return;
+        }
+      } else if (newAdPrice) {
+        // Pay first; the campaign page makes the ad once the payment lands.
+        const { checkout } = await orderNewAd(campaign.id, { assetIds: selectedAssetIds, aspectRatios });
+        if (checkout.redirectUrl) {
+          window.location.href = checkout.redirectUrl;
           return;
         }
       } else {
@@ -571,18 +585,25 @@ export default function NewCampaignPage() {
             ))}
           </div>
 
-          <p className="mt-5 text-sm text-zinc-400">
-            We will write the script and render your videos. Nothing is charged and no ad runs
-            until you connect Google Ads and launch — and even then the campaign is created
-            paused.
-          </p>
+          {newAdPrice ? (
+            <p className="mt-5 text-sm text-zinc-400">
+              Your plan charges {newAdPrice} per ad. You pay now, then we write the script and
+              render your videos. Nothing runs until you launch.
+            </p>
+          ) : (
+            <p className="mt-5 text-sm text-zinc-400">
+              We will write the script and render your videos. Nothing is charged and no ad runs
+              until you connect Google Ads and launch — and even then the campaign is created
+              paused.
+            </p>
+          )}
 
           <div className="mt-6 flex justify-between">
             <Button variant="ghost" onClick={() => setStep(2)}>
               Back
             </Button>
             <Button onClick={onFinish} disabled={busy || aspectRatios.length === 0}>
-              {busy ? "Creating…" : "Generate my ads"}
+              {busy ? "Creating…" : newAdPrice ? `Pay ${newAdPrice} and make my ad` : "Generate my ads"}
             </Button>
           </div>
         </Card>

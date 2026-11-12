@@ -56,7 +56,7 @@ export async function cinematicRoutes(app: FastifyInstance) {
       if (!isCurrency(currency)) return reply.code(400).send({ error: "unsupported_currency" });
 
       return Object.values(ADD_ONS)
-        .filter((a) => a.currency === currency)
+        .filter((a) => a.currency === currency && a.sku === "cinematic")
         .map((a) => ({
           key: a.key,
           sku: a.sku,
@@ -199,7 +199,7 @@ export async function cinematicRoutes(app: FastifyInstance) {
       const rows = await db
         .select()
         .from(purchases)
-        .where(eq(purchases.userId, req.userId!))
+        .where(and(eq(purchases.userId, req.userId!), eq(purchases.sku, "cinematic")))
         .orderBy(desc(purchases.createdAt));
       return rows.map(publicPurchase);
     });

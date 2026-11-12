@@ -1104,7 +1104,7 @@ export const purchases = pgTable(
     // forever and are never producible again.
     index("idx_purchases_producible").on(t.createdAt).where(sql`status = 'paid'`),
     check("purchases_currency_check", sql`${t.currencyCode} in ('INR','USD')`),
-    check("purchases_sku_check", sql`${t.sku} in ('cinematic')`),
+    check("purchases_sku_check", sql`${t.sku} in ('cinematic','new_ad')`),
     check(
       "purchases_provider_check",
       sql`${t.provider} in ('razorpay','stripe','paddle','manual')`,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buysMedia, hasMonthlyOffers, planByKey, PLANS, PRODUCT_LINES } from "./index.js";
+import { addOnFor, addOnPriceMinor, buysMedia, hasMonthlyOffers, planByKey, PLANS, PRODUCT_LINES } from "./index.js";
 
 describe("plans", () => {
   it("every plan's line is a known product line", () => {
@@ -21,5 +21,14 @@ describe("plans", () => {
     expect(hasMonthlyOffers("managed")).toBe(true);
     expect(buysMedia("evergreen")).toBe(true);
     expect(buysMedia("offer")).toBe(false);
+  });
+});
+
+describe("new ad", () => {
+  it("costs $19 for the first ad and every one after", () => {
+    const a = addOnFor("USD", "new_ad");
+    expect(a.key).toBe("us-new_ad");
+    expect(addOnPriceMinor(a, { priorPaidCount: 0 })).toBe(1_900);
+    expect(addOnPriceMinor(a, { priorPaidCount: 5 })).toBe(1_900);
   });
 });

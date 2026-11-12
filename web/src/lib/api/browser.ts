@@ -301,6 +301,29 @@ export function generateCreatives(
   });
 }
 
+// --- Keep it running: the paid new ad ---------------------------------------
+// Subscribers on Keep it running pay per ad. The wizard orders and pays; the
+// campaign page spends the paid order once the payment webhook lands.
+export type NewAdStatus = {
+  required: boolean;
+  display: string | null;
+  order: { id: string; status: string; amountMinor: number; currency: string } | null;
+};
+export const getNewAdQuote = () => api<{ required: boolean; display?: string }>("/new-ad/quote");
+export const getNewAdStatus = (campaignId: string) => api<NewAdStatus>(`/campaigns/${campaignId}/new-ad`);
+export const orderNewAd = (
+  campaignId: string,
+  input?: { assetIds: string[]; aspectRatios: ("16:9" | "9:16")[] },
+) =>
+  api<{ purchaseId: string; checkout: { provider: string; redirectUrl: string | null } }>(
+    `/campaigns/${campaignId}/new-ad/order`,
+    { method: "POST", body: JSON.stringify(input ?? {}) },
+  );
+export const generatePaidNewAd = (purchaseId: string) =>
+  api<{ creatives?: Creative[]; alreadyGenerated?: boolean }>(`/new-ad/orders/${purchaseId}/generate`, {
+    method: "POST",
+  });
+
 export function launchCampaign(campaignId: string, adAccountId: string) {
   return api<{
     campaign: Campaign;

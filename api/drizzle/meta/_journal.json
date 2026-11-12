@@ -71,6 +71,13 @@
       "when": 1794500000000,
       "tag": "0009_evergreen_plan",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1794600000000,
+      "tag": "0010_new_ad_purchases",
+      "breakpoints": true
     }
   ]
 }
