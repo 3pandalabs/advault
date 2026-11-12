@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { API_URL } from "@/lib/api/browser";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
@@ -23,37 +23,25 @@ type Estimate = {
   display: { adBudget: string; monthlyFee: string; monthlyTotal: string; newAd: string | null };
 };
 
-const PRESETS: Record<"INR" | "USD", number[]> = {
-  // ₹2,000 / ₹5,000 / ₹10,000
-  INR: [200_000, 500_000, 1_000_000],
-  // $30 / $90 / $150 a month = $1 / $3 / $5 a day (Keep it running)
-  USD: [3_000, 9_000, 15_000],
-};
+// US only for now (India pricing returns when India launches). $30 / $90 /
+// $150 a month = $1 / $3 / $5 a day on Keep it running.
+const PRESETS = [3_000, 9_000, 15_000];
 
 function fmt(n: number) {
   return new Intl.NumberFormat("en-US").format(n);
 }
 
 export function BudgetCalculator() {
-  const [currency, setCurrency] = useState<"INR" | "USD">("INR");
-  // The chosen preset is tracked as an INDEX, not an amount. Switching currency
-  // then has to change nothing — the budget is derived — where storing the
-  // amount would need an effect to re-sync it, which is a cascading render and
-  // the kind of derived-state-in-an-effect the lint rule correctly rejects.
-  const [presetIndex, setPresetIndex] = useState(0);
-  const [atCost, setAtCost] = useState(false);
+  const currency = "USD";
+  const [budget, setBudget] = useState(PRESETS[0]);
   const [est, setEst] = useState<Estimate | null>(null);
   const [failed, setFailed] = useState(false);
-
-  const presets = useMemo(() => PRESETS[currency], [currency]);
-  const budget = presets[presetIndex] ?? presets[0];
 
   useEffect(() => {
     let cancelled = false;
     const q = new URLSearchParams({
       currency,
       adBudgetMinor: String(budget),
-      marginMode: atCost ? "at_cost" : "standard",
     });
     fetch(`${API_URL}/pricing/estimate?${q}`)
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
@@ -62,69 +50,37 @@ export function BudgetCalculator() {
     return () => {
       cancelled = true;
     };
-  }, [currency, budget, atCost]);
+  }, [budget]);
 
   return (
     <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-6 backdrop-blur-sm">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h3 className="text-lg font-semibold">
-          {currency === "USD"
-            ? "$19 makes your ad. From $49/month keeps it running."
-            : "What does ₹2,000 actually buy?"}
-        </h3>
-        <div className="flex rounded-lg border border-white/15 p-0.5 text-sm">
-          {(["INR", "USD"] as const).map((c) => (
-            <button
-              key={c}
-              type="button"
-              onClick={() => setCurrency(c)}
-              className={
-                currency === c
-                  ? "rounded-md bg-amber-400 px-3 py-1 font-medium text-zinc-950"
-                  : "rounded-md px-3 py-1 text-zinc-400 hover:text-zinc-200"
-              }
-            >
-              {c === "INR" ? "🇮🇳 INR" : "🇺🇸 USD"}
-            </button>
-          ))}
-        </div>
-      </div>
+      <h3 className="text-lg font-semibold">$19 makes your ad. From $49/month keeps it running.</h3>
 
       <p className="mt-2 text-sm text-zinc-400">
-        Pick a monthly ad budget. We&apos;ll show what it reaches in your neighbourhood.
-        {currency === "USD" && " More budget means more views; your ad price stays the same."}
+        Pick a monthly ad budget. We&apos;ll show what it reaches in your neighborhood.
+ More budget means more views; your ad price stays the same.
       </p>
 
       <div className="mt-5 flex flex-wrap gap-2">
-        {presets.map((p, i) => (
+        {PRESETS.map((p) => (
           <button
             key={p}
             type="button"
-            onClick={() => setPresetIndex(i)}
+            onClick={() => setBudget(p)}
             className={
               budget === p
                 ? "rounded-lg border border-amber-400 bg-amber-400/10 px-4 py-2 text-sm font-medium text-amber-200"
                 : "rounded-lg border border-white/15 px-4 py-2 text-sm text-zinc-300 hover:bg-white/5"
             }
           >
-            {new Intl.NumberFormat(currency === "INR" ? "en-IN" : "en-US", {
-              style: "currency",
-              currency,
-              maximumFractionDigits: 0,
-            }).format(p / 100)}
+            {new Intl.NumberFormat("en-US", { style: "currency", currency, maximumFractionDigits: 0 }).format(
+              p / 100,
+            )}
+            /mo
           </button>
         ))}
       </div>
 
-      <label className="mt-4 flex cursor-pointer items-center gap-2 text-sm text-zinc-400">
-        <input
-          type="checkbox"
-          className="accent-amber-400"
-          checked={atCost}
-          onChange={(e) => setAtCost(e.target.checked)}
-        />
-        At-cost mode — you pay exactly what Google charges, no platform fee
-      </label>
 
       {failed ? (
         <p className="mt-5 text-sm text-zinc-500">

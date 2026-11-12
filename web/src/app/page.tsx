@@ -9,7 +9,7 @@ import { BudgetCalculator } from "@/components/BudgetCalculator";
 const STEPS = [
   {
     title: "Tell us about your business",
-    body: "Name, what you do, and the neighbourhood you serve. Thirty seconds.",
+    body: "Name, what you do, and the ZIP codes you serve. Thirty seconds.",
   },
   {
     title: "Upload three photos",
@@ -17,11 +17,11 @@ const STEPS = [
   },
   {
     title: "Pick a budget and go live",
-    body: "We write the script, make the video in both YouTube formats, and run the campaign for you. You never open Google Ads.",
+    body: "From $1 a day. We write the script, make the video in both YouTube formats, and run the campaign for you. You never open Google Ads.",
   },
 ];
 
-const FOR_WHOM = ["Salons", "Restaurants", "Tuition centres", "Gyms", "Plumbers", "Clinics"];
+const FOR_WHOM = ["Salons", "Barbershops", "Restaurants", "Bakeries", "Gyms", "Plumbers", "Dentists"];
 
 export default function LandingPage() {
   return (
@@ -48,7 +48,7 @@ export default function LandingPage() {
 
       <section className="mx-auto w-full max-w-5xl px-6 pt-10 pb-14 sm:pt-16">
         <p className="mb-4 inline-block rounded-full border border-amber-400/30 bg-amber-400/10 px-3 py-1 text-xs font-medium tracking-wide text-amber-200 uppercase">
-          Vocal for Local
+          Local ads, made simple
         </p>
         <h1 className="max-w-3xl text-4xl font-semibold tracking-tight text-balance sm:text-6xl">
           AdVault: YouTube ads for local businesses
@@ -57,15 +57,16 @@ export default function LandingPage() {
           The shop down the road is on YouTube. You should be too.
         </p>
         <p className="mt-6 max-w-2xl text-lg text-zinc-400">
-          A salon in Indiranagar does not need an agency, a video team, or a Google Ads
-          course. Upload three photos, tell us your pin code, pick a budget. We write it,
-          make the video, and run the campaign — you never touch Google Ads.
+          A neighborhood salon doesn&apos;t need an agency, a video team, or a Google Ads
+          course. Upload three photos, tell us your ZIP code, pick a budget. We write it,
+          make the video, and show it on YouTube to people near your shop. You never touch
+          Google Ads.
         </p>
         <p className="mt-4 max-w-2xl text-base text-zinc-300">
           <strong>AdVault</strong> is a self-serve advertising tool for small local
           businesses. It turns a few photos of your business into short video ads for
           YouTube and YouTube Shorts, and runs them as a Google Ads campaign targeted to the
-          neighbourhood you serve. You can read what it does below without an account.
+          neighborhood you serve. You can read what it does below without an account.
         </p>
 
         <div className="mt-6 flex flex-wrap gap-2">
@@ -100,39 +101,25 @@ export default function LandingPage() {
       </section>
 
       <section className="mx-auto w-full max-w-5xl px-6 pb-24">
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Card className="border-amber-400/20 bg-amber-400/[0.04]">
-            <CardTitle>You never open Google Ads</CardTitle>
-            <CardDescription>
-              We create and run your ad account for you under our Google Ads manager
-              account.
-              No billing setup, no campaign builder, no jargon. Top up a balance, and your
-              ads run until it is spent — never a rupee more.
-            </CardDescription>
-          </Card>
-          <Card>
-            <CardTitle>Or bring your own account</CardTitle>
-            <CardDescription>
-              Already running Google Ads? Connect your own account instead and we will build
-              campaigns into it, paused, for you to switch on yourself. Your account, your
-              card, your control.
-            </CardDescription>
-          </Card>
-        </div>
+        <Card className="border-amber-400/20 bg-amber-400/[0.04]">
+          <CardTitle>You never open Google Ads</CardTitle>
+          <CardDescription>
+            We create and run your ad account for you under our Google Ads manager account.
+            No billing setup, no campaign builder, no jargon. Your ad budget is capped at what
+            you choose, never a dollar more, and you can stop any time.
+          </CardDescription>
+        </Card>
 
         <div className="mt-12 rounded-xl border border-white/10 bg-white/[0.02] p-6">
           <h2 className="text-xl font-semibold tracking-tight">
             How AdVault uses your Google account
           </h2>
           <p className="mt-3 text-sm text-zinc-400">
-            Connecting Google is optional and only happens when you choose it. AdVault asks
-            for these permissions, and uses each only for the purpose listed:
+            You don&apos;t need a Google account to use AdVault. If you choose to publish ads
+            to your own YouTube channel, AdVault asks for these permissions and uses each only
+            for the purpose listed:
           </p>
           <ul className="mt-3 list-disc space-y-2 pl-5 text-sm text-zinc-400">
-            <li>
-              <strong className="text-zinc-200">Google Ads</strong> — to create, pause and
-              report on the campaigns you ask AdVault to run in your own Google Ads account.
-            </li>
             <li>
               <strong className="text-zinc-200">YouTube upload</strong> — to publish your
               finished ad to your YouTube channel as an unlisted video, because a YouTube
