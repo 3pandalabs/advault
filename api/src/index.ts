@@ -11,6 +11,7 @@ import { billingRoutes } from "./routes/billing.js";
 import { campaignRoutes } from "./routes/campaigns.js";
 import { creativeRoutes } from "./routes/creatives.js";
 import { uploadRoutes } from "./routes/uploads.js";
+import { newAdRoutes } from "./routes/newAds.js";
 import { launchRoutes } from "./routes/launch.js";
 import { metricsRoutes } from "./routes/metrics.js";
 import { subscriptionRoutes } from "./routes/subscriptions.js";
@@ -105,6 +106,7 @@ await app.register(assetRoutes);
 await app.register(campaignRoutes);
 await app.register(creativeRoutes);
 await app.register(uploadRoutes);
+await app.register(newAdRoutes);
 await app.register(adAccountRoutes);
 // Registered last and on its own, because it is the only route in this app
 // that spends an advertiser's money. Keeping it visibly separate in this list

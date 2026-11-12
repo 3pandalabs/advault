@@ -1,28 +1,17 @@
-import { and, eq, gte, inArray, sql } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { requireAuth } from "../auth/plugin.js";
 import { db } from "../db/index.js";
-import { assets, campaigns, creatives } from "../db/schema.js";
+import { campaigns, creatives } from "../db/schema.js";
 import { loadOwnedCampaign, loadOwnedCreative } from "../lib/ownership.js";
-import { generateScript } from "../lib/ai/script/index.js";
+import { generateForCampaign } from "../lib/creatives/generate.js";
+import { newAdGate } from "../lib/newAd/index.js";
 import { adScriptSchema } from "../lib/script/schema.js";
 import { enqueueRender } from "../render/jobs.js";
 import { campaignIdForCreativeKey, presignDownload } from "../plugins/r2.js";
 
 const ASPECT_RATIOS = ["16:9", "9:16"] as const;
-
-// Creatives one advertiser may generate per rolling 24 hours.
-//
-// This is a SPEND control, not an abuse control. Once a motion provider is
-// configured every creative costs the org roughly a dollar in vendor fees, and
-// that cost lands BEFORE any ad spend — so it sits outside the prepaid wallet
-// that guards Google entirely. Without a ceiling here, a user clicking
-// "regenerate" in a loop spends the org's money at no cost to themselves.
-//
-// Deliberately generous: a real advertiser iterating on two aspect ratios uses
-// a handful, so this only catches the pathological case.
-const MAX_CREATIVES_PER_DAY = Number(process.env.MAX_CREATIVES_PER_DAY ?? 20);
 
 export async function creativeRoutes(app: FastifyInstance) {
   app.addHook("onRequest", requireAuth);
@@ -54,83 +43,20 @@ export async function creativeRoutes(app: FastifyInstance) {
         return reply.code(409).send({ error: "campaign_is_live" });
       }
 
-      // Filtered by userId as well as by id: without it, an advertiser could
-      // pass another advertiser's asset ids and have their photos rendered
-      // into an ad. The ownership check is the whole point of this query.
-      const ownedAssets = await db
-        .select()
-        .from(assets)
-        .where(and(eq(assets.userId, req.userId!), inArray(assets.id, body.assetIds)));
+      // Keep it running: each ad is a paid one-off. A campaign that already
+      // has its paid ad may regenerate (the daily ceiling still applies).
+      const gate = await newAdGate(req.userId!, campaign.id);
+      if (gate) return reply.code(402).send(gate);
 
-      if (ownedAssets.length !== body.assetIds.length) {
-        return reply.code(400).send({ error: "unknown_assets" });
-      }
-
-      // Counted across all of this user's campaigns, not just this one —
-      // per-campaign would be trivially sidestepped by creating campaigns in a
-      // loop, which costs nothing. Checked against the number about to be
-      // created so a request cannot straddle the ceiling.
-      const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
-      const [{ count: recentCount }] = await db
-        .select({ count: sql<number>`count(*)::int` })
-        .from(creatives)
-        .innerJoin(campaigns, eq(creatives.campaignId, campaigns.id))
-        .where(and(eq(campaigns.userId, req.userId!), gte(creatives.createdAt, since)));
-
-      if (recentCount + body.aspectRatios.length > MAX_CREATIVES_PER_DAY) {
-        return reply.code(429).send({
-          error: "daily_creative_limit",
-          limit: MAX_CREATIVES_PER_DAY,
-          used: recentCount,
-        });
-      }
-
-      // Preserve the order the advertiser chose — it is the order the scenes
-      // will play in, and the model's assetIndex values point into it.
-      const orderedKeys = body.assetIds.map(
-        (id) => ownedAssets.find((a) => a.id === id)!.r2Key,
-      );
-
-      const created = [];
-      for (const aspectRatio of body.aspectRatios) {
-        // Scripted per aspect ratio, not once and reused: a 9:16 Shorts
-        // caption sits over a vertical crop with far less horizontal room than
-        // the same words in a 16:9 pre-roll.
-        const { script, source } = await generateScript(
-          {
-            businessName: campaign.businessName,
-            businessCategory: campaign.businessCategory,
-            callToAction: campaign.callToAction,
-            offerDetails: campaign.offerDetails,
-            targetZipCodes: campaign.targetZipCodes,
-            radiusMiles: campaign.radiusMiles,
-            aspectRatio,
-            assetCount: orderedKeys.length,
-          },
-          (msg, err) => req.log.warn({ err, campaignId }, msg),
-        );
-
-        const [creative] = await db
-          .insert(creatives)
-          .values({
-            campaignId,
-            aspectRatio,
-            script,
-            scriptSource: source,
-            sourceAssetKeys: orderedKeys,
-          })
-          .returning();
-
-        await enqueueRender(creative.id);
-        created.push(creative);
-      }
-
-      await db
-        .update(campaigns)
-        .set({ status: "rendering", updatedAt: new Date() })
-        .where(eq(campaigns.id, campaignId));
-
-      return reply.code(202).send({ creatives: created });
+      const result = await generateForCampaign({
+        campaign,
+        userId: req.userId!,
+        assetIds: body.assetIds,
+        aspectRatios: body.aspectRatios,
+        warn: (msg, err) => req.log.warn({ err, campaignId }, msg),
+      });
+      if (!result.ok) return reply.code(result.status).send(result.body);
+      return reply.code(202).send({ creatives: result.creatives });
     },
   );
 

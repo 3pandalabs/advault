@@ -53,7 +53,11 @@ CLAUDE.md.
 
 | Method | Path | Notes |
 |---|---|---|
-| POST | `/campaigns/:campaignId/creatives/generate` | **202.** Writes the scripts, queues the renders, returns. One creative per requested aspect ratio. |
+| POST | `/campaigns/:campaignId/creatives/generate` | **202.** Writes the scripts, queues the renders, returns. One creative per requested aspect ratio. **402 `new_ad_payment_required`** for a Keep it running subscriber whose campaign has no paid ad yet. |
+| GET | `/new-ad/quote` | `{required, display}`: does this user pay per ad (Keep it running), and how much. |
+| GET | `/campaigns/:campaignId/new-ad` | `{required, display, order}`: the campaign's latest new-ad order. |
+| POST | `/campaigns/:campaignId/new-ad/order` | Opens a $19 checkout. Body `{assetIds, aspectRatios}` is saved on the order; omit it to reuse the last order's. 409 `ad_included_in_plan` / `already_paid` / `campaign_is_live`. Paid via the shared `/webhooks/purchases/:provider`. |
+| POST | `/new-ad/orders/:purchaseId/generate` | Spends a paid order: generates from its saved choices, marks it delivered. 409 `payment_pending` / `in_progress`; 200 `alreadyGenerated`. |
 | GET | `/campaigns/:campaignId/creatives` | |
 | PATCH | `/creatives/:creativeId/script` | Hand-edited copy, re-validated against the generator's own schema. Re-queues the render. 409 `creative_is_upload` for uploaded videos. |
 | POST | `/creatives/:creativeId/retry` | 409 `already_rendering`. |

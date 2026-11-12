@@ -254,7 +254,10 @@ export function estimateReach(adBudgetMinor: number, currency: Currency): ReachE
 // is heavily discounted because the entire job of the first one is to be tried.
 // ---------------------------------------------------------------------------
 
-export const ADD_ON_SKUS = ["cinematic"] as const;
+// `new_ad` (2026-11-11) is the $19 ad for Keep it running subscribers: that
+// plan bundles no creatives, so every ad it runs, the first included, is one of
+// these. Same price first and repeat; it is not an intro offer.
+export const ADD_ON_SKUS = ["cinematic", "new_ad"] as const;
 export type AddOnSku = (typeof ADD_ON_SKUS)[number];
 
 export type AddOn = {
@@ -303,6 +306,16 @@ export const ADD_ONS: Record<string, AddOn> = {
     generatedSeconds: 15,
     label: "US — Cinematic Ad",
     blurb: "A filmed-looking ad built from a description, closing on your own photo.",
+  },
+  "us-new_ad": {
+    key: "us-new_ad",
+    sku: "new_ad",
+    currency: "USD",
+    priceMinor: 1_900, // $19
+    firstPurchasePriceMinor: 1_900, // $19, the first ad too
+    generatedSeconds: 0, // the standard photo pipeline; nothing text-to-video
+    label: "US — New ad",
+    blurb: "A new ad from your photos, for the Keep it running plan.",
   },
 };
 
