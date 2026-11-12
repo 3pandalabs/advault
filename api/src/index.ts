@@ -8,6 +8,7 @@ import { adAccountRoutes } from "./routes/adAccounts.js";
 import { assetRoutes } from "./routes/assets.js";
 import { authRoutes } from "./routes/auth.js";
 import { billingRoutes } from "./routes/billing.js";
+import { stripeWebhookRoutes } from "./routes/stripeWebhook.js";
 import { campaignRoutes } from "./routes/campaigns.js";
 import { creativeRoutes } from "./routes/creatives.js";
 import { uploadRoutes } from "./routes/uploads.js";
@@ -99,6 +100,7 @@ await app.register(authRoutes);
 // deliberately public — the landing-page calculator is the top of the funnel
 // and must work before signup.
 await app.register(billingRoutes);
+await app.register(stripeWebhookRoutes);
 await app.register(subscriptionRoutes);
 await app.register(cinematicRoutes);
 await app.register(offerRoutes);

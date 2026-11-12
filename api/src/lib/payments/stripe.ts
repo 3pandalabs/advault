@@ -36,6 +36,8 @@ export const stripe: PaymentProvider = {
       // the only reliable link back to our payments row.
       "metadata[payment_id]": req.paymentId,
       "metadata[purpose]": req.purpose,
+      // The Stripe account is shared by every 3PandaLabs app; see stripeRouting.ts.
+      "metadata[app]": "advault",
     });
 
     const res = await fetch(`${API}/checkout/sessions`, {

@@ -73,6 +73,9 @@ export const stripeSubscriptions: SubscriptionProvider = {
       "metadata[invoice_id]": req.invoiceId,
       "subscription_data[metadata][subscription_id]": req.subscriptionId,
       "subscription_data[metadata][invoice_id]": req.invoiceId,
+      // The Stripe account is shared by every 3PandaLabs app; see stripeRouting.ts.
+      "metadata[app]": "advault",
+      "subscription_data[metadata][app]": "advault",
     });
 
     const res = await fetch(`${API}/checkout/sessions`, {

@@ -351,6 +351,16 @@ customer keeps being charged and the database stays in month one.
 decision and are tested. Anything reaching for `db` or `fetch` belongs in the
 sibling `index.ts`.
 
+## Stripe: one org account, one AdVault endpoint
+
+The 3PandaLabs Stripe account is shared by every app. AdVault tags what it
+creates with `metadata.app = advault` and registers ONE webhook,
+`/webhooks/stripe`, which routes to the three handlers
+(`lib/payments/stripeRouting.ts`) and answers 200 to anything that is not
+AdVault's. Stripe gives each endpoint its own signing secret and the app reads
+one, so never register the per-purpose URLs separately. Setup:
+`infra/stripe-setup.md`.
+
 ## The cinematic add-on is TEXT-to-video, and that is the whole point
 
 Everything the subscription produces, a shop owner could plausibly make on
