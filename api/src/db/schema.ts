@@ -1,7 +1,9 @@
 import { sql } from "drizzle-orm";
 import {
+  bigint,
   boolean,
   check,
+  date,
   index,
   integer,
   jsonb,
@@ -1114,5 +1116,41 @@ export const purchases = pgTable(
       sql`${t.status} in ('pending','paid','producing','delivered','failed','refunded','cancelled')`,
     ),
     check("purchases_amount_check", sql`${t.amountMinor} >= 0`),
+  ],
+);
+
+// ---------------------------------------------------------------------------
+// Ad performance — one row per campaign per Google report date.
+//
+// Filled by the renderer's READ-ONLY sweep (render/adMetricsSync.ts) from a
+// googleAds:search query; nothing here ever mutates anything at Google. The
+// date is Google's report date in the ad account's timezone, which is why it is
+// a `date` and not a timestamp. Rows for the last few days are overwritten on
+// every pass because Google restates recent figures (invalid-traffic filtering).
+//
+// Counts are bigint (Google reports int64) read back as JS numbers — a single
+// local campaign is many orders of magnitude below 2^53.
+// ---------------------------------------------------------------------------
+
+export const campaignDailyMetrics = pgTable(
+  "campaign_daily_metrics",
+  {
+    campaignId: uuid("campaign_id")
+      .notNull()
+      .references(() => campaigns.id, { onDelete: "cascade" }),
+    date: date("date", { mode: "string" }).notNull(),
+    impressions: bigint("impressions", { mode: "number" }).notNull().default(0),
+    // metrics.video_trueview_views — see lib/adMetrics/policy.ts for why that
+    // field and not the pre-v22 metrics.video_views.
+    views: bigint("views", { mode: "number" }).notNull().default(0),
+    clicks: bigint("clicks", { mode: "number" }).notNull().default(0),
+    // Micros of the ad account's currency, exactly as Google reports them.
+    // Converted to minor units only at the edge (lib/adMetrics/policy.ts).
+    costMicros: bigint("cost_micros", { mode: "number" }).notNull().default(0),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("uq_campaign_daily_metrics").on(t.campaignId, t.date),
+    index("idx_campaign_daily_metrics_date").on(t.date),
   ],
 );

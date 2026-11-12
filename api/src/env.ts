@@ -44,4 +44,11 @@ export const env = {
   // required: when unset the route answers 503 and the rest of the API boots
   // normally, so a missing ops secret can't take a deploy down.
   METRICS_TOKEN: process.env.METRICS_TOKEN ?? "",
+
+  // Optional bearer for GET /admin/metrics, so a server-side caller (the org
+  // admin site's Worker) can read per-campaign ad performance without an admin
+  // user session. Deliberately NOT the shared METRICS_TOKEN: that token is held
+  // for every org app and reaches aggregate counts only, while this route names
+  // businesses and their spend. Unset = admin user sessions only.
+  ADMIN_ANALYTICS_TOKEN: process.env.ADMIN_ANALYTICS_TOKEN ?? "",
 };
