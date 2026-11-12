@@ -21,6 +21,15 @@ const STEPS = [
   },
 ];
 
+// Self-hosted (web/public/demo), not YouTube embeds: an embed sets cookies,
+// and the privacy policy says this site sets none. preload="none" so the
+// page costs nothing until someone presses play.
+const DEMOS = [
+  { src: "/demo/salon.mp4", poster: "/demo/salon.jpg", title: "Barbershop", note: "$10 off offer" },
+  { src: "/demo/bakery.mp4", poster: "/demo/bakery.jpg", title: "Bakery", note: "$2 off offer" },
+  { src: "/demo/advault.mp4", poster: "/demo/advault.jpg", title: "AdVault itself", note: "Our own ad, made with AdVault" },
+];
+
 const FOR_WHOM = ["Salons", "Barbershops", "Restaurants", "Bakeries", "Gyms", "Plumbers", "Dentists"];
 
 export default function LandingPage() {
@@ -83,6 +92,36 @@ export default function LandingPage() {
 
       <section className="mx-auto w-full max-w-5xl px-6 pb-16">
         <BudgetCalculator />
+      </section>
+
+      <section className="mx-auto w-full max-w-5xl px-6 pb-16">
+        <h2 className="text-2xl font-semibold tracking-tight">Ads we made</h2>
+        <p className="mt-2 mb-5 text-sm text-zinc-400">
+          Vertical ads for YouTube Shorts. Each one also comes as a widescreen version for
+          regular YouTube.
+        </p>
+        <div className="grid grid-cols-1 gap-6 sm:grid-cols-3">
+          {DEMOS.map((d) => (
+            <figure key={d.src} className="mx-auto w-full max-w-[280px]">
+              <video
+                src={d.src}
+                poster={d.poster}
+                controls
+                playsInline
+                preload="none"
+                className="aspect-[9/16] w-full rounded-2xl border border-white/10 bg-black object-cover"
+              />
+              <figcaption className="mt-2 text-sm">
+                <span className="font-medium text-zinc-200">{d.title}</span>
+                <span className="text-zinc-500"> · {d.note}</span>
+              </figcaption>
+            </figure>
+          ))}
+        </div>
+        <p className="mt-4 text-xs text-zinc-500">
+          Demo businesses with AI-generated images, made to show the format. Your ad uses your
+          own photos and offer.
+        </p>
       </section>
 
       <section className="mx-auto w-full max-w-5xl px-6 pb-16">
