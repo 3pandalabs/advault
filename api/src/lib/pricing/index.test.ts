@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addOnFor, addOnPriceMinor, buysMedia, hasMonthlyOffers, planByKey, PLANS, PRODUCT_LINES } from "./index.js";
+import { addOnFor, addOnPriceMinor, freeFirstAd, freeFirstAdPlacesLeft, buysMedia, hasMonthlyOffers, planByKey, PLANS, PRODUCT_LINES } from "./index.js";
 
 describe("plans", () => {
   it("every plan's line is a known product line", () => {
@@ -30,5 +30,19 @@ describe("new ad", () => {
     expect(a.key).toBe("us-new_ad");
     expect(addOnPriceMinor(a, { priorPaidCount: 0 })).toBe(1_900);
     expect(addOnPriceMinor(a, { priorPaidCount: 5 })).toBe(1_900);
+  });
+});
+
+describe("free first ad launch offer", () => {
+  it("is the first ad only, for the first 30 customers", () => {
+    expect(freeFirstAd({ priorAdsClaimed: 0, freeAdsClaimedByAnyone: 0 })).toBe(true);
+    expect(freeFirstAd({ priorAdsClaimed: 0, freeAdsClaimedByAnyone: 29 })).toBe(true);
+    expect(freeFirstAd({ priorAdsClaimed: 0, freeAdsClaimedByAnyone: 30 })).toBe(false);
+    expect(freeFirstAd({ priorAdsClaimed: 1, freeAdsClaimedByAnyone: 0 })).toBe(false);
+  });
+
+  it("counts places left without going negative", () => {
+    expect(freeFirstAdPlacesLeft(0)).toBe(30);
+    expect(freeFirstAdPlacesLeft(31)).toBe(0);
   });
 });

@@ -307,9 +307,11 @@ export function generateCreatives(
 export type NewAdStatus = {
   required: boolean;
   display: string | null;
+  freeLaunchOffer: boolean;
   order: { id: string; status: string; amountMinor: number; currency: string } | null;
 };
-export const getNewAdQuote = () => api<{ required: boolean; display?: string }>("/new-ad/quote");
+export const getNewAdQuote = () =>
+  api<{ required: boolean; display?: string; freeLaunchOffer?: boolean }>("/new-ad/quote");
 export const getNewAdStatus = (campaignId: string) => api<NewAdStatus>(`/campaigns/${campaignId}/new-ad`);
 export const orderNewAd = (
   campaignId: string,

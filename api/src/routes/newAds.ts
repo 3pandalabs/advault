@@ -7,12 +7,13 @@ import { assets, purchases, users } from "../db/schema.js";
 import { loadOwnedCampaign } from "../lib/ownership.js";
 import { formatMinor } from "../lib/pricing/index.js";
 import { providerFor } from "../lib/payments/index.js";
-import { createPurchase, markDelivered, quoteFor } from "../lib/cinematic/index.js";
+import { createPurchase, markDelivered, markPurchasePaid } from "../lib/cinematic/index.js";
 import { generateForCampaign } from "../lib/creatives/generate.js";
 import {
   campaignHasPaidAd,
   claimNewAdOrder,
   paysPerAd,
+  quoteNewAd,
   releaseNewAdOrder,
   type NewAdBrief,
 } from "../lib/newAd/index.js";
@@ -41,12 +42,13 @@ export async function newAdRoutes(app: FastifyInstance) {
   // Price check before a campaign exists (wizard step 3 button label).
   app.get("/new-ad/quote", async (req) => {
     if (!(await paysPerAd(req.userId!))) return { required: false };
-    const quote = await quoteFor(req.userId!, "new_ad");
+    const quote = await quoteNewAd(req.userId!);
     return {
       required: true,
       amountMinor: quote.amountMinor,
       currency: quote.currency,
       display: formatMinor(quote.amountMinor, quote.currency),
+      freeLaunchOffer: quote.freeLaunchOffer,
     };
   });
 
@@ -96,19 +98,30 @@ export async function newAdRoutes(app: FastifyInstance) {
         return reply.code(400).send({ error: "unknown_assets" });
       }
 
-      const quote = await quoteFor(req.userId!, "new_ad");
-      const provider = providerFor(quote.currency);
+      const quote = await quoteNewAd(req.userId!);
+      // A free ad (launch offer) skips checkout: there is nothing to charge.
+      // It is marked paid at once, which writes no ledger rows for $0.
+      const provider = quote.amountMinor === 0 ? null : providerFor(quote.currency);
       const purchase = await createPurchase({
         userId: req.userId!,
         campaignId: campaign.id,
         addOnKey: quote.addOn.key,
         amountMinor: quote.amountMinor,
-        provider: provider.name,
+        provider: provider?.name ?? "manual",
       });
       await db
         .update(purchases)
         .set({ brief: chosen, updatedAt: new Date() })
         .where(eq(purchases.id, purchase.id));
+
+      if (!provider) {
+        await markPurchasePaid({ purchaseId: purchase.id, externalRef: `launch-offer:${purchase.id}` });
+        return reply.code(201).send({
+          purchaseId: purchase.id,
+          freeLaunchOffer: true,
+          checkout: { provider: "none", redirectUrl: null, clientPayload: {} },
+        });
+      }
 
       const [user] = await db.select({ email: users.email }).from(users).where(eq(users.id, req.userId!)).limit(1);
       const session = await provider.createCheckout({
@@ -184,10 +197,11 @@ async function newAdStatus(userId: string, campaignId: string) {
     .where(and(eq(purchases.campaignId, campaignId), eq(purchases.sku, "new_ad")))
     .orderBy(desc(purchases.createdAt))
     .limit(1);
-  const quote = required ? await quoteFor(userId, "new_ad") : null;
+  const quote = required ? await quoteNewAd(userId) : null;
   return {
     required,
     display: quote ? formatMinor(quote.amountMinor, quote.currency) : null,
+    freeLaunchOffer: quote?.freeLaunchOffer ?? false,
     order: order ?? null,
   };
 }

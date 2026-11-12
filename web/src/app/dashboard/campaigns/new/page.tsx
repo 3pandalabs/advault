@@ -88,6 +88,7 @@ export default function NewCampaignPage() {
   const [aspectRatios, setAspectRatios] = useState<("16:9" | "9:16")[]>(["16:9", "9:16"]);
   // Keep it running subscribers pay per ad; null means the ad is included.
   const [newAdPrice, setNewAdPrice] = useState<string | null>(null);
+  const [freeAd, setFreeAd] = useState(false);
 
   useEffect(() => {
     // Prefill from the profile so an advertiser who filled this in at signup
@@ -106,7 +107,10 @@ export default function NewCampaignPage() {
 
     listAssets().then(setAssets).catch(() => undefined);
     getNewAdQuote()
-      .then((q) => setNewAdPrice(q.required ? (q.display ?? null) : null))
+      .then((q) => {
+        setNewAdPrice(q.required ? (q.display ?? null) : null);
+        setFreeAd(!!q.required && !!q.freeLaunchOffer);
+      })
       .catch(() => undefined);
   }, []);
 
@@ -585,7 +589,12 @@ export default function NewCampaignPage() {
             ))}
           </div>
 
-          {newAdPrice ? (
+          {freeAd ? (
+            <p className="mt-5 text-sm text-zinc-400">
+              Launch offer: your first ad is free (normally $19), for our first 30 customers.
+              We write the script and render your videos. Nothing runs until you launch.
+            </p>
+          ) : newAdPrice ? (
             <p className="mt-5 text-sm text-zinc-400">
               Your plan charges {newAdPrice} per ad. You pay now, then we write the script and
               render your videos. Nothing runs until you launch.
@@ -603,7 +612,7 @@ export default function NewCampaignPage() {
               Back
             </Button>
             <Button onClick={onFinish} disabled={busy || aspectRatios.length === 0}>
-              {busy ? "Creating…" : newAdPrice ? `Pay ${newAdPrice} and make my ad` : "Generate my ads"}
+              {busy ? "Creating…" : freeAd ? "Make my free ad" : newAdPrice ? `Pay ${newAdPrice} and make my ad` : "Generate my ads"}
             </Button>
           </div>
         </Card>
