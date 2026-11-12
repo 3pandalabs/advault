@@ -281,6 +281,28 @@ export type CampaignMetrics = {
   lastSyncedAt: string | null;
 };
 
+export type AdminMetrics = {
+  days: number;
+  since: string;
+  note: string;
+  totals: Record<string, MetricSummary>;
+  campaigns: {
+    campaignId: string;
+    name: string;
+    businessName: string;
+    userEmail: string;
+    status: string;
+    currency: string;
+    googleCustomerId: string | null;
+    launchedAt: string | null;
+    lastSyncedAt: string | null;
+    totals: MetricSummary;
+  }[];
+};
+
+// Admin only (the API enforces it).
+export const getAdminMetrics = (days = 7) => api<AdminMetrics>(`/admin/metrics?days=${days}`);
+
 export const getCampaignMetrics = (id: string, days = 7) =>
   api<CampaignMetrics>(`/campaigns/${id}/metrics?days=${days}`);
 

@@ -87,6 +87,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             >
               Balance
             </Link>
+            {me?.role === "admin" && (
+              <Link
+                href="/dashboard/admin"
+                className="rounded-lg px-3 py-2 text-amber-300 hover:bg-white/10"
+              >
+                Admin
+              </Link>
+            )}
             <Link
               href="/dashboard/settings"
               className="rounded-lg px-3 py-2 text-zinc-300 hover:bg-white/10"
