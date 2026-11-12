@@ -254,6 +254,36 @@ export const getCampaign = (id: string) =>
   api<Campaign & { creatives: Creative[] }>(`/campaigns/${id}`);
 export const listAssets = () => api<Asset[]>("/assets");
 
+// Ad performance, read from the API's copy of Google's report (refreshed hourly
+// by the renderer). Money is already formatted server-side in the campaign's
+// currency; rates are 0..1.
+export type MetricSummary = {
+  impressions: number;
+  views: number;
+  clicks: number;
+  spendMinor: number;
+  spendDisplay: string;
+  costPerViewMinor: number | null;
+  costPerViewDisplay: string | null;
+  ctr: number | null;
+  viewRate: number | null;
+};
+
+export type CampaignMetrics = {
+  campaignId: string;
+  launched: boolean;
+  days: number;
+  since: string;
+  currency: string;
+  note: string;
+  totals: MetricSummary | null;
+  daily: (MetricSummary & { date: string })[];
+  lastSyncedAt: string | null;
+};
+
+export const getCampaignMetrics = (id: string, days = 7) =>
+  api<CampaignMetrics>(`/campaigns/${id}/metrics?days=${days}`);
+
 export const listAdAccounts = () =>
   api<{ configured: boolean; managedOffered?: boolean; accounts: AdAccount[] }>("/ad-accounts");
 

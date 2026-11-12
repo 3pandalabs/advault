@@ -195,6 +195,25 @@ a green path with a broken product at the end of it.
 `counts.renderedNotOnYouTube` and `counts.liveCampaignsWithoutAds` in `/metrics`
 exist to make this visible; the second should be **0 forever**.
 
+## Ad performance analytics are a read-only report copy
+
+`render/adMetricsSync.ts` (renderer, hourly, outside `RENDER_CONCURRENCY`)
+runs ONE `googleAds:search` per ad account for the last 7 days and overwrites
+`campaign_daily_metrics` (campaign, date) rows — Google restates recent days.
+It covers every launched campaign whoever pays, which is why it is a sibling of
+`spendSync` (platform-billed only, moves wallet money) rather than part of it.
+It must never call a mutate endpoint. Routes (`/campaigns/:id/metrics`,
+`/admin/metrics`) read the table, never Google.
+
+- **Views are `metrics.video_trueview_views`.** `metrics.video_views`,
+  `video_view_rate` and `average_cpv` were removed in v22; selecting one 400s
+  the whole query.
+- **Rates are computed from summed counts** (`lib/adMetrics/policy.ts`), never
+  selected from Google — per-day averages cannot be summed across a range.
+- `/admin/metrics` takes an admin session or the optional
+  `ADMIN_ANALYTICS_TOKEN`, never the shared `METRICS_TOKEN`: it names
+  businesses and their spend, which `/metrics` deliberately never does.
+
 ## Uploaded videos are admin-only (step 1)
 
 `routes/uploads.ts` lets an **admin** attach a finished MP4 (e.g. AdVault's own

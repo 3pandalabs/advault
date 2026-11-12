@@ -25,6 +25,7 @@ import {
 } from "@/lib/api/browser";
 import { SquareLogo } from "./square-logo";
 import { AdminVideoUpload } from "./admin-video-upload";
+import { PerformanceCard } from "./performance-card";
 import { Badge, Card, CardDescription, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { formatDuration, formatMoney } from "@/lib/utils";
@@ -513,6 +514,10 @@ export default function CampaignDetailPage({
           </>
         )}
       </Card>
+
+      {/* Only once Google has the campaign — before launch there is nothing
+          to report, and an all-zero card would read as "your ad isn't working". */}
+      {campaign.googleCampaignResourceName && <PerformanceCard campaignId={campaignId} />}
     </div>
   );
 }

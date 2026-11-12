@@ -5,6 +5,7 @@ import { authPlugin } from "./auth/plugin.js";
 import { env } from "./env.js";
 import { recordRequest, startCpuSampler } from "./metrics/collector.js";
 import { adAccountRoutes } from "./routes/adAccounts.js";
+import { adMetricsRoutes } from "./routes/adMetrics.js";
 import { assetRoutes } from "./routes/assets.js";
 import { authRoutes } from "./routes/auth.js";
 import { billingRoutes } from "./routes/billing.js";
@@ -108,6 +109,8 @@ await app.register(creativeRoutes);
 await app.register(uploadRoutes);
 await app.register(newAdRoutes);
 await app.register(adAccountRoutes);
+// Read-only ad performance (from campaign_daily_metrics, never Google directly).
+await app.register(adMetricsRoutes);
 // Registered last and on its own, because it is the only route in this app
 // that spends an advertiser's money. Keeping it visibly separate in this list
 // is deliberate — see routes/launch.ts.

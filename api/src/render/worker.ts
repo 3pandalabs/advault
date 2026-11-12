@@ -22,6 +22,7 @@ import {
 } from "./jobs.js";
 import { renderCreative, type AspectRatio } from "./ffmpeg.js";
 import { startSpendSync } from "./spendSync.js";
+import { startAdMetricsSync } from "./adMetricsSync.js";
 import { startPlatformBillingSweep } from "../lib/billing/managedCard.js";
 import { startOfferScheduler } from "./offerCycles.js";
 import { startCinematicWorker, stopCinematicWorker } from "./cinematic.js";
@@ -307,6 +308,10 @@ async function main(): Promise<void> {
   // Runs here rather than in the API: this is already a long-lived process, so
   // the job needs no new container, and the API would fire it once per replica.
   startSpendSync();
+  // Read-only performance report pull for the dashboard (every launched
+  // campaign, not just platform-billed ones). Network-bound, so it sits outside
+  // RENDER_CONCURRENCY like the YouTube upload worker.
+  startAdMetricsSync();
   // Polls platform accounts waiting for their card and re-alerts the operator.
   startPlatformBillingSweep();
   // Same reasoning: the monthly offer conversation, subscription renewals and
