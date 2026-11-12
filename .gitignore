@@ -7,3 +7,6 @@ dist/
 .env
 .env.local
 .DS_Store
+
+# Claude Code local state (agent worktrees)
+.claude/
