@@ -184,6 +184,19 @@ export default function LandingPage() {
       </section>
 
       <section className="mx-auto w-full max-w-5xl px-6 pb-16">
+        <div className="rounded-xl border border-white/10 bg-white/[0.02] p-6">
+          <h2 className="text-xl font-semibold tracking-tight">What is AdVault?</h2>
+          <p className="mt-3 text-zinc-400">
+            <strong className="text-zinc-200">AdVault</strong> is a self-serve advertising tool
+            for small local businesses. It turns a few photos of your business into short video
+            ads for YouTube and YouTube Shorts, and runs them as a Google Ads campaign targeted
+            to the area you serve. We create and run the ad account under our Google Ads
+            manager account, so there is no billing setup, campaign builder or jargon for you.
+          </p>
+        </div>
+      </section>
+
+      <section className="mx-auto w-full max-w-5xl px-6 pb-16">
         <h2 className="mb-5 text-2xl font-semibold tracking-tight">Three steps, one sitting</h2>
         <div className="grid gap-4 sm:grid-cols-3">
           {STEPS.map((step, i) => (
@@ -268,18 +281,9 @@ export default function LandingPage() {
 
       <section className="mx-auto w-full max-w-5xl px-6 pb-24">
         <div className="rounded-xl border border-white/10 bg-white/[0.02] p-6">
-          <h2 className="text-xl font-semibold tracking-tight">About AdVault</h2>
-          <p className="mt-3 text-sm text-zinc-400">
-            <strong className="text-zinc-200">AdVault</strong> is a self-serve advertising tool
-            for small local businesses. It turns a few photos of your business into short video
-            ads for YouTube and YouTube Shorts, and runs them as a Google Ads campaign targeted
-            to the area you serve. We create and run the ad account under our Google Ads
-            manager account, so there is no billing setup, campaign builder or jargon for you.
-          </p>
-
-          <h3 className="mt-6 text-base font-semibold tracking-tight">
+          <h2 className="text-base font-semibold tracking-tight">
             How AdVault uses your Google account
-          </h3>
+          </h2>
           <p className="mt-2 text-sm text-zinc-400">
             You don&apos;t need a Google account to use AdVault. If you choose to publish ads
             to your own YouTube channel, AdVault asks for these permissions and uses each only
