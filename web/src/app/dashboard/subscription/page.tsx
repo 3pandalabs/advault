@@ -188,7 +188,7 @@ export default function SubscriptionPage() {
               </p>
               <p className="mt-1 text-sm text-zinc-400">
                 {plan.line === "evergreen"
-                  ? `$30 goes to your ads (about $1/day) + ${plan.display.monthlyFee} AdVault fee. $19 one-time for each ad we make. Add budget any time for more views.`
+                  ? `$30 goes to your ads (about $1/day) + ${plan.display.monthlyFee} AdVault fee. $10 one-time for each ad we make. Add budget any time for more views.`
                   : `${plan.includedCreativesPerMonth} fresh videos a month`}
                 {plan.line === "managed" ? ` · ${plan.display.allIn} all-in with ad spend` : ""}
               </p>

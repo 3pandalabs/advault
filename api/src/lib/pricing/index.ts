@@ -157,12 +157,12 @@ export const PLANS: Record<string, Plan> = {
     currency: "USD",
     line: "evergreen",
     monthlyFeeMinor: 1_900, // $19/month platform fee
-    // Ads are bought one at a time ($19 each), never bundled into the fee.
+    // Ads are bought one at a time ($10 each), never bundled into the fee.
     includedCreativesPerMonth: 0,
     suggestedAdBudgetMinor: 3_000, // $30 = $1/day, the floor
     minDailyBudgetMinor: 100, // $1/day
     label: "US — Keep it running",
-    blurb: "One ad kept running on YouTube around your business. $19 per ad, no monthly offers.",
+    blurb: "One ad kept running on YouTube around your business. $10 per ad, no monthly offers.",
   },
 };
 
@@ -254,7 +254,7 @@ export function estimateReach(adBudgetMinor: number, currency: Currency): ReachE
 // is heavily discounted because the entire job of the first one is to be tried.
 // ---------------------------------------------------------------------------
 
-// `new_ad` (2026-11-11) is the $19 ad for Keep it running subscribers: that
+// `new_ad` (2026-11-11; $10 from 2026-11-12) is the $10 ad for Keep it running subscribers: that
 // plan bundles no creatives, so every ad it runs, the first included, is one of
 // these. Same price first and repeat; it is not an intro offer.
 export const ADD_ON_SKUS = ["cinematic", "new_ad"] as const;
@@ -311,8 +311,8 @@ export const ADD_ONS: Record<string, AddOn> = {
     key: "us-new_ad",
     sku: "new_ad",
     currency: "USD",
-    priceMinor: 1_900, // $19
-    firstPurchasePriceMinor: 1_900, // $19, the first ad too
+    priceMinor: 1_000, // $10 (was $19 until 2026-11-12)
+    firstPurchasePriceMinor: 1_000, // $10, the first ad too
     generatedSeconds: 0, // the standard photo pipeline; nothing text-to-video
     label: "US — New ad",
     blurb: "A new ad from your photos, for the Keep it running plan.",

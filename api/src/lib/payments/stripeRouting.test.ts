@@ -4,7 +4,7 @@ import { routeStripeEvent } from "./stripeRouting.js";
 const ev = (type: string, object: Record<string, unknown>) => ({ type, data: { object } });
 
 describe("routeStripeEvent", () => {
-  it("sends a $19 ad / cinematic checkout to purchases", () => {
+  it("sends a $10 ad / cinematic checkout to purchases", () => {
     expect(
       routeStripeEvent(ev("checkout.session.completed", { mode: "payment", metadata: { payment_id: "p", purpose: "add_on", app: "advault" } })),
     ).toBe("purchases");

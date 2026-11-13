@@ -725,7 +725,7 @@ export default function NewCampaignPage() {
 
           {freeAd ? (
             <p className="mt-5 text-sm text-zinc-400">
-              Launch offer: your first ad is free (normally $19), for our first 30 customers.
+              Launch offer: your first ad is free (normally $10).
               We write the script and render your videos. Nothing runs until you launch.
             </p>
           ) : newAdPrice ? (

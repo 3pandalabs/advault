@@ -3,7 +3,7 @@ import { db } from "../../db/index.js";
 import { purchases } from "../../db/schema.js";
 import { entitlesToService, type SubscriptionStatus } from "../subscriptions/policy.js";
 import { liveSubscriptionFor } from "../subscriptions/index.js";
-import { formatMinor, freeFirstAd, freeFirstAdPlacesLeft } from "../pricing/index.js";
+import { formatMinor, freeFirstAd } from "../pricing/index.js";
 import { quoteFor, type Quote } from "../cinematic/index.js";
 
 const CLAIMED = ["paid", "producing", "delivered"] as const;
@@ -19,7 +19,7 @@ export async function freeAdsClaimed(): Promise<number> {
 
 export type NewAdQuote = Quote & { freeLaunchOffer: boolean };
 
-/** The $19 ad, or $0 while the launch offer has places and this is their first. */
+/** The $10 ad, or $0 while the launch offer has places and this is their first. */
 export async function quoteNewAd(userId: string): Promise<NewAdQuote> {
   const quote = await quoteFor(userId, "new_ad");
   const [mine] = await db
@@ -30,11 +30,8 @@ export async function quoteNewAd(userId: string): Promise<NewAdQuote> {
   return free ? { ...quote, amountMinor: 0, freeLaunchOffer: true } : { ...quote, freeLaunchOffer: false };
 }
 
-export async function freeFirstAdPlaces(): Promise<number> {
-  return freeFirstAdPlacesLeft(await freeAdsClaimed());
-}
 
-// The $19 new ad for Keep it running (evergreen) subscribers.
+// The $10 new ad for Keep it running (evergreen) subscribers.
 //
 // That plan's fee bundles no creatives, so before AdVault writes and renders
 // an ad for one of its campaigns, a `new_ad` purchase must be paid. The order

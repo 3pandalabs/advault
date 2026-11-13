@@ -20,7 +20,7 @@ import {
 
 const WEB_ORIGIN = process.env.WEB_ORIGIN ?? "https://advault.3pandalabs.com";
 
-// The $19 new ad (Keep it running). See lib/newAd for the lifecycle. The
+// The $10 new ad (Keep it running). See lib/newAd for the lifecycle. The
 // payment webhook is the shared /webhooks/purchases/:provider in cinematic.ts,
 // which marks any purchase paid whatever its sku.
 export async function newAdRoutes(app: FastifyInstance) {
