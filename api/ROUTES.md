@@ -71,9 +71,21 @@ CLAUDE.md.
 | PATCH | `/creatives/:creativeId/script` | Hand-edited copy, re-validated against the generator's own schema. Re-queues the render. 409 `creative_is_upload` for uploaded videos. |
 | POST | `/creatives/:creativeId/retry` | 409 `already_rendering`. |
 | POST | `/creatives/download-url` | Authorized by the key's `campaigns/<id>/` prefix. |
-| POST | `/campaigns/:campaignId/creatives/upload-url` | **Admin only**, own campaigns only. Body `{width, height, durationSeconds}` (read in the browser); refuses non-9:16/16:9, <720p, <5s or >180s. Returns `{creativeId, uploadUrl, contentType}` for a PUT to R2. |
-| POST | `/campaigns/:campaignId/creatives/upload` | **Admin only.** Confirms the PUT: HEADs the object (exists, video/mp4, ≤200 MB), inserts a `kind='upload'` creative already `ready`, queues the YouTube upload. 201. |
-| DELETE | `/creatives/:creativeId` | **Admin only**, uploads only, own campaigns. 409 `creative_is_live` once the campaign/ad exists at Google, `upload_in_progress` mid-publish. Deletes the row (jobs cascade) and the R2 object; the YouTube copy stays. 204. |
+| POST | `/campaigns/:campaignId/creatives/upload-url` | "Use my own video". Any user, own campaigns only. Body `{width, height, durationSeconds}` (read in the browser); refuses non-9:16/16:9, <720p, and lengths outside **6–60s** for customers (5–180s for admins). Returns `{creativeId, uploadUrl, contentType}` for a PUT to R2. |
+| POST | `/campaigns/:campaignId/creatives/upload` | Confirms the PUT. Body adds `creativeId` and **`rightsAttested: true` (required)**; who/when is stored. HEADs the object (exists, video/mp4, ≤200 MB), inserts a `kind='upload'` creative already `ready`. A customer's is `reviewStatus: 'pending_review'`, is **not** published to YouTube and pings ops (ntfy); an admin's is `approved` and queues the YouTube upload. 201. |
+| DELETE | `/creatives/:creativeId` | Uploads only, own campaigns. 409 `creative_is_live` once the campaign/ad exists at Google, `upload_in_progress` mid-publish. Deletes the row (jobs cascade) and the R2 object; a YouTube copy, if any, stays. 204. |
+| POST | `/creatives/:creativeId/youtube-upload` | (in youtube.ts) now also 409 `video_pending_review` / `video_rejected` for an upload not approved. `/youtube/backfill` skips them. |
+
+## Admin: uploaded-video review
+
+| Method | Path | Auth | Notes |
+|---|---|---|---|
+| GET | `/admin/video-reviews?status=pending_review` | admin session, or `ADMIN_ANALYTICS_TOKEN` bearer | `{status, videos[]}`, `status` one of `pending_review` (default, oldest first) / `approved` / `rejected` (newest first), max 100. Each: business, campaign, owner email, landing URL, aspect, duration, size, attestation time, review fields, and a 10-minute `videoUrl`. |
+| POST | `/admin/video-reviews/:creativeId` | same | Body `{decision:'approve'}` or `{decision:'reject', reason}`. Only from `pending_review` (409 `already_reviewed` / `not_reviewable`; 400 `reason_required`). Approve queues the YouTube upload. Records `reviewed_by` (null for a token caller) and `reviewed_at`. |
+
+Launch answers **409 `video_pending_review`** while any of the campaign's uploads awaits review (dry run included), and **409 `video_rejected`** when rejected uploads were the only videos; rejected uploads are otherwise left out of the ad.
+
+Campaign rows also carry Google's own review of the launched ad — `googleAdApprovalStatus`, `googleAdReviewStatus` (raw `ad_group_ad.policy_summary` enums), `googleAdPolicyTopics`, `googleAdPolicyCheckedAt` — copied hourly by the renderer.
 
 ## Google Ads
 
@@ -131,6 +143,7 @@ Failure codes worth handling in a client: `google_ads_not_configured` (503),
 `billing_link_failed` (409), `provisioning_incomplete` (409),
 `billing_setup_pending` (409, waiting for the operator's card), `currency_mismatch` (409),
 `insufficient_funds` (402), `no_ready_creatives` (409), `already_launched` (409),
+`video_pending_review` (409), `video_rejected` (409),
 `no_resolvable_zip_codes` (400), `logo_required` (409), `logo_invalid` (409,
 with `reason`), `manager_account` (409), `google_ads_error` (502, `detail`
 lists Google's per-field reasons).

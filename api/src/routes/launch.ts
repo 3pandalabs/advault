@@ -29,6 +29,7 @@ import {
   targetingViolations,
 } from "../lib/audience/policy.js";
 import { audienceDimensions, languageConstants } from "../lib/audience/google.js";
+import { launchReviewGate } from "../lib/uploads/review.js";
 import { getObjectBytes } from "../plugins/r2.js";
 import { loadOwnedAdAccount, loadOwnedCampaign } from "../lib/ownership.js";
 import { canLaunch, MIN_FUNDED_DAYS } from "../lib/wallet/index.js";
@@ -216,7 +217,7 @@ export async function launchRoutes(app: FastifyInstance) {
       // At least one rendered creative. Launching with nothing to show would
       // produce a campaign that can never serve, and the advertiser would be
       // left with a budgeted shell in their Google Ads account.
-      const ready = await db
+      const readyRows = await db
         .select({
           id: creatives.id,
           youtubeVideoId: creatives.youtubeVideoId,
@@ -224,9 +225,28 @@ export async function launchRoutes(app: FastifyInstance) {
           youtubeUploadError: creatives.youtubeUploadError,
           durationSeconds: creatives.durationSeconds,
           script: creatives.script,
+          reviewStatus: creatives.reviewStatus,
         })
         .from(creatives)
         .where(and(eq(creatives.campaignId, campaignId), eq(creatives.renderStatus, "ready")));
+
+      // -------------------------------------------------------------------
+      // HUMAN REVIEW OF CUSTOMER-UPLOADED VIDEOS (lib/uploads/review.ts).
+      // A pending upload blocks — dry run included, since the answer would be
+      // the same on the real press; a rejected one is left out of the ad.
+      // AdVault-generated creatives have no review status and pass untouched.
+      // -------------------------------------------------------------------
+      const reviewGate = launchReviewGate(readyRows);
+      if (!reviewGate.ok) {
+        return reply.code(409).send({
+          error: reviewGate.error,
+          detail:
+            reviewGate.error === "video_pending_review"
+              ? "Your uploaded video is waiting for AdVault's review. Launch unlocks once it is approved."
+              : "Your uploaded video was not approved, so there is nothing to launch. Upload a new one or remove it.",
+        });
+      }
+      const ready = readyRows.filter((c) => reviewGate.eligibleIds.includes(c.id));
 
       if (ready.length === 0) {
         return reply.code(409).send({ error: "no_ready_creatives" });

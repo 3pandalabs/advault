@@ -3,6 +3,7 @@ import { getObjectBytes } from "../plugins/r2.js";
 import { GoogleOAuthError } from "../lib/googleAds/oauth.js";
 import { NoUploadChannel, uploadCredentialFor } from "../lib/youtube/channels.js";
 import { isYouTubeConfigured } from "../lib/youtube/env.js";
+import { mayPublishToYoutube } from "../lib/uploads/review.js";
 import { uploadVideo, YouTubeUploadError } from "../lib/youtube/upload.js";
 import {
   claimNextUploadJob,
@@ -42,6 +43,17 @@ async function processJob(job: YouTubeUploadJob): Promise<void> {
   // wrong video behind a live ad, which is worse than a failed upload.
   if (creative.renderStatus !== "ready" || !creative.videoKey) {
     await failUploadJob(job, new Error("Creative has no rendered video to upload"), {
+      retryable: false,
+    });
+    return;
+  }
+
+  // A customer-uploaded video reaches YouTube only after an AdVault admin
+  // approved it (routes/videoReviews.ts queues the upload on approval). The
+  // routes already refuse to queue one; this is the backstop, because the
+  // org channel is where a copyright strike would land.
+  if (!mayPublishToYoutube(creative.reviewStatus ?? null)) {
+    await failUploadJob(job, new Error("This video is waiting for AdVault's review"), {
       retryable: false,
     });
     return;
@@ -92,7 +104,8 @@ async function processJob(job: YouTubeUploadJob): Promise<void> {
     // pipeline (Ken Burns stills, no voice) is neither, so this is derived from
     // what the render actually used rather than hardcoded either way.
     // Admin uploads (kind 'upload') are AdVault's own AI-made ads, so they
-    // always disclose. Revisit when customers can upload their own footage.
+    // always disclose. Customer uploads (since 2026-11-12) disclose too, as
+    // the safe default; TODO: ask the customer at upload instead.
     synthetic: creative.kind === "upload" || creative.motionSource !== "none" || creative.voiceSource !== "none",
   });
 

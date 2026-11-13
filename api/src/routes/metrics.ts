@@ -29,6 +29,7 @@ type CountsRow = {
   queued_youtube_uploads: number;
   failed_youtube_uploads: number;
   rendered_not_on_youtube: number;
+  videos_pending_review: number;
   creatives_on_youtube: number;
   advertiser_youtube_channels: number;
   live_campaigns_without_ads: number;
@@ -91,7 +92,11 @@ export async function metricsRoutes(app: FastifyInstance) {
         -- channel credential, which is otherwise completely silent.
         (select count(*) from youtube_upload_jobs where status in ('queued','running'))::int as queued_youtube_uploads,
         (select count(*) from creatives where youtube_upload_status = 'failed')::int as failed_youtube_uploads,
-        (select count(*) from creatives where render_status = 'ready' and youtube_video_id is null)::int as rendered_not_on_youtube,
+        -- Unreviewed/rejected customer uploads are held back on purpose, not stuck.
+        (select count(*) from creatives where render_status = 'ready' and youtube_video_id is null
+           and (review_status is null or review_status = 'approved'))::int as rendered_not_on_youtube,
+        -- Customer-uploaded videos waiting for an admin (a work item, like the refund queue).
+        (select count(*) from creatives where review_status = 'pending_review')::int as videos_pending_review,
         (select count(*) from creatives where youtube_video_id is not null)::int as creatives_on_youtube,
         (select count(*) from youtube_channels where status = 'active')::int as advertiser_youtube_channels,
         -- Live campaigns with no ad attached: the shell-campaign failure this
@@ -165,6 +170,7 @@ export async function metricsRoutes(app: FastifyInstance) {
         queuedYoutubeUploads: c.queued_youtube_uploads,
         failedYoutubeUploads: c.failed_youtube_uploads,
         renderedNotOnYouTube: c.rendered_not_on_youtube,
+        videosPendingReview: c.videos_pending_review,
         creativesOnYouTube: c.creatives_on_youtube,
         advertiserYoutubeChannels: c.advertiser_youtube_channels,
         liveCampaignsWithoutAds: c.live_campaigns_without_ads,

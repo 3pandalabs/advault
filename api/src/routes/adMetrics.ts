@@ -1,10 +1,9 @@
-import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import type { FastifyInstance } from "fastify";
 import { z } from "zod";
+import { requireAdminOrAnalyticsToken } from "../auth/adminAccess.js";
 import { requireAuth } from "../auth/plugin.js";
-import { env } from "../env.js";
 import { allCampaignMetrics, campaignMetrics } from "../lib/adMetrics/index.js";
 import { clampRangeDays, isoDaysAgo } from "../lib/adMetrics/policy.js";
-import { secretEquals } from "../lib/crypto.js";
 import { loadOwnedCampaign } from "../lib/ownership.js";
 import type { Currency } from "../lib/pricing/index.js";
 
@@ -16,19 +15,6 @@ const NOTE =
   "Google Ads reports lag by a few hours, and recent days can still be revised.";
 
 const rangeQuery = z.object({ days: z.coerce.number().optional() });
-
-// An admin user session, OR the optional ADMIN_ANALYTICS_TOKEN bearer for a
-// server-side caller (see env.ts for why it is not METRICS_TOKEN).
-async function requireAdminOrAnalyticsToken(req: FastifyRequest, reply: FastifyReply) {
-  if (req.userRole === "admin") return;
-  const header = req.headers.authorization ?? "";
-  const presented = header.startsWith("Bearer ") ? header.slice(7) : "";
-  if (env.ADMIN_ANALYTICS_TOKEN && presented && secretEquals(presented, env.ADMIN_ANALYTICS_TOKEN)) {
-    return;
-  }
-  if (!req.userId) return reply.code(401).send({ error: "not_authenticated" });
-  return reply.code(403).send({ error: "admin_role_required" });
-}
 
 export async function adMetricsRoutes(app: FastifyInstance) {
   app.get(
