@@ -26,7 +26,7 @@ Product catalogue → Add product:
 | AdVault Managed | $79.00 USD, recurring monthly | `STRIPE_PRICE_US_MANAGED` (only if sold) |
 | AdVault Monthly offer | $39.00 USD, recurring monthly | `STRIPE_PRICE_US_OFFER` (only if sold) |
 
-One-off charges (the $19 ad, cinematic, top-ups) need no price object; the
+One-off charges (the $10 ad, cinematic, top-ups) need no price object; the
 checkout sets the amount.
 
 ## 4. Webhook — ONE endpoint
@@ -50,5 +50,5 @@ endpoints: each endpoint gets its own secret and the app reads only one.
 
 ## 6. Test
 
-Use test mode first: same steps with test keys, buy the $19 ad with card
+Use test mode first: same steps with test keys, buy the $10 ad with card
 `4242 4242 4242 4242`, and check the webhook shows 200 in the Stripe dashboard.

@@ -25,11 +25,11 @@ describe("plans", () => {
 });
 
 describe("new ad", () => {
-  it("costs $19 for the first ad and every one after", () => {
+  it("costs $10 for the first ad and every one after", () => {
     const a = addOnFor("USD", "new_ad");
     expect(a.key).toBe("us-new_ad");
-    expect(addOnPriceMinor(a, { priorPaidCount: 0 })).toBe(1_900);
-    expect(addOnPriceMinor(a, { priorPaidCount: 5 })).toBe(1_900);
+    expect(addOnPriceMinor(a, { priorPaidCount: 0 })).toBe(1_000);
+    expect(addOnPriceMinor(a, { priorPaidCount: 5 })).toBe(1_000);
   });
 });
 

@@ -16,7 +16,6 @@ import {
   sumEntriesByType,
 } from "../lib/wallet/index.js";
 import { providerByName, providerFor } from "../lib/payments/index.js";
-import { freeFirstAdPlaces } from "../lib/newAd/index.js";
 import {
   addOnFor,
   effectiveMonthlyFeeMinor,
@@ -84,7 +83,7 @@ export async function billingRoutes(app: FastifyInstance) {
       const q = req.query as { currency: string; adBudgetMinor: number; marginMode: "standard" | "at_cost" };
       if (!isCurrency(q.currency)) return reply.code(400).send({ error: "unsupported_currency" });
 
-      // US: Keep it running ($19 + budget), the plan the brand ad sells.
+      // US: Keep it running ($19/month + budget, $10 per ad), the plan the brand ad sells.
       // India: managed, the only plan there that buys media. Never the offer
       // line, which has no ad budget to estimate against.
       const plan = q.currency === "USD" ? planByKey("us-evergreen")! : planFor(q.currency, "managed");
@@ -106,8 +105,6 @@ export async function billingRoutes(app: FastifyInstance) {
         // One-off price of each ad on Keep it running; null where ads are
         // included in the fee.
         newAdMinor: newAd ? newAd.priceMinor : null,
-        // Launch offer: free first ad while places remain (US only).
-        freeFirstAdPlacesLeft: newAd ? await freeFirstAdPlaces() : 0,
         display: {
           adBudget: formatMinor(q.adBudgetMinor, q.currency),
           monthlyFee: formatMinor(effectiveMonthlyFeeMinor(plan, q.marginMode), q.currency),

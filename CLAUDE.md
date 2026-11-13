@@ -359,20 +359,20 @@ strings. `lib/pricing` now holds five SKUs and one of them has to be sold:
 |---|---|---|
 | `offer` — 3 fresh videos/month, **no Google at all** | ₹999/mo | $39/mo |
 | `managed` — creatives plus a live campaign | ₹1,499/mo fee | $79/mo fee |
-| `evergreen` ("Keep it running") — one ad kept live, no monthly offer, $19 per ad | not sold | $19/mo fee |
+| `evergreen` ("Keep it running") — one ad kept live, no monthly offer, $10 per ad | not sold | $19/mo fee |
 
 **Evergreen never enters the offer loop.** No offer cycles, no WhatsApp prompt,
 and `POST /offers/current` refuses it (`plan_has_no_offers`): an offer sets an
 expiry that pauses the campaign, which is the opposite of what the plan sells.
 Use `hasMonthlyOffers(line)` rather than comparing line names.
 
-**Evergreen ads are bought one at a time** (`new_ad` purchase, $19 first and
+**Evergreen ads are bought one at a time** (`new_ad` purchase, $10 first and
 repeat, `lib/newAd` + `routes/newAds.ts`). Generation for an evergreen
 subscriber's campaign answers 402 until that campaign has a paid order; the
 order saves the wizard's photos and formats, and the campaign page spends it
 once the webhook marks it paid. It shares the `purchases` table and webhook with
 cinematic, so `claimNextPurchase` must keep filtering `sku = 'cinematic'` or the
-cinematic worker would try to film a $19 photo ad.
+cinematic worker would try to film a $10 photo ad.
 
 **The offer line is the one that can be sold today.** It needs no Google Ads API
 access, no YouTube channel, no ad account and no Indian entity — which is
