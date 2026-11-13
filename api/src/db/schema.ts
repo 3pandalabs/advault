@@ -14,6 +14,7 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 import type { BillingMode } from "../lib/billing/policy.js";
+import type { AudienceFilters, TargetAddress } from "../lib/audience/policy.js";
 
 // Enum-ish columns are `text` + a CHECK constraint rather than pgEnum, matching
 // the RentVault and RsvpVault schemas. Adding a value to a pgEnum needs its own
@@ -445,6 +446,14 @@ export const campaigns = pgTable(
     // hand-entered list that is always read whole, never joined or aggregated.
     targetZipCodes: text("target_zip_codes").array().notNull(),
     radiusMiles: integer("radius_miles").notNull().default(10),
+    // Real-estate (US housing) campaigns only: the listing address a radius is
+    // drawn around, because housing ads may not target ZIP codes (Google
+    // policy; lib/audience/policy.ts). For those rows targetZipCodes is empty.
+    targetAddress: jsonb("target_address").$type<TargetAddress>(),
+    // Optional "Who should see it" filters (age, gender, parental status,
+    // household income, language). NULL = everyone, the default. Shape and
+    // the housing restrictions: lib/audience/policy.ts.
+    audienceFilters: jsonb("audience_filters").$type<AudienceFilters>(),
 
     dailyBudgetCents: integer("daily_budget_cents").notNull(),
     currencyCode: text("currency_code").notNull().default("USD"),
@@ -515,7 +524,12 @@ export const campaigns = pgTable(
     check("campaigns_radius_check", sql`${t.radiusMiles} between 1 and 50`),
     // An empty target list would silently become a nationwide campaign at
     // Google, which is the single most expensive way for this app to be wrong.
-    check("campaigns_zips_check", sql`array_length(${t.targetZipCodes}, 1) between 1 and 50`),
+    // Real-estate campaigns (0012) have no ZIPs and a target_address instead.
+    // coalesce() because array_length('{}') is NULL, which a CHECK lets through.
+    check(
+      "campaigns_zips_check",
+      sql`coalesce(array_length(${t.targetZipCodes}, 1), 0) <= 50 and (coalesce(array_length(${t.targetZipCodes}, 1), 0) >= 1 or ${t.targetAddress} is not null)`,
+    ),
   ],
 );
 

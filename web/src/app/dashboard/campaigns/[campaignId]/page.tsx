@@ -26,6 +26,7 @@ import {
 import { SquareLogo } from "./square-logo";
 import { AdminVideoUpload } from "./admin-video-upload";
 import { PerformanceCard } from "./performance-card";
+import { AudienceCard } from "./audience-card";
 import { Badge, Card, CardDescription, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { formatDuration, formatMoney } from "@/lib/utils";
@@ -45,6 +46,14 @@ const LAUNCH_ERRORS: Record<string, string> = {
   no_ready_creatives: "Wait for at least one video to finish rendering first.",
   already_launched: "This campaign has already been sent to Google Ads.",
   no_resolvable_zip_codes: "Google did not recognise any of those ZIP codes.",
+  // US housing-ads policy, re-checked at launch (lib/audience/policy.ts).
+  housing_demographics_not_allowed:
+    "Housing ads in the US can't target by age, gender or family status (Google policy). Remove those filters under “Who should see it”.",
+  housing_zip_targeting_not_allowed:
+    "Housing ads in the US can't target by ZIP code (Google policy). Create the campaign again as Real estate with the listing address.",
+  listing_address_required:
+    "Real-estate campaigns need the listing address. Create the campaign again with it.",
+  zip_codes_required: "This campaign has no ZIP codes to target.",
   // The wallet guard on accounts AdVault funds. Previously unmapped, so a 402
   // surfaced as the raw code.
   insufficient_funds:
@@ -204,7 +213,9 @@ export default function CampaignDetailPage({
     try {
       const result = await launchCampaign(campaignId, adAccountId);
       setLaunchNote(
-        `${result.note} Targeted ${result.zipCodesTargeted} of ${result.zipCodesRequested} ZIP codes.`,
+        result.radiusMilesAroundAddress !== null
+          ? `${result.note} Targeted ${result.radiusMilesAroundAddress} miles around your listing.`
+          : `${result.note} Targeted ${result.zipCodesTargeted} of ${result.zipCodesRequested} ZIP codes.`,
       );
       await refresh();
     } catch (err) {
@@ -249,7 +260,9 @@ export default function CampaignDetailPage({
           <h1 className="text-2xl font-semibold tracking-tight">{campaign.name}</h1>
           <p className="mt-1 text-sm text-zinc-400">
             {formatMoney(campaign.dailyBudgetCents, campaign.currencyCode)}/day &middot;{" "}
-            {campaign.targetZipCodes.join(", ")} within {campaign.radiusMiles} miles
+            {campaign.targetAddress
+              ? `${campaign.radiusMiles} miles around ${campaign.targetAddress.street}, ${campaign.targetAddress.city}`
+              : `${campaign.targetZipCodes.join(", ")} within ${campaign.radiusMiles} miles`}
           </p>
         </div>
         <Badge tone={campaign.status === "live" ? "success" : campaign.status === "failed" ? "danger" : "pending"}>
@@ -516,6 +529,11 @@ export default function CampaignDetailPage({
           </>
         )}
       </Card>
+
+      <AudienceCard
+        campaign={campaign}
+        onSaved={(c) => setCampaign((prev) => (prev ? { ...prev, ...c } : prev))}
+      />
 
       {/* Only once Google has the campaign — before launch there is nothing
           to report, and an all-zero card would read as "your ad isn't working". */}

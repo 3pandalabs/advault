@@ -8,22 +8,13 @@ import { Button } from "@/components/ui/button";
 import { FieldHint, Input, Label } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { WordmarkName, WordmarkTag } from "@/components/Wordmark";
+import { CATEGORIES } from "@/lib/audience";
 
 // Business name and category are collected here rather than later because both
 // feed the ad script directly — asking for them up front means the first
-// campaign's copy is already personalised instead of generic.
-const CATEGORIES = [
-  "Plumbing",
-  "Electrical",
-  "HVAC",
-  "Dentistry",
-  "Restaurant",
-  "Real estate",
-  "Landscaping",
-  "Auto repair",
-  "Cleaning services",
-  "Other",
-];
+// campaign's copy is already personalised instead of generic. The list is
+// shared with the campaign wizard (lib/audience.ts) because "Real estate"
+// switches on the US housing-ads targeting rules there.
 
 export default function SignupPage() {
   const router = useRouter();
