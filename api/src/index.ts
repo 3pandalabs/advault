@@ -13,6 +13,7 @@ import { stripeWebhookRoutes } from "./routes/stripeWebhook.js";
 import { campaignRoutes } from "./routes/campaigns.js";
 import { creativeRoutes } from "./routes/creatives.js";
 import { uploadRoutes } from "./routes/uploads.js";
+import { videoReviewRoutes } from "./routes/videoReviews.js";
 import { newAdRoutes } from "./routes/newAds.js";
 import { launchRoutes } from "./routes/launch.js";
 import { metricsRoutes } from "./routes/metrics.js";
@@ -113,6 +114,8 @@ await app.register(newAdRoutes);
 await app.register(adAccountRoutes);
 // Read-only ad performance (from campaign_daily_metrics, never Google directly).
 await app.register(adMetricsRoutes);
+// Admin review queue for customer-uploaded videos.
+await app.register(videoReviewRoutes);
 // Registered last and on its own, because it is the only route in this app
 // that spends an advertiser's money. Keeping it visibly separate in this list
 // is deliberate — see routes/launch.ts.

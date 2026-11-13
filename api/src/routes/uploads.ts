@@ -2,25 +2,35 @@ import { eq } from "drizzle-orm";
 import crypto from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { requireAdmin, requireAuth } from "../auth/plugin.js";
+import { requireAuth } from "../auth/plugin.js";
 import { db } from "../db/index.js";
 import { creatives } from "../db/schema.js";
+import { env } from "../env.js";
+import { notifyOps } from "../lib/ops/notify.js";
 import { loadOwnedCampaign, loadOwnedCreative } from "../lib/ownership.js";
 import {
   MAX_UPLOAD_VIDEO_BYTES,
   UPLOAD_VIDEO_CONTENT_TYPE,
   checkUploadedVideo,
+  uploadLimitsFor,
 } from "../lib/uploads/policy.js";
+import { initialReviewStatus } from "../lib/uploads/review.js";
 import { creativeVideoKey, deleteObject, headObject, presignUpload } from "../plugins/r2.js";
 import { enqueueYoutubeUpload } from "../render/youtubeJobs.js";
 
-// Admin-only: attach a finished MP4 (made outside AdVault, e.g. our own brand
-// ad) to a campaign as a ready creative. It skips the renderer and joins the
-// normal chain: YouTube upload queue -> launch.
+// "Use my own video": attach a finished MP4 (made outside AdVault) to a
+// campaign as a ready creative. It skips the renderer and joins the normal
+// chain: YouTube upload queue -> launch.
 //
-// Step 1 of "bring your own video". Customers cannot reach it: requireAdmin,
-// AND the campaign must belong to the admin, so this is never a way to put a
-// video into someone else's campaign. Customer uploads need a review queue first.
+// Open to every user since 2026-11-12, behind a HUMAN REVIEW: a customer's
+// upload is inserted `pending_review`, is NOT published to YouTube, and blocks
+// launch (video_pending_review) until an AdVault admin approves it in
+// routes/videoReviews.ts. Approval is what queues the YouTube upload — an
+// unreviewed video never reaches the org's channel, where a copyright strike
+// would land on us. An admin's own upload is approved on insert.
+//
+// The campaign must belong to the caller, so this is never a way to put a
+// video into someone else's campaign.
 //
 // Two calls, like photo uploads: presign, the browser PUTs to R2, then confirm.
 // The row is only created on confirm, after HEAD proves the object exists, so
@@ -32,15 +42,19 @@ const metaSchema = z.object({
   durationSeconds: z.number().positive(),
 });
 
+const confirmSchema = metaSchema.extend({
+  creativeId: z.string().uuid(),
+  // "I own or have the rights to everything in this video, including the
+  // music. No copyrighted music." Required; who and when is stored.
+  rightsAttested: z.literal(true),
+});
+
 export async function uploadRoutes(app: FastifyInstance) {
   app.addHook("onRequest", requireAuth);
 
   app.post(
     "/campaigns/:campaignId/creatives/upload-url",
-    {
-      preHandler: requireAdmin,
-      schema: { params: z.object({ campaignId: z.string().uuid() }), body: metaSchema },
-    },
+    { schema: { params: z.object({ campaignId: z.string().uuid() }), body: metaSchema } },
     async (req, reply) => {
       const { campaignId } = req.params as { campaignId: string };
       const campaign = await loadOwnedCampaign(campaignId, req.userId!, reply);
@@ -48,7 +62,7 @@ export async function uploadRoutes(app: FastifyInstance) {
       if (campaign.status === "live") return reply.code(409).send({ error: "campaign_is_live" });
 
       // Checked here too so a bad file is refused before it is uploaded.
-      const check = checkUploadedVideo(req.body as z.infer<typeof metaSchema>);
+      const check = checkUploadedVideo(req.body as z.infer<typeof metaSchema>, uploadLimitsFor(req.userRole));
       if (!check.ok) return reply.code(400).send({ error: check.error });
 
       const creativeId = crypto.randomUUID();
@@ -60,21 +74,15 @@ export async function uploadRoutes(app: FastifyInstance) {
 
   app.post(
     "/campaigns/:campaignId/creatives/upload",
-    {
-      preHandler: requireAdmin,
-      schema: {
-        params: z.object({ campaignId: z.string().uuid() }),
-        body: metaSchema.extend({ creativeId: z.string().uuid() }),
-      },
-    },
+    { schema: { params: z.object({ campaignId: z.string().uuid() }), body: confirmSchema } },
     async (req, reply) => {
       const { campaignId } = req.params as { campaignId: string };
-      const body = req.body as z.infer<typeof metaSchema> & { creativeId: string };
+      const body = req.body as z.infer<typeof confirmSchema>;
       const campaign = await loadOwnedCampaign(campaignId, req.userId!, reply);
       if (!campaign) return;
       if (campaign.status === "live") return reply.code(409).send({ error: "campaign_is_live" });
 
-      const check = checkUploadedVideo(body);
+      const check = checkUploadedVideo(body, uploadLimitsFor(req.userRole));
       if (!check.ok) return reply.code(400).send({ error: check.error });
 
       // The key is derived from the campaign we just checked, never taken from
@@ -87,6 +95,8 @@ export async function uploadRoutes(app: FastifyInstance) {
         return reply.code(400).send({ error: "unsupported_content_type" });
       }
 
+      const now = new Date();
+      const reviewStatus = initialReviewStatus(req.userRole);
       const [row] = await db
         .insert(creatives)
         .values({
@@ -98,25 +108,46 @@ export async function uploadRoutes(app: FastifyInstance) {
           videoKey: key,
           durationSeconds: Math.round(body.durationSeconds),
           sizeBytes: object.sizeBytes,
-          renderedAt: new Date(),
+          renderedAt: now,
+          reviewStatus,
+          // An admin's own upload: they are the reviewer.
+          ...(reviewStatus === "approved" ? { reviewedBy: req.userId!, reviewedAt: now } : {}),
+          rightsAttestedBy: req.userId!,
+          rightsAttestedAt: now,
         })
         .onConflictDoNothing()
         .returning();
       if (!row) return reply.code(409).send({ error: "already_uploaded" });
 
-      await enqueueYoutubeUpload(row.id);
-      req.log.info({ campaignId, creativeId: row.id, sizeBytes: object.sizeBytes }, "admin video uploaded");
+      if (reviewStatus === "approved") {
+        await enqueueYoutubeUpload(row.id);
+      } else {
+        // Same operator channel as platform billing (ntfy). Never throws.
+        await notifyOps({
+          title: `AdVault: video to review for ${campaign.businessName}`,
+          message: `${campaign.businessName} uploaded their own ${check.aspectRatio} video (${Math.round(body.durationSeconds)}s) for "${campaign.name}". Approve or reject it before they can launch.`,
+          priority: 3,
+          tags: ["movie_camera"],
+          click: `${env.WEB_ORIGIN}/dashboard/admin/reviews`,
+        });
+      }
+
+      req.log.info(
+        { campaignId, creativeId: row.id, sizeBytes: object.sizeBytes, reviewStatus },
+        "video uploaded",
+      );
       return reply.code(201).send(row);
     },
   );
 
-  // Remove an uploaded video before launch (e.g. to replace it with a new cut).
-  // Only uploads, only admins, only on their own campaigns, and never once the
+  // Remove an uploaded video before launch (e.g. to replace a rejected cut).
+  // Only uploads, only on the caller's own campaigns, and never once the
   // campaign or the ad exists at Google: a live ad points at this video.
-  // The YouTube copy stays on the channel; it is unlisted and serves nothing.
+  // A YouTube copy, if approval published one, stays on the channel; it is
+  // unlisted and serves nothing.
   app.delete(
     "/creatives/:creativeId",
-    { preHandler: requireAdmin, schema: { params: z.object({ creativeId: z.string().uuid() }) } },
+    { schema: { params: z.object({ creativeId: z.string().uuid() }) } },
     async (req, reply) => {
       const { creativeId } = req.params as { creativeId: string };
       const owned = await loadOwnedCreative(creativeId, req.userId!, reply);
@@ -137,7 +168,7 @@ export async function uploadRoutes(app: FastifyInstance) {
           req.log.warn({ err, creativeId }, "uploaded video object not deleted"),
         );
       }
-      req.log.info({ creativeId, campaignId: campaign.id }, "admin removed uploaded video");
+      req.log.info({ creativeId, campaignId: campaign.id }, "uploaded video removed");
       return reply.code(204).send();
     },
   );

@@ -4,6 +4,12 @@ import { campaignDailyMetrics, campaigns, users } from "../../db/schema.js";
 import { googleAdsCall } from "../googleAds/client.js";
 import type { Currency } from "../pricing/index.js";
 import {
+  AD_POLICY_QUERY,
+  parseAdPolicyResults,
+  type AdPolicyRow,
+  type GaqlAdPolicyResult,
+} from "./adPolicy.js";
+import {
   buildDailyMetricsQuery,
   parseDailyMetricsResults,
   sumCounts,
@@ -35,6 +41,32 @@ export async function fetchDailyMetrics(args: {
     },
   );
   return parseDailyMetricsResults(body.results);
+}
+
+/** Google's policy verdict on every ad in one customer account. Read-only. */
+export async function fetchAdPolicy(args: {
+  accessToken: string;
+  customerId: string;
+  loginCustomerId?: string | null;
+}): Promise<AdPolicyRow[]> {
+  const body = await googleAdsCall<{ results?: GaqlAdPolicyResult[] }>(
+    `/customers/${args.customerId}/googleAds:search`,
+    args.accessToken,
+    { method: "POST", loginCustomerId: args.loginCustomerId, body: { query: AD_POLICY_QUERY } },
+  );
+  return parseAdPolicyResults(body.results);
+}
+
+export async function storeAdPolicy(campaignId: string, row: AdPolicyRow): Promise<void> {
+  await db
+    .update(campaigns)
+    .set({
+      googleAdApprovalStatus: row.approvalStatus,
+      googleAdReviewStatus: row.reviewStatus,
+      googleAdPolicyTopics: row.topics,
+      googleAdPolicyCheckedAt: new Date(),
+    })
+    .where(eq(campaigns.id, campaignId));
 }
 
 /** Overwrites (campaign, date) rows — Google restates recent days, so the latest read wins. */

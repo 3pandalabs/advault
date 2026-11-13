@@ -1,4 +1,4 @@
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, isNull, or } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { requireAuth } from "../auth/plugin.js";
@@ -14,6 +14,7 @@ import {
 } from "../lib/youtube/env.js";
 import { buildYouTubeAuthorizeUrl, fetchOwnChannel } from "../lib/youtube/oauth.js";
 import { enqueueYoutubeUpload } from "../render/youtubeJobs.js";
+import { mayPublishToYoutube } from "../lib/uploads/review.js";
 
 // Where a rendered ad goes before it can be an ad.
 //
@@ -192,6 +193,7 @@ export async function youtubeRoutes(app: FastifyInstance) {
           renderStatus: creatives.renderStatus,
           youtubeVideoId: creatives.youtubeVideoId,
           uploadStatus: creatives.youtubeUploadStatus,
+          reviewStatus: creatives.reviewStatus,
         })
         .from(creatives)
         .innerJoin(campaigns, eq(creatives.campaignId, campaigns.id))
@@ -202,6 +204,13 @@ export async function youtubeRoutes(app: FastifyInstance) {
 
       if (creative.renderStatus !== "ready") {
         return reply.code(409).send({ error: "not_rendered" });
+      }
+
+      // An uploaded video is published by its approval, never by its owner.
+      if (!mayPublishToYoutube(creative.reviewStatus ?? null)) {
+        return reply.code(409).send({
+          error: creative.reviewStatus === "rejected" ? "video_rejected" : "video_pending_review",
+        });
       }
 
       // Already on YouTube. Re-uploading would mint a second video id, orphan
@@ -236,6 +245,8 @@ export async function youtubeRoutes(app: FastifyInstance) {
           eq(campaigns.userId, req.userId!),
           eq(creatives.renderStatus, "ready"),
           inArray(creatives.youtubeUploadStatus, ["pending", "failed"]),
+          // Generated, or an approved upload — never an unreviewed one.
+          or(isNull(creatives.reviewStatus), eq(creatives.reviewStatus, "approved")),
         ),
       );
 
