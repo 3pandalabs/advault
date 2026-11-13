@@ -76,7 +76,7 @@ const FAQ = [
   },
   {
     q: "I already have a video. Can I use it?",
-    a: "Yes. Upload it instead of photos. We check every uploaded video before it runs, including that it has no copyrighted music.",
+    a: "Yes, and there is no $10 fee for it, because we did not make it. Upload it instead of photos. We check every uploaded video before it runs, including that it has no copyrighted music.",
   },
   {
     q: "I'm a real estate agent. Is that allowed?",
