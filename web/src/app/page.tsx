@@ -25,7 +25,6 @@ const STEPS = [
 // and the privacy policy says this site sets none. preload="none" so the
 // page costs nothing until someone presses play.
 const DEMOS = [
-  { src: "/demo/salon.mp4", poster: "/demo/salon.jpg", title: "Barbershop", note: "$10 off offer" },
   { src: "/demo/bakery.mp4", poster: "/demo/bakery.jpg", title: "Bakery", note: "$2 off offer" },
   { src: "/demo/advault.mp4", poster: "/demo/advault.jpg", title: "AdVault itself", note: "Our own ad, made with AdVault" },
 ];
@@ -100,7 +99,7 @@ export default function LandingPage() {
           Vertical ads for YouTube Shorts. Each one also comes as a widescreen version for
           regular YouTube.
         </p>
-        <div className="grid grid-cols-1 gap-6 sm:grid-cols-3">
+        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
           {DEMOS.map((d) => (
             <figure key={d.src} className="mx-auto w-full max-w-[280px]">
               <video
