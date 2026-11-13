@@ -22,6 +22,13 @@ import {
   type LaunchPlan,
 } from "../lib/googleAds/demandGen.js";
 import { checkLogo } from "../lib/imageSize.js";
+import {
+  TARGETING_VIOLATION_DETAIL,
+  activeFilterCount,
+  isHousingCategory,
+  targetingViolations,
+} from "../lib/audience/policy.js";
+import { audienceDimensions, languageConstants } from "../lib/audience/google.js";
 import { getObjectBytes } from "../plugins/r2.js";
 import { loadOwnedAdAccount, loadOwnedCampaign } from "../lib/ownership.js";
 import { canLaunch, MIN_FUNDED_DAYS } from "../lib/wallet/index.js";
@@ -87,6 +94,20 @@ export async function launchRoutes(app: FastifyInstance) {
 
       const campaign = await loadOwnedCampaign(campaignId, req.userId!, reply);
       if (!campaign) return;
+
+      // Targeting rules, again. POST/PATCH /campaigns already refuse these;
+      // this is the step that reaches Google, so it re-checks rather than
+      // trusting a row that may predate the rule. A US housing ad targeting
+      // age/gender/family status or ZIPs is approved by Google and then
+      // disapproved, with a policy strike on the advertiser's account.
+      // Checked before every other gate, including on a dry run.
+      const housing = isHousingCategory(campaign.businessCategory);
+      const violations = targetingViolations(campaign);
+      if (violations.length > 0) {
+        return reply
+          .code(409)
+          .send({ error: violations[0], detail: TARGETING_VIOLATION_DETAIL[violations[0]!] });
+      }
 
       // Idempotence guard. Without it, a double-clicked Launch button creates
       // two campaigns and two budgets at Google — the advertiser pays twice and
@@ -318,16 +339,22 @@ export async function launchRoutes(app: FastifyInstance) {
         // Resolved BEFORE anything is created. An ad group with no location
         // criteria targets everywhere — the single most expensive way for this
         // app to be wrong.
-        const geoTargetConstants = await resolveZipCriteria({
-          ...ctx,
-          zipCodes: campaign.targetZipCodes,
-          // 6-digit codes are Indian PINs; resolving them against the default
-          // "US" would match nothing and refuse the launch. campaigns.ts
-          // rejects mixed lengths, so the first code decides for all.
-          countryCode: campaign.targetZipCodes[0]?.length === 6 ? "IN" : "US",
-        });
+        //
+        // Housing (real estate) skips ZIPs entirely: Google's US policy forbids
+        // ZIP targeting for it, so it targets a radius around the listing
+        // address, which Google geocodes (lib/googleAds/demandGen.ts).
+        const geoTargetConstants = housing
+          ? []
+          : await resolveZipCriteria({
+              ...ctx,
+              zipCodes: campaign.targetZipCodes,
+              // 6-digit codes are Indian PINs; resolving them against the default
+              // "US" would match nothing and refuse the launch. campaigns.ts
+              // rejects mixed lengths, so the first code decides for all.
+              countryCode: campaign.targetZipCodes[0]?.length === 6 ? "IN" : "US",
+            });
 
-        if (geoTargetConstants.length === 0) {
+        if (!housing && geoTargetConstants.length === 0) {
           return reply.code(400).send({ error: "no_resolvable_zip_codes" });
         }
 
@@ -355,6 +382,13 @@ export async function launchRoutes(app: FastifyInstance) {
           dailyBudgetCents: campaign.dailyBudgetCents,
           finalUrl: campaign.landingUrl,
           geoTargetConstants,
+          proximity:
+            housing && campaign.targetAddress
+              ? { address: campaign.targetAddress, radiusMiles: campaign.radiusMiles }
+              : undefined,
+          housing,
+          audienceDimensions: audienceDimensions(campaign.audienceFilters),
+          languageConstants: languageConstants(campaign.audienceFilters),
           copy: buildAdCopy({
             businessName: campaign.businessName,
             businessCategory: campaign.businessCategory,
@@ -378,6 +412,10 @@ export async function launchRoutes(app: FastifyInstance) {
           // rather than silently targeting fewer places than they entered.
           zipCodesRequested: campaign.targetZipCodes.length,
           zipCodesTargeted: geoTargetConstants.length,
+          // Real estate: the radius that replaced ZIPs, so the UI can say what
+          // was targeted instead of "0 of 0 ZIP codes".
+          radiusMilesAroundAddress: plan.proximity ? plan.proximity.radiusMiles : null,
+          audienceFiltersApplied: activeFilterCount(campaign.audienceFilters),
         };
 
         if (validateOnly) {

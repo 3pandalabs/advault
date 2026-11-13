@@ -79,8 +79,10 @@ export default function CampaignsPage() {
                   <CardTitle>{c.name}</CardTitle>
                   <CardDescription>
                     {formatMoney(c.dailyBudgetCents, c.currencyCode)}/day &middot;{" "}
-                    {c.targetZipCodes.length} ZIP{c.targetZipCodes.length === 1 ? "" : "s"} within{" "}
-                    {c.radiusMiles} miles &middot; created {formatDate(c.createdAt)}
+                    {c.targetAddress
+                      ? `${c.radiusMiles} miles around a listing`
+                      : `${c.targetZipCodes.length} ZIP${c.targetZipCodes.length === 1 ? "" : "s"} within ${c.radiusMiles} miles`}{" "}
+                    &middot; created {formatDate(c.createdAt)}
                   </CardDescription>
                 </div>
                 <Badge tone={STATUS_TONE[c.status]}>{STATUS_LABEL[c.status]}</Badge>

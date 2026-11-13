@@ -43,10 +43,10 @@ CLAUDE.md.
 
 | Method | Path | Notes |
 |---|---|---|
-| POST | `/campaigns` | Creates a draft. Nothing chargeable. |
+| POST | `/campaigns` | Creates a draft. Nothing chargeable. Optional `audienceFilters` `{ages?, genders?, parentalStatuses?, incomes?, languages?}` (null/absent = everyone; values in `lib/audience/policy.ts`) and, for real estate, `targetAddress` `{street, city, state, postalCode}` with `targetZipCodes: []`. **400** `housing_demographics_not_allowed` / `housing_zip_targeting_not_allowed` / `listing_address_required` / `zip_codes_required` with a `detail` sentence (US housing-ads policy: no age, gender, parental status or ZIP targeting; income and language allowed). |
 | GET | `/campaigns` | |
 | GET | `/campaigns/:campaignId` | Includes creatives — what the dashboard polls. |
-| PATCH | `/campaigns/:campaignId` | 409 `campaign_is_live`. |
+| PATCH | `/campaigns/:campaignId` | 409 `campaign_is_live`. Same targeting fields and 400s as POST, checked against the row as it would be after the patch. |
 | DELETE | `/campaigns/:campaignId` | 409 `campaign_is_live` — deleting the row would not stop the spend. |
 | GET | `/campaigns/:campaignId/metrics?days=7` | Owner only. `{launched, days, since, currency, note, totals, daily[], lastSyncedAt}`. `days` 1–90 (default 7). Each summary: `impressions, views, clicks, spendMinor, spendDisplay, costPerViewMinor, costPerViewDisplay, ctr, viewRate` (rates 0..1, null with no denominator). Reads `campaign_daily_metrics`, never Google; `totals` is null before launch. |
 
@@ -119,7 +119,7 @@ signup offline.
 
 | Method | Path | Notes |
 |---|---|---|
-| POST | `/campaigns/:campaignId/launch` | **The only route in this codebase that spends money.** Body `{ adAccountId, validateOnly? }`. Builds a **Demand Gen** campaign in one atomic Google request: PAUSED for customer-billed and BYO accounts, ENABLED for platform-billed ones (the customer has no Google access to switch it on). `validateOnly: true` is a dry run: Google checks everything, nothing is created, and the billing and wallet gates are skipped. |
+| POST | `/campaigns/:campaignId/launch` | **The only route in this codebase that spends money.** Body `{ adAccountId, validateOnly? }`. Builds a **Demand Gen** campaign in one atomic Google request: PAUSED for customer-billed and BYO accounts, ENABLED for platform-billed ones (the customer has no Google access to switch it on). `validateOnly: true` is a dry run: Google checks everything, nothing is created, and the billing and wallet gates are skipped. Re-checks the targeting rules first (**409** with the same codes as POST `/campaigns`, dry run included). Demographic filters become one `Audience` (age/gender/parental/income dimensions) attached to the ad group (`audienceSetting.useAudienceGrouped`); languages are `language` criteria. Real estate targets a `proximity` campaign criterion around `targetAddress` (campaign created with `demandGenCampaignSettings.upgradedTargeting: false`). Response adds `radiusMilesAroundAddress` (null for ZIP campaigns) and `audienceFiltersApplied`. |
 
 Two guards run in order, and they ask different questions. The **billing gate**
 asks whether Google will accept spend on this account at all; the **wallet

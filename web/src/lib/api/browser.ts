@@ -1,5 +1,7 @@
 "use client";
 
+import type { AudienceFilters, TargetAddress } from "@/lib/audience";
+
 // Browser-side calls go to the public, Cloudflare-proxied hostname. The
 // orange-to-orange restriction that forces server-side code onto
 // INTERNAL_API_URL does not apply here — a real browser is not a same-account
@@ -139,6 +141,10 @@ export type Campaign = {
   offerDetails: string | null;
   targetZipCodes: string[];
   radiusMiles: number;
+  /** Real estate only: the listing a radius is drawn around (no ZIPs). */
+  targetAddress: TargetAddress | null;
+  /** null = everyone. */
+  audienceFilters: AudienceFilters | null;
   dailyBudgetCents: number;
   currencyCode: string;
   status: CampaignStatus;
@@ -339,8 +345,22 @@ export function createCampaign(input: {
   targetZipCodes: string[];
   radiusMiles: number;
   dailyBudgetCents: number;
+  targetAddress?: TargetAddress | null;
+  audienceFilters?: AudienceFilters | null;
 }) {
   return api<Campaign>("/campaigns", { method: "POST", body: JSON.stringify(input) });
+}
+
+/** Draft edits. 409 `campaign_is_live` once launched. */
+export function updateCampaign(
+  campaignId: string,
+  input: Partial<{
+    audienceFilters: AudienceFilters | null;
+    targetAddress: TargetAddress | null;
+    radiusMiles: number;
+  }>,
+) {
+  return api<Campaign>(`/campaigns/${campaignId}`, { method: "PATCH", body: JSON.stringify(input) });
 }
 
 export function generateCreatives(
@@ -383,6 +403,9 @@ export function launchCampaign(campaignId: string, adAccountId: string) {
     campaign: Campaign;
     zipCodesRequested: number;
     zipCodesTargeted: number;
+    /** Real estate: radius around the listing; null for ZIP campaigns. */
+    radiusMilesAroundAddress: number | null;
+    audienceFiltersApplied: number;
     note: string;
   }>(`/campaigns/${campaignId}/launch`, {
     method: "POST",

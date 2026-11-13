@@ -140,6 +140,16 @@ orphaned a budget on every failure. Don't split it back up.
   `assets.kind = 'logo'` with `lib/imageSize.ts` before any Google call
   (`logo_required` / `logo_invalid`).
 - **Location targeting lives on the ad group** for Demand Gen, not the campaign.
+  The one exception is **real estate** (US housing ads, `lib/audience/policy.ts`):
+  Google forbids ZIP, age, gender and parental-status targeting for housing,
+  so it targets a `proximity` radius around the listing address. Proximity only
+  exists as a *campaign* criterion, so those campaigns are created with
+  `upgradedTargeting: false` and carry location + language on the campaign.
+  The housing rules are checked on save, at launch, and in the builder.
+- **Audience filters are optional and default to everyone.** Demographics go
+  through ONE `Audience` resource on the ad group (`useAudienceGrouped`), not
+  individual age/gender criteria. Every filter shrinks reach for the same
+  budget, and the UI says so whenever one is set.
 - **Location targeting is PRESENCE only** (`geoTargetTypeSetting` on the campaign).
   Google defaults to presence-or-interest, which also serves people elsewhere who
   merely search about the area. A walk-in shop pays for those views, and the

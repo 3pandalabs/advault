@@ -65,8 +65,11 @@ export default function PrivacyPage() {
         </li>
         <li>
           <strong>Your campaign</strong> — what you sell, the offer you are running, your
-          call to action, your website address, the pin or ZIP codes you want to reach,
-          the radius around them, and your daily budget.
+          call to action, your website address, the pin or ZIP codes you want to reach
+          (or, for real-estate ads, the listing address), the radius around them, any
+          audience filters you choose (age, gender, parental status, household income,
+          language), and your daily budget. The listing address and filters are sent to
+          Google Ads as the campaign&apos;s targeting.
         </li>
         <li>
           <strong>Photos you upload</strong> — the pictures of your shop, team or work
