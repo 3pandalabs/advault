@@ -54,7 +54,7 @@ export function BudgetCalculator() {
 
   return (
     <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-6 backdrop-blur-sm">
-      <h3 className="text-lg font-semibold">$10 makes your ad. From $49/month keeps it running.</h3>
+      <h3 className="text-lg font-semibold">How many views does my budget buy?</h3>
 
       <p className="mt-2 text-sm text-zinc-400">
         Pick a monthly ad budget. We&apos;ll show what it reaches in your neighborhood.
