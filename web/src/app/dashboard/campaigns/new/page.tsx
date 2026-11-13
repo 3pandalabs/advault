@@ -19,8 +19,14 @@ import { Button } from "@/components/ui/button";
 import { Card, CardDescription, CardTitle } from "@/components/ui/card";
 import { FieldHint, Input, Label, Textarea } from "@/components/ui/input";
 import { parseDollarsToCents } from "@/lib/utils";
-import { AudienceFiltersEditor } from "@/components/AudienceFiltersEditor";
-import { CATEGORIES, filtersForSave, isHousingCategory, type AudienceFilters } from "@/lib/audience";
+import { AudienceFiltersEditor, HOUSING_NOTICE } from "@/components/AudienceFiltersEditor";
+import {
+  AUDIENCE_FILTERS_ENABLED,
+  CATEGORIES,
+  filtersForSave,
+  isHousingCategory,
+  type AudienceFilters,
+} from "@/lib/audience";
 
 // The three-step wizard. Steps are local state rather than routes: the whole
 // flow is one create-then-generate transaction, and a per-step URL would let a
@@ -667,11 +673,19 @@ export default function NewCampaignPage() {
               </FieldHint>
             </div>
 
-            <AudienceFiltersEditor
-              value={audienceFilters}
-              onChange={setAudienceFilters}
-              housing={housing}
-            />
+            {AUDIENCE_FILTERS_ENABLED ? (
+              <AudienceFiltersEditor
+                value={audienceFilters}
+                onChange={setAudienceFilters}
+                housing={housing}
+              />
+            ) : (
+              housing && (
+                <p className="rounded-lg border border-sky-400/30 bg-sky-400/10 px-3 py-2 text-xs text-sky-200">
+                  {HOUSING_NOTICE}
+                </p>
+              )
+            )}
           </div>
 
           <div className="mt-6 flex justify-between">

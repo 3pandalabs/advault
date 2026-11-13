@@ -28,7 +28,6 @@ const INCLUDED = [
   "Your ad in both formats: vertical for Shorts, widescreen for YouTube",
   "Shown to people near your business, not the whole country",
   "Views, clicks and cost per view in your dashboard",
-  "Optional filters: age, gender, household income, language",
   "Your ad budget is capped. Never a dollar more.",
 ];
 
