@@ -104,6 +104,7 @@ export default function TermsPage() {
             <td>
               One ad kept running in a campaign we run for you, with no monthly offer.
               Each ad we make for this plan is a one-off $10 charge, including the first.
+              A video you upload yourself has no charge; it runs after we review it.
               Launch offer: the first ad is free for a limited number of new customers,
               one per customer, while the offer lasts.
               We may show it as one monthly total with your ad budget (for example $49 =

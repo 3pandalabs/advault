@@ -27,6 +27,7 @@ import { SquareLogo } from "./square-logo";
 import { VideoUpload } from "./video-upload";
 import { PerformanceCard } from "./performance-card";
 import { AudienceCard } from "./audience-card";
+import { AUDIENCE_FILTERS_ENABLED } from "@/lib/audience";
 import { Badge, Card, CardDescription, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { formatDuration, formatMoney } from "@/lib/utils";
@@ -596,10 +597,13 @@ export default function CampaignDetailPage({
         )}
       </Card>
 
-      <AudienceCard
-        campaign={campaign}
-        onSaved={(c) => setCampaign((prev) => (prev ? { ...prev, ...c } : prev))}
-      />
+      {/* Parked for MVP2; still shown for a campaign that already has filters. */}
+      {(AUDIENCE_FILTERS_ENABLED || campaign.audienceFilters) && (
+        <AudienceCard
+          campaign={campaign}
+          onSaved={(c) => setCampaign((prev) => (prev ? { ...prev, ...c } : prev))}
+        />
+      )}
 
       {/* Only once Google has the campaign — before launch there is nothing
           to report, and an all-zero card would read as "your ad isn't working". */}

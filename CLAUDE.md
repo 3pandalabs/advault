@@ -370,7 +370,9 @@ Use `hasMonthlyOffers(line)` rather than comparing line names.
 repeat, `lib/newAd` + `routes/newAds.ts`). Generation for an evergreen
 subscriber's campaign answers 402 until that campaign has a paid order; the
 order saves the wizard's photos and formats, and the campaign page spends it
-once the webhook marks it paid. It shares the `purchases` table and webhook with
+once the webhook marks it paid. **A customer-uploaded video is free** (decided
+2026-11-13): only generation is gated (`newAdGate` in `routes/creatives.ts`);
+uploads and launch never ask for a paid order. Keep it that way. It shares the `purchases` table and webhook with
 cinematic, so `claimNextPurchase` must keep filtering `sku = 'cinematic'` or the
 cinematic worker would try to film a $10 photo ad.
 

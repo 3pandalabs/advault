@@ -4,6 +4,12 @@
 // submit. Keep the value lists and the housing pattern in step with the API.
 
 /** Business categories offered in signup and the campaign wizard. */
+// Audience filters (age, gender, parental status, income, language) are parked
+// for MVP2 (2026-11-13): untested against the live Google Ads API, and at $1/day
+// every filter costs reach. The API still accepts and enforces them; this only
+// hides the UI. Flip to true to bring them back.
+export const AUDIENCE_FILTERS_ENABLED = false;
+
 export const CATEGORIES = [
   "Plumbing",
   "Electrical",
