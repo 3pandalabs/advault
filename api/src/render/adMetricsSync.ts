@@ -5,7 +5,7 @@ import { decryptToken } from "../lib/crypto.js";
 import { isGoogleAdsConfigured } from "../lib/googleAds/env.js";
 import { isMccConfigured, mccAccessToken } from "../lib/googleAds/mcc.js";
 import { refreshAccessToken } from "../lib/googleAds/oauth.js";
-import { fetchDailyMetrics, upsertDailyMetrics } from "../lib/adMetrics/index.js";
+import { fetchAdPolicy, fetchDailyMetrics, storeAdPolicy, upsertDailyMetrics } from "../lib/adMetrics/index.js";
 import { isoDaysAgo } from "../lib/adMetrics/policy.js";
 
 // Pulls ad performance (impressions, views, clicks, cost) for every launched
@@ -105,6 +105,19 @@ export async function runAdMetricsSync(): Promise<{ accounts: number; rows: numb
       } catch (err) {
         log("failed to store metrics", { campaignId: campaign.id, error: String(err) });
       }
+    }
+
+    // Google's own ad review (approved / under review / disapproved), one
+    // more read-only search per account. Its own try: a failure here must
+    // never cost the metrics written above.
+    try {
+      const policy = await fetchAdPolicy({ accessToken, customerId, loginCustomerId: account.loginCustomerId });
+      for (const { campaign } of group) {
+        const row = policy.find((p) => p.campaignResourceName === campaign.googleCampaignResourceName);
+        if (row) await storeAdPolicy(campaign.id, row);
+      }
+    } catch (err) {
+      log("ad policy query failed", { adAccountId: account.id, customerId, error: String(err) });
     }
   }
 

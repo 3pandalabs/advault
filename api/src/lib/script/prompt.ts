@@ -30,7 +30,11 @@ export function buildAdScriptUserPrompt(input: {
   const lines = [
     `Business: ${input.businessName}`,
     `Category: ${input.businessCategory}`,
-    `Service area: within ${input.radiusMiles} miles of ZIP ${input.targetZipCodes.join(", ")}`,
+    // Real-estate campaigns have no ZIPs (they target a radius around the
+    // listing), so don't feed the model an empty "ZIP".
+    input.targetZipCodes.length > 0
+      ? `Service area: within ${input.radiusMiles} miles of ZIP ${input.targetZipCodes.join(", ")}`
+      : `Service area: within ${input.radiusMiles} miles of the listing`,
     `Call to action: ${input.callToAction}`,
     `Photos supplied: ${input.assetCount} (use indices 0 to ${input.assetCount - 1})`,
     // Format is a real constraint on the writing, not just on the render: a

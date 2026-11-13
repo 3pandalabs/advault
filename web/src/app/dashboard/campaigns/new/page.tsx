@@ -19,6 +19,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardDescription, CardTitle } from "@/components/ui/card";
 import { FieldHint, Input, Label, Textarea } from "@/components/ui/input";
 import { parseDollarsToCents } from "@/lib/utils";
+import { AudienceFiltersEditor } from "@/components/AudienceFiltersEditor";
+import { CATEGORIES, filtersForSave, isHousingCategory, type AudienceFilters } from "@/lib/audience";
 
 // The three-step wizard. Steps are local state rather than routes: the whole
 // flow is one create-then-generate transaction, and a per-step URL would let a
@@ -51,7 +53,11 @@ const FIELD_LABELS: Record<string, string> = {
   targetZipCodes: "ZIP/PIN codes",
   radiusMiles: "radius",
   dailyBudgetCents: "daily budget",
+  targetAddress: "listing address",
+  audienceFilters: "who should see it",
 };
+
+const PRESET_CATEGORIES: readonly string[] = CATEGORIES;
 
 export default function NewCampaignPage() {
   const router = useRouter();
@@ -59,11 +65,16 @@ export default function NewCampaignPage() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
-  // Admins choose where the ad video comes from: photos (AdVault makes it) or a
-  // finished MP4 they upload, in which case nothing is generated.
+  // Where the ad video comes from: photos (AdVault makes it) or a finished MP4
+  // the advertiser uploads, in which case nothing is generated. A customer's
+  // upload is reviewed by AdVault before it can be launched; an admin's is
+  // approved on upload.
   const [source, setSource] = useState<"photos" | "video">("photos");
   const [videoFile, setVideoFile] = useState<File | null>(null);
-  const useVideo = isAdmin && source === "video";
+  const [rightsAttested, setRightsAttested] = useState(false);
+  const useVideo = source === "video";
+  // Must match api/src/lib/uploads/policy.ts.
+  const videoLimits = isAdmin ? { minSeconds: 5, maxSeconds: 180 } : { minSeconds: 6, maxSeconds: 60 };
 
   // Step 1 — assets
   const [assets, setAssets] = useState<Asset[]>([]);
@@ -82,7 +93,15 @@ export default function NewCampaignPage() {
     zipInput: "",
     radiusMiles: "10",
     dailyBudget: "15",
+    // Real estate only: the listing the radius is drawn around.
+    street: "",
+    city: "",
+    addressState: "",
+    addressZip: "",
   });
+  // The category dropdown; "Other" reveals the free-text box (form.businessCategory).
+  const [categoryChoice, setCategoryChoice] = useState<string>("");
+  const [audienceFilters, setAudienceFilters] = useState<AudienceFilters>({});
 
   // Step 3 — formats
   const [aspectRatios, setAspectRatios] = useState<("16:9" | "9:16")[]>(["16:9", "9:16"]);
@@ -96,10 +115,13 @@ export default function NewCampaignPage() {
     getMe()
       .then((me) => {
         setIsAdmin(me.role === "admin");
+        const profileCategory = me.businessCategory ?? "";
+        const preset = PRESET_CATEGORIES.includes(profileCategory) && profileCategory !== "Other";
+        setCategoryChoice((c) => c || (preset ? profileCategory : profileCategory ? "Other" : ""));
         setForm((f) => ({
           ...f,
           businessName: f.businessName || (me.businessName ?? ""),
-          businessCategory: f.businessCategory || (me.businessCategory ?? ""),
+          businessCategory: f.businessCategory || (preset ? "" : profileCategory),
           name: f.name || (me.businessName ? `${me.businessName} — local reach` : ""),
         }));
       })
@@ -138,6 +160,16 @@ export default function NewCampaignPage() {
   const invalidZips = zipCodes.filter((z) => !/^\d{5}$|^\d{6}$/.test(z));
   const mixedCountries =
     invalidZips.length === 0 && new Set(zipCodes.map((z) => z.length)).size > 1;
+  // The category actually saved: a preset, or the free text behind "Other".
+  const category = categoryChoice === "Other" ? form.businessCategory.trim() : categoryChoice;
+  // US housing ads (Google policy): no ZIPs, no age/gender/family filters —
+  // a radius around the listing instead. The API enforces the same rule.
+  const housing = isHousingCategory(category);
+  const addressValid =
+    form.street.trim() !== "" &&
+    form.city.trim() !== "" &&
+    /^[A-Za-z]{2}$/.test(form.addressState.trim()) &&
+    /^\d{5}$/.test(form.addressZip.trim());
   const budgetCents = parseDollarsToCents(form.dailyBudget);
   const budgetOutOfRange =
     budgetCents !== null && (budgetCents < MIN_DAILY_BUDGET_CENTS || budgetCents > MAX_DAILY_BUDGET_CENTS);
@@ -186,13 +218,22 @@ export default function NewCampaignPage() {
       const campaign = await createCampaign({
         name: form.name.trim(),
         businessName: form.businessName.trim(),
-        businessCategory: form.businessCategory.trim(),
+        businessCategory: category,
         callToAction: form.callToAction.trim(),
         landingUrl: form.landingUrl.trim(),
         offerDetails: form.offerDetails.trim() || null,
-        targetZipCodes: zipCodes,
+        targetZipCodes: housing ? [] : zipCodes,
+        targetAddress: housing
+          ? {
+              street: form.street.trim(),
+              city: form.city.trim(),
+              state: form.addressState.trim().toUpperCase(),
+              postalCode: form.addressZip.trim(),
+            }
+          : null,
         radiusMiles: Number(form.radiusMiles),
         dailyBudgetCents,
+        audienceFilters: filtersForSave(audienceFilters, housing),
       });
 
       // 202 — the API writes the scripts and queues the renders, then returns.
@@ -202,10 +243,10 @@ export default function NewCampaignPage() {
         // The upload replaces generation entirely: generating as well would put
         // AdVault-made videos into the same ad as the uploaded one.
         try {
-          await uploadCreativeVideo(campaign.id, videoFile);
+          await uploadCreativeVideo(campaign.id, videoFile, videoLimits);
         } catch (err) {
           const code = err instanceof ApiError ? err.code : err instanceof Error ? err.message : "error";
-          // The campaign exists; send the admin to it, where the upload card retries.
+          // The campaign exists; send them to it, where the upload card retries.
           setError(`The campaign was created, but the video upload failed (${code}). Opening the campaign so you can upload it again…`);
           setTimeout(() => router.push(`/dashboard/campaigns/${campaign.id}`), 2500);
           return;
@@ -214,7 +255,7 @@ export default function NewCampaignPage() {
         // Pay first; the campaign page makes the ad once the payment lands.
         const { checkout } = await orderNewAd(campaign.id, { assetIds: selectedAssetIds, aspectRatios });
         if (checkout.redirectUrl) {
-          window.location.href = checkout.redirectUrl;
+          window.location.assign(checkout.redirectUrl);
           return;
         }
       } else {
@@ -229,6 +270,10 @@ export default function NewCampaignPage() {
             ? `Please check: ${[...new Set(named)].join(", ")}.`
             : "Some details were rejected. Check the budget, landing URL and ZIP/PIN codes.",
         );
+      } else if (err instanceof ApiError && err.detail) {
+        // Targeting rules (housing policy, missing ZIPs/address) carry a
+        // sentence written for the advertiser.
+        setError(err.detail);
       } else {
         setError("Could not create the campaign. Please try again.");
       }
@@ -236,15 +281,13 @@ export default function NewCampaignPage() {
     }
   }
 
-  const canAdvanceFrom1 = useVideo ? videoFile !== null : selectedAssetIds.length >= 1;
+  const canAdvanceFrom1 = useVideo ? videoFile !== null && rightsAttested : selectedAssetIds.length >= 1;
   const canAdvanceFrom2 =
     form.name.trim() &&
     form.businessName.trim() &&
-    form.businessCategory.trim() &&
+    category &&
     /^https?:\/\//i.test(form.landingUrl.trim()) &&
-    zipCodes.length > 0 &&
-    invalidZips.length === 0 &&
-    !mixedCountries &&
+    (housing ? addressValid : zipCodes.length > 0 && invalidZips.length === 0 && !mixedCountries) &&
     budgetCents !== null &&
     !budgetOutOfRange;
 
@@ -277,12 +320,12 @@ export default function NewCampaignPage() {
         </p>
       )}
 
-      {step === 1 && isAdmin && (
-        <div className="mb-4 flex gap-2" role="radiogroup" aria-label="Ad video source">
+      {step === 1 && (
+        <div className="mb-4 flex flex-wrap gap-2" role="radiogroup" aria-label="Ad video source">
           {(
             [
               ["photos", "Use photos — AdVault makes the video"],
-              ["video", "Upload a finished video (admin)"],
+              ["video", "Use my own video"],
             ] as const
           ).map(([value, label]) => (
             <button
@@ -307,10 +350,25 @@ export default function NewCampaignPage() {
         <Card>
           <CardTitle>Upload the finished ad video</CardTitle>
           <CardDescription>
-            MP4, vertical (9:16) or wide (16:9), at least 720p, 5 seconds to 3 minutes, up to 200
-            MB. AdVault makes no videos for this campaign; this one is published to YouTube
-            (labelled as AI-made) and used by Launch.
+            MP4, vertical (9:16) for Shorts or wide (16:9) for in-stream, at least 720p,{" "}
+            {videoLimits.minSeconds}–{videoLimits.maxSeconds} seconds, up to 200 MB. AdVault makes no
+            videos for this campaign.
+            {isAdmin
+              ? " As an admin, your upload is approved straight away and published to YouTube."
+              : " AdVault reviews every uploaded video before it can run, usually within a day; Launch unlocks once it's approved. Google reviews the ad again after launch."}
           </CardDescription>
+          <label className="mt-4 flex items-start gap-2 text-sm text-zinc-300">
+            <input
+              type="checkbox"
+              className="mt-0.5"
+              checked={rightsAttested}
+              onChange={(e) => setRightsAttested(e.target.checked)}
+            />
+            <span>
+              I own or have the rights to everything in this video, including the music. No
+              copyrighted music.
+            </span>
+          </label>
           <div className="mt-5">
             <label className="inline-flex cursor-pointer items-center rounded-lg border border-white/15 bg-white/5 px-4 py-2 text-sm hover:bg-white/10">
               <input
@@ -430,16 +488,81 @@ export default function NewCampaignPage() {
                 <Input id="businessName" value={form.businessName} onChange={set("businessName")} />
               </div>
               <div>
-                <Label htmlFor="businessCategory">Category</Label>
-                <Input
-                  id="businessCategory"
-                  value={form.businessCategory}
-                  onChange={set("businessCategory")}
-                  placeholder="Plumbing"
-                />
+                <Label htmlFor="categoryChoice">Category</Label>
+                <select
+                  id="categoryChoice"
+                  value={categoryChoice}
+                  onChange={(e) => setCategoryChoice(e.target.value)}
+                  className="h-10 w-full rounded-lg border border-white/15 bg-white/5 px-3 text-sm text-zinc-100 focus:border-amber-400/60 focus:outline-none focus:ring-1 focus:ring-amber-400/60"
+                >
+                  <option value="" className="bg-zinc-900">
+                    Choose…
+                  </option>
+                  {CATEGORIES.map((c) => (
+                    <option key={c} value={c} className="bg-zinc-900">
+                      {c === "Real estate" ? "Real estate (agent, listings, open house)" : c}
+                    </option>
+                  ))}
+                </select>
+                {categoryChoice === "Other" && (
+                  <Input
+                    id="businessCategory"
+                    aria-label="Your category"
+                    className="mt-2"
+                    value={form.businessCategory}
+                    onChange={set("businessCategory")}
+                    placeholder="Pet grooming"
+                    maxLength={80}
+                  />
+                )}
               </div>
             </div>
 
+            {housing ? (
+              <div>
+                <Label htmlFor="street">Listing address</Label>
+                <FieldHint>
+                  Housing ads in the US can&apos;t target ZIP codes (Google policy), so we show
+                  your ad to people within the radius below of this address — a listing, open
+                  house or your office.
+                </FieldHint>
+                <div className="mt-2 grid gap-2 sm:grid-cols-6">
+                  <Input
+                    id="street"
+                    className="sm:col-span-6"
+                    placeholder="123 Main St"
+                    value={form.street}
+                    onChange={set("street")}
+                    maxLength={200}
+                  />
+                  <Input
+                    aria-label="City"
+                    className="sm:col-span-3"
+                    placeholder="City"
+                    value={form.city}
+                    onChange={set("city")}
+                    maxLength={100}
+                  />
+                  <Input
+                    aria-label="State"
+                    className="sm:col-span-1"
+                    placeholder="TX"
+                    maxLength={2}
+                    value={form.addressState}
+                    onChange={set("addressState")}
+                  />
+                  <Input
+                    aria-label="ZIP"
+                    className="sm:col-span-2"
+                    placeholder="78701"
+                    inputMode="numeric"
+                    maxLength={5}
+                    value={form.addressZip}
+                    onChange={set("addressZip")}
+                  />
+                </div>
+              </div>
+            ) : (
             <div>
               <Label htmlFor="zipInput">Target ZIP or PIN codes</Label>
               <Textarea
@@ -465,6 +588,7 @@ export default function NewCampaignPage() {
                 </FieldHint>
               )}
             </div>
+            )}
 
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
@@ -477,7 +601,11 @@ export default function NewCampaignPage() {
                   value={form.radiusMiles}
                   onChange={set("radiusMiles")}
                 />
-                <FieldHint>How far around those codes to reach. Max 50.</FieldHint>
+                <FieldHint>
+                  {housing
+                    ? "How far around the listing to reach. Max 50."
+                    : "How far around those codes to reach. Max 50."}
+                </FieldHint>
               </div>
               <div>
                 <Label htmlFor="dailyBudget">Daily budget (USD)</Label>
@@ -538,6 +666,12 @@ export default function NewCampaignPage() {
                 statement about your business.
               </FieldHint>
             </div>
+
+            <AudienceFiltersEditor
+              value={audienceFilters}
+              onChange={setAudienceFilters}
+              housing={housing}
+            />
           </div>
 
           <div className="mt-6 flex justify-between">

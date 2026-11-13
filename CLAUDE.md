@@ -140,6 +140,16 @@ orphaned a budget on every failure. Don't split it back up.
   `assets.kind = 'logo'` with `lib/imageSize.ts` before any Google call
   (`logo_required` / `logo_invalid`).
 - **Location targeting lives on the ad group** for Demand Gen, not the campaign.
+  The one exception is **real estate** (US housing ads, `lib/audience/policy.ts`):
+  Google forbids ZIP, age, gender and parental-status targeting for housing,
+  so it targets a `proximity` radius around the listing address. Proximity only
+  exists as a *campaign* criterion, so those campaigns are created with
+  `upgradedTargeting: false` and carry location + language on the campaign.
+  The housing rules are checked on save, at launch, and in the builder.
+- **Audience filters are optional and default to everyone.** Demographics go
+  through ONE `Audience` resource on the ad group (`useAudienceGrouped`), not
+  individual age/gender criteria. Every filter shrinks reach for the same
+  budget, and the UI says so whenever one is set.
 - **Location targeting is PRESENCE only** (`geoTargetTypeSetting` on the campaign).
   Google defaults to presence-or-interest, which also serves people elsewhere who
   merely search about the area. A walk-in shop pays for those views, and the
@@ -214,18 +224,35 @@ It must never call a mutate endpoint. Routes (`/campaigns/:id/metrics`,
   `ADMIN_ANALYTICS_TOKEN`, never the shared `METRICS_TOKEN`: it names
   businesses and their spend, which `/metrics` deliberately never does.
 
-## Uploaded videos are admin-only (step 1)
+## Uploaded videos: open to everyone, behind a human review
 
-`routes/uploads.ts` lets an **admin** attach a finished MP4 (e.g. AdVault's own
-brand ad) to **their own** campaign as a `kind = 'upload'` creative. It is inserted
-`ready` only after a HEAD proves the object is in R2, skips the renderer, and
-joins the normal YouTube queue and launch. Uploads are always flagged as
-synthetic media on YouTube. Edit and re-render refuse them (`creative_is_upload`):
-there is nothing to render from, and a render would overwrite the MP4.
+`routes/uploads.ts` lets **any user** attach a finished MP4 to **their own**
+campaign as a `kind = 'upload'` creative ("Use my own video"). It is inserted
+`ready` only after a HEAD proves the object is in R2 and skips the renderer.
+Customers get 6–60s (admins 5–180s), ≤200 MB, 9:16 or 16:9, ≥720p, and must
+tick the rights attestation ("…including the music. No copyrighted music.");
+who and when is stored on the creative. Uploads are always flagged as synthetic
+media on YouTube. Edit and re-render refuse them (`creative_is_upload`).
 
-Opening this to customers needs a human review queue first — a bad video in a
-paid placement is the advertiser's money and our name. Don't just drop
-`requireAdmin`.
+**Every customer upload is reviewed by an AdVault admin before anything else
+happens to it** (`creatives.review_status`: NULL for generated creatives,
+`pending_review` → `approved | rejected`; rules in `lib/uploads/review.ts`):
+
+- **Approval is what publishes it to YouTube.** An unreviewed video must never
+  reach the org channel — that is where a copyright strike would land. The
+  publish/backfill routes refuse or skip unapproved uploads and the YouTube
+  worker re-checks as a backstop. Don't enqueue an upload anywhere else.
+- **Launch refuses** `video_pending_review` while any upload is pending and
+  `video_rejected` when only rejected uploads remain; rejected ones are left out.
+- The queue is `/dashboard/admin/reviews` (`/admin/video-reviews`, admin
+  session or `ADMIN_ANALYTICS_TOKEN`), and a new upload pings ops via ntfy.
+- An admin's own upload is approved on insert.
+- No automated scanning. Google Video Intelligence explicit-content detection
+  (~5¢/video) is the noted future option; it would not replace the human check.
+
+Google reviews the ad again after launch: `adMetricsSync` also reads
+`ad_group_ad.policy_summary` (read-only) into `campaigns.google_ad_*`, shown on
+the campaign page as "Google: Approved / Under review / Disapproved".
 
 ## Google Ads API access: developer tokens are gone, and the version pin is load-bearing
 

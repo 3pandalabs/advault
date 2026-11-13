@@ -14,6 +14,7 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 import type { BillingMode } from "../lib/billing/policy.js";
+import type { AudienceFilters, TargetAddress } from "../lib/audience/policy.js";
 
 // Enum-ish columns are `text` + a CHECK constraint rather than pgEnum, matching
 // the RentVault and RsvpVault schemas. Adding a value to a pgEnum needs its own
@@ -445,6 +446,14 @@ export const campaigns = pgTable(
     // hand-entered list that is always read whole, never joined or aggregated.
     targetZipCodes: text("target_zip_codes").array().notNull(),
     radiusMiles: integer("radius_miles").notNull().default(10),
+    // Real-estate (US housing) campaigns only: the listing address a radius is
+    // drawn around, because housing ads may not target ZIP codes (Google
+    // policy; lib/audience/policy.ts). For those rows targetZipCodes is empty.
+    targetAddress: jsonb("target_address").$type<TargetAddress>(),
+    // Optional "Who should see it" filters (age, gender, parental status,
+    // household income, language). NULL = everyone, the default. Shape and
+    // the housing restrictions: lib/audience/policy.ts.
+    audienceFilters: jsonb("audience_filters").$type<AudienceFilters>(),
 
     dailyBudgetCents: integer("daily_budget_cents").notNull(),
     currencyCode: text("currency_code").notNull().default("USD"),
@@ -468,6 +477,15 @@ export const campaigns = pgTable(
     googleAdGroupResourceName: text("google_ad_group_resource_name"),
     launchError: text("launch_error"),
     launchedAt: timestamp("launched_at", { withTimezone: true }),
+
+    // Google's own policy review of the campaign's single ad, copied by the
+    // renderer's hourly report sweep (render/adMetricsSync.ts, read-only).
+    // Raw Google enum names (ad_group_ad.policy_summary.approval_status /
+    // review_status); lib/adMetrics/policy.ts turns them into a label.
+    googleAdApprovalStatus: text("google_ad_approval_status"),
+    googleAdReviewStatus: text("google_ad_review_status"),
+    googleAdPolicyTopics: text("google_ad_policy_topics").array().notNull().default(sql`'{}'::text[]`),
+    googleAdPolicyCheckedAt: timestamp("google_ad_policy_checked_at", { withTimezone: true }),
 
     // Which Google customer this ran in. Denormalised from ad_accounts because
     // ad_accounts.id is ON DELETE SET NULL — a disconnected account must not
@@ -515,7 +533,12 @@ export const campaigns = pgTable(
     check("campaigns_radius_check", sql`${t.radiusMiles} between 1 and 50`),
     // An empty target list would silently become a nationwide campaign at
     // Google, which is the single most expensive way for this app to be wrong.
-    check("campaigns_zips_check", sql`array_length(${t.targetZipCodes}, 1) between 1 and 50`),
+    // Real-estate campaigns (0012) have no ZIPs and a target_address instead.
+    // coalesce() because array_length('{}') is NULL, which a CHECK lets through.
+    check(
+      "campaigns_zips_check",
+      sql`coalesce(array_length(${t.targetZipCodes}, 1), 0) <= 50 and (coalesce(array_length(${t.targetZipCodes}, 1), 0) >= 1 or ${t.targetAddress} is not null)`,
+    ),
   ],
 );
 
@@ -621,6 +644,20 @@ export const creatives = pgTable(
     // campaign's ad group. Null means rendered and uploaded but not serving.
     googleAdResourceName: text("google_ad_resource_name"),
 
+    // Human review of customer-uploaded videos (lib/uploads/review.ts).
+    // NULL for everything AdVault generated — those never need review.
+    // pending_review -> approved | rejected. An unapproved upload is never
+    // published to YouTube and blocks launch (video_pending_review).
+    reviewStatus: text("review_status").$type<"pending_review" | "approved" | "rejected">(),
+    reviewedBy: uuid("reviewed_by").references(() => users.id, { onDelete: "set null" }),
+    reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+    // Shown to the customer on a rejection.
+    reviewReason: text("review_reason"),
+    // Who ticked "I own or have the rights to everything in this video,
+    // including the music", and when.
+    rightsAttestedBy: uuid("rights_attested_by").references(() => users.id, { onDelete: "set null" }),
+    rightsAttestedAt: timestamp("rights_attested_at", { withTimezone: true }),
+
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     renderedAt: timestamp("rendered_at", { withTimezone: true }),
   },
@@ -630,6 +667,10 @@ export const creatives = pgTable(
     check("creatives_motion_source_check", sql`${t.motionSource} in ('none','kling','luma')`),
     check("creatives_voice_source_check", sql`${t.voiceSource} in ('none','edge-tts','elevenlabs')`),
     check("creatives_kind_check", sql`${t.kind} in ('standard','cinematic','upload')`),
+    check(
+      "creatives_review_status_check",
+      sql`${t.reviewStatus} is null or ${t.reviewStatus} in ('pending_review','approved','rejected')`,
+    ),
     check(
       "creatives_render_status_check",
       sql`${t.renderStatus} in ('queued','rendering','ready','failed')`,

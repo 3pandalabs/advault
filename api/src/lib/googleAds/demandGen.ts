@@ -1,5 +1,6 @@
 import { centsToMicros } from "./campaigns.js";
 import { googleAdsCall } from "./client.js";
+import type { TargetAddress } from "../audience/policy.js";
 
 // ---------------------------------------------------------------------------
 // The launch, as ONE atomic Google Ads request.
@@ -174,7 +175,23 @@ export type LaunchPlan = {
   campaignName: string;
   dailyBudgetCents: number;
   finalUrl: string;
+  /** ZIP-resolved geo constants. Empty for a radius (housing) launch. */
   geoTargetConstants: string[];
+  /**
+   * Radius around an address instead of geo constants. Used for housing
+   * (real estate), which may not target ZIP codes under Google's US policy.
+   */
+  proximity?: { address: TargetAddress; radiusMiles: number };
+  /**
+   * The campaign is a US housing ad. The builder refuses age / gender /
+   * parental-status dimensions and ZIP geo constants for it — the third line
+   * of defence after save and the launch route.
+   */
+  housing?: boolean;
+  /** Audience.dimensions[] (lib/audience/google.ts). Empty = everyone. */
+  audienceDimensions?: unknown[];
+  /** languageConstants/<id>. Empty = every language. */
+  languageConstants?: string[];
   copy: AdCopy;
   /** One per published creative: an existing asset, or a video to create. */
   videos: ({ existing: string } | { youtubeVideoId: string; title: string })[];
@@ -192,13 +209,30 @@ export type LaunchPlan = {
 const BUDGET = -1;
 const CAMPAIGN = -2;
 const AD_GROUP = -3;
+const AUDIENCE = -4;
+
+// Dimensions Google's US housing policy forbids. Household income is allowed
+// (https://support.google.com/adspolicy/answer/9997418), see lib/audience/policy.ts.
+const HOUSING_FORBIDDEN_DIMENSIONS = ["age", "gender", "parentalStatus"];
 
 export function buildLaunchOperations(plan: LaunchPlan): unknown[] {
-  if (plan.geoTargetConstants.length === 0) {
+  if (plan.geoTargetConstants.length === 0 && !plan.proximity) {
     // A Demand Gen ad group with no location criteria targets everywhere the
     // language matches — the single most expensive way for this app to be
     // wrong. Guarded here as well as in the route.
     throw new Error("Refusing to build a launch with no location targets");
+  }
+  if (plan.proximity && plan.geoTargetConstants.length > 0) {
+    throw new Error("Refusing to build a launch with both a radius and ZIP targets");
+  }
+  const dims = plan.audienceDimensions ?? [];
+  const languages = plan.languageConstants ?? [];
+  if (plan.housing) {
+    if (!plan.proximity) throw new Error("Refusing a housing launch without radius targeting");
+    const forbidden = dims.some((d) =>
+      HOUSING_FORBIDDEN_DIMENSIONS.some((k) => k in (d as Record<string, unknown>)),
+    );
+    if (forbidden) throw new Error("Refusing a housing launch with age/gender/parental targeting");
   }
   if (plan.videos.length === 0) throw new Error("Refusing to build a launch with no video");
 
@@ -206,6 +240,14 @@ export function buildLaunchOperations(plan: LaunchPlan): unknown[] {
   const budget = `${c}/campaignBudgets/${BUDGET}`;
   const campaign = `${c}/campaigns/${CAMPAIGN}`;
   const adGroup = `${c}/adGroups/${AD_GROUP}`;
+  const audience = `${c}/audiences/${AUDIENCE}`;
+  // A radius is a CampaignCriterion — AdGroupCriterion has no `proximity`
+  // member (v26 reference). Demand Gen only accepts campaign-level location
+  // and language criteria when the campaign is created with
+  // demand_gen_campaign_settings.upgraded_targeting = false (it defaults to
+  // true, which moves them to the ad group, and is immutable afterwards).
+  // https://developers.google.com/google-ads/api/reference/rpc/v26/Campaign.DemandGenCampaignSettings
+  const campaignLevelTargeting = Boolean(plan.proximity);
 
   const ops: unknown[] = [];
 
@@ -240,6 +282,9 @@ export function buildLaunchOperations(plan: LaunchPlan): unknown[] {
         // elsewhere who merely search about the area: wasted budget for a
         // walk-in shop, and it would make "local views" untrue.
         geoTargetTypeSetting: { positiveGeoTargetType: "PRESENCE" },
+        ...(campaignLevelTargeting
+          ? { demandGenCampaignSettings: { upgradedTargeting: false } }
+          : {}),
         // PAUSED by default: enabling is the advertiser's deliberate second
         // step in their own Google Ads account. Platform-billed customers have
         // no Google access, so for them Launch is that step (see LaunchPlan).
@@ -257,6 +302,9 @@ export function buildLaunchOperations(plan: LaunchPlan): unknown[] {
         // ENABLED inside a PAUSED campaign: the campaign is the single
         // serving gate, so enabling it is all the advertiser has to do.
         status: "ENABLED",
+        // Demand Gen demographics go through ONE Audience resource; the flag
+        // is immutable, so it is set at creation and only when used.
+        ...(dims.length > 0 ? { audienceSetting: { useAudienceGrouped: true } } : {}),
         demandGenAdGroupSettings: {
           channelControls: {
             // YouTube only. AdVault sells YouTube and Shorts ads; Gmail,
@@ -276,11 +324,67 @@ export function buildLaunchOperations(plan: LaunchPlan): unknown[] {
     },
   });
 
-  // Demand Gen takes location targeting on the ad group, not the campaign.
+  if (plan.proximity) {
+    const a = plan.proximity.address;
+    ops.push({
+      campaignCriterionOperation: {
+        create: {
+          campaign,
+          // Address only, no geo_point: Google resolves the point itself.
+          // https://developers.google.com/google-ads/api/reference/rpc/v26/ProximityInfo
+          proximity: {
+            address: {
+              streetAddress: a.street,
+              cityName: a.city,
+              provinceCode: a.state,
+              postalCode: a.postalCode,
+              countryCode: "US",
+            },
+            radius: plan.proximity.radiusMiles,
+            radiusUnits: "MILES",
+          },
+        },
+      },
+    });
+  }
+
+  // Demand Gen (upgraded targeting, the default) takes location targeting on
+  // the ad group, not the campaign.
   for (const geoTargetConstant of plan.geoTargetConstants) {
     ops.push({
       adGroupCriterionOperation: {
         create: { adGroup, location: { geoTargetConstant } },
+      },
+    });
+  }
+
+  // Language follows location: campaign level iff upgraded targeting is off.
+  for (const languageConstant of languages) {
+    ops.push(
+      campaignLevelTargeting
+        ? { campaignCriterionOperation: { create: { campaign, language: { languageConstant } } } }
+        : { adGroupCriterionOperation: { create: { adGroup, language: { languageConstant } } } },
+    );
+  }
+
+  if (dims.length > 0) {
+    // Demand Gen demographics: an Audience with age / gender / parental /
+    // household-income dimensions, attached by one AudienceInfo criterion.
+    // https://developers.google.com/google-ads/api/docs/demand-gen/audience-targeting
+    // Audience names must be unique per account; the suffix is the campaign id.
+    ops.push({
+      audienceOperation: {
+        create: {
+          resourceName: audience,
+          name: `AdVault audience ${plan.nameSuffix}`,
+          description: `Demographic filters for ${plan.campaignName}`.slice(0, 255),
+          dimensions: dims,
+        },
+      },
+    });
+    ops.push({
+      adGroupCriterionOperation: {
+        create: { adGroup, audience: { audience } },
       },
     });
   }

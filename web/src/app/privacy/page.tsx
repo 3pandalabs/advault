@@ -36,7 +36,7 @@ export default function PrivacyPage() {
   return (
     <LegalPage
       title="Privacy Policy"
-      effective="27 October 2026"
+      effective="12 November 2026"
       summary="We collect what we need to make your ad and run your campaign, and nothing else. We do not sell your data, we do not track you around the internet, and this site sets no cookies at all."
     >
       <h2>Who we are</h2>
@@ -65,12 +65,22 @@ export default function PrivacyPage() {
         </li>
         <li>
           <strong>Your campaign</strong> — what you sell, the offer you are running, your
-          call to action, your website address, the pin or ZIP codes you want to reach,
-          the radius around them, and your daily budget.
+          call to action, your website address, the pin or ZIP codes you want to reach
+          (or, for real-estate ads, the listing address), the radius around them, any
+          audience filters you choose (age, gender, parental status, household income,
+          language), and your daily budget. The listing address and filters are sent to
+          Google Ads as the campaign&apos;s targeting.
         </li>
         <li>
           <strong>Photos you upload</strong> — the pictures of your shop, team or work
           that go into the video, plus the original filename, file type and size.
+        </li>
+        <li>
+          <strong>Videos you upload</strong> — if you use your own finished video instead of
+          one AdVault makes: the video file, its size and length, and a record of who
+          confirmed they hold the rights to it and when. An AdVault staff member watches
+          every uploaded video before it can be published or run as an ad, and we keep
+          whether it was approved and, if not, the reason we gave you.
         </li>
         <li>
           <strong>Your Google Ads connection</strong> — see the separate section below.
@@ -253,7 +263,10 @@ export default function PrivacyPage() {
       <p>
         Where an ad was produced using AI-generated footage or an AI voiceover, we declare
         that to YouTube as synthetic content, as YouTube&apos;s policies require. Where an
-        ad is a photo slideshow with no AI-generated material, we do not.
+        ad is a photo slideshow with no AI-generated material, we do not. A video you
+        upload yourself is always declared as synthetic content, because we cannot tell
+        how it was made. A video you upload is only published to YouTube after AdVault
+        has approved it.
       </p>
 
       <h2>Who else sees your data</h2>

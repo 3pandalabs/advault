@@ -128,6 +128,105 @@ describe("buildLaunchOperations", () => {
   });
 });
 
+describe("buildLaunchOperations — audience filters", () => {
+  const dims = [{ age: { ageRanges: [{ minAge: 25, maxAge: 44 }], includeUndetermined: false } }];
+
+  it("adds nothing when there are no filters (everyone)", () => {
+    const list = ops();
+    expect(ofType(list, "audienceOperation")).toHaveLength(0);
+    const [adGroup] = ofType(list, "adGroupOperation");
+    expect(adGroup).not.toHaveProperty("audienceSetting");
+  });
+
+  it("attaches demographics as one grouped Audience on the ad group", () => {
+    const list = ops({ ...basePlan, audienceDimensions: dims });
+    const [adGroup] = ofType(list, "adGroupOperation");
+    expect(adGroup!.audienceSetting).toEqual({ useAudienceGrouped: true });
+    const [audience] = ofType(list, "audienceOperation");
+    expect(audience).toMatchObject({
+      resourceName: "customers/1234567890/audiences/-4",
+      name: "AdVault audience 31415eeb",
+      dimensions: dims,
+    });
+    const criteria = ofType(list, "adGroupCriterionOperation");
+    expect(criteria).toContainEqual({
+      adGroup: "customers/1234567890/adGroups/-3",
+      audience: { audience: "customers/1234567890/audiences/-4" },
+    });
+    // The Audience must exist before the criterion that references it.
+    const keys = list.map((o) => Object.keys(o)[0]);
+    const audienceIdx = keys.indexOf("audienceOperation");
+    const refIdx = list.findIndex((o) => JSON.stringify(o).includes('"audience":{"audience"'));
+    expect(audienceIdx).toBeLessThan(refIdx);
+  });
+
+  it("targets languages on the ad group for ZIP campaigns", () => {
+    const list = ops({ ...basePlan, languageConstants: ["languageConstants/1003"] });
+    expect(ofType(list, "adGroupCriterionOperation")).toContainEqual({
+      adGroup: "customers/1234567890/adGroups/-3",
+      language: { languageConstant: "languageConstants/1003" },
+    });
+    expect(ofType(list, "campaignCriterionOperation")).toHaveLength(0);
+  });
+});
+
+describe("buildLaunchOperations — housing (real estate)", () => {
+  const housingPlan: LaunchPlan = {
+    ...basePlan,
+    geoTargetConstants: [],
+    housing: true,
+    proximity: {
+      address: { street: "12 Elm St", city: "Austin", state: "TX", postalCode: "78701" },
+      radiusMiles: 15,
+    },
+    languageConstants: ["languageConstants/1000"],
+  };
+
+  it("targets a radius on the campaign, with upgraded targeting off", () => {
+    const list = ops(housingPlan);
+    const [campaign] = ofType(list, "campaignOperation");
+    expect(campaign!.demandGenCampaignSettings).toEqual({ upgradedTargeting: false });
+    const criteria = ofType(list, "campaignCriterionOperation");
+    expect(criteria[0]).toEqual({
+      campaign: "customers/1234567890/campaigns/-2",
+      proximity: {
+        address: {
+          streetAddress: "12 Elm St",
+          cityName: "Austin",
+          provinceCode: "TX",
+          postalCode: "78701",
+          countryCode: "US",
+        },
+        radius: 15,
+        radiusUnits: "MILES",
+      },
+    });
+    // Language moves to the campaign with location.
+    expect(criteria[1]).toEqual({
+      campaign: "customers/1234567890/campaigns/-2",
+      language: { languageConstant: "languageConstants/1000" },
+    });
+    // No ZIP / geo-constant criteria at all.
+    expect(JSON.stringify(list)).not.toContain("geoTargetConstant");
+  });
+
+  it.each(["age", "gender", "parentalStatus"])("refuses a %s dimension", (k) => {
+    expect(() => ops({ ...housingPlan, audienceDimensions: [{ [k]: {} }] })).toThrow(/housing/);
+  });
+
+  it("allows a household income dimension", () => {
+    const list = ops({ ...housingPlan, audienceDimensions: [{ householdIncome: { incomeRanges: [] } }] });
+    expect(ofType(list, "audienceOperation")).toHaveLength(1);
+  });
+
+  it("refuses ZIP geo constants or a missing radius", () => {
+    expect(() => ops({ ...housingPlan, geoTargetConstants: ["geoTargetConstants/9001"] })).toThrow();
+    expect(() => ops({ ...housingPlan, proximity: undefined, geoTargetConstants: ["geoTargetConstants/9001"] })).toThrow(
+      /housing/,
+    );
+  });
+});
+
 describe("fitText", () => {
   it("leaves short text alone and collapses whitespace", () => {
     expect(fitText("  Call   now ", 40)).toBe("Call now");

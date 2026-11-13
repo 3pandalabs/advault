@@ -1,5 +1,7 @@
 "use client";
 
+import type { AudienceFilters, TargetAddress } from "@/lib/audience";
+
 // Browser-side calls go to the public, Cloudflare-proxied hostname. The
 // orange-to-orange restriction that forces server-side code onto
 // INTERNAL_API_URL does not apply here — a real browser is not a same-account
@@ -139,6 +141,10 @@ export type Campaign = {
   offerDetails: string | null;
   targetZipCodes: string[];
   radiusMiles: number;
+  /** Real estate only: the listing a radius is drawn around (no ZIPs). */
+  targetAddress: TargetAddress | null;
+  /** null = everyone. */
+  audienceFilters: AudienceFilters | null;
   dailyBudgetCents: number;
   currencyCode: string;
   status: CampaignStatus;
@@ -146,7 +152,15 @@ export type Campaign = {
   launchError: string | null;
   launchedAt: string | null;
   createdAt: string;
+  // Google's own review of the launched ad, copied hourly by the renderer.
+  // Raw Google enums (ad_group_ad.policy_summary); null until first checked.
+  googleAdApprovalStatus?: string | null;
+  googleAdReviewStatus?: string | null;
+  googleAdPolicyTopics?: string[];
+  googleAdPolicyCheckedAt?: string | null;
 };
+
+export type VideoReviewStatus = "pending_review" | "approved" | "rejected";
 
 export type AdScript = {
   hook: string;
@@ -168,10 +182,14 @@ export type Creative = {
   thumbnailKey: string | null;
   durationSeconds: number | null;
   createdAt: string;
-  // 'upload' = a finished MP4 an admin uploaded; it has no script and cannot
-  // be edited or re-rendered.
+  // 'upload' = a finished MP4 the advertiser (or an admin) uploaded; it has no
+  // script and cannot be edited or re-rendered.
   kind: "standard" | "cinematic" | "upload";
   googleAdResourceName: string | null;
+  // AdVault's review of an uploaded video; null for everything AdVault made.
+  reviewStatus: VideoReviewStatus | null;
+  reviewReason: string | null;
+  reviewedAt: string | null;
 
   // Whether this ad exists on YouTube yet, which is a harder requirement than
   // it sounds: a Google Ads video ad references a YouTube video id, never an
@@ -339,8 +357,22 @@ export function createCampaign(input: {
   targetZipCodes: string[];
   radiusMiles: number;
   dailyBudgetCents: number;
+  targetAddress?: TargetAddress | null;
+  audienceFilters?: AudienceFilters | null;
 }) {
   return api<Campaign>("/campaigns", { method: "POST", body: JSON.stringify(input) });
+}
+
+/** Draft edits. 409 `campaign_is_live` once launched. */
+export function updateCampaign(
+  campaignId: string,
+  input: Partial<{
+    audienceFilters: AudienceFilters | null;
+    targetAddress: TargetAddress | null;
+    radiusMiles: number;
+  }>,
+) {
+  return api<Campaign>(`/campaigns/${campaignId}`, { method: "PATCH", body: JSON.stringify(input) });
 }
 
 export function generateCreatives(
@@ -383,6 +415,9 @@ export function launchCampaign(campaignId: string, adAccountId: string) {
     campaign: Campaign;
     zipCodesRequested: number;
     zipCodesTargeted: number;
+    /** Real estate: radius around the listing; null for ZIP campaigns. */
+    radiusMilesAroundAddress: number | null;
+    audienceFiltersApplied: number;
     note: string;
   }>(`/campaigns/${campaignId}/launch`, {
     method: "POST",
@@ -479,12 +514,21 @@ function readVideoMeta(file: File): Promise<{ width: number; height: number; dur
   });
 }
 
-// Admin-only: upload a finished MP4 as a ready creative of this campaign.
-// Same three steps as uploadAsset: presign, PUT straight to R2, confirm.
-export async function uploadCreativeVideo(campaignId: string, file: File): Promise<Creative> {
+// Upload a finished MP4 as a creative of this campaign. A customer's upload
+// waits for AdVault's review before it is published or launched; an admin's is
+// approved on upload. Same three steps as uploadAsset: presign, PUT straight
+// to R2, confirm (with the rights attestation).
+export async function uploadCreativeVideo(
+  campaignId: string,
+  file: File,
+  limits: { minSeconds: number; maxSeconds: number },
+): Promise<Creative> {
   if (file.type !== "video/mp4") throw new Error("not_mp4");
   if (file.size > 200 * 1024 * 1024) throw new Error("too_large");
   const meta = await readVideoMeta(file);
+  // Same limits the API enforces, checked first so a bad file isn't uploaded.
+  if (meta.durationSeconds < limits.minSeconds) throw new Error("too_short");
+  if (meta.durationSeconds > limits.maxSeconds) throw new Error("too_long");
   const { creativeId, uploadUrl, contentType } = await api<{ creativeId: string; uploadUrl: string; contentType: string }>(
     `/campaigns/${campaignId}/creatives/upload-url`,
     { method: "POST", body: JSON.stringify(meta) },
@@ -493,13 +537,44 @@ export async function uploadCreativeVideo(campaignId: string, file: File): Promi
   if (!put.ok) throw new ApiError(put.status, "upload_failed");
   return api<Creative>(`/campaigns/${campaignId}/creatives/upload`, {
     method: "POST",
-    body: JSON.stringify({ ...meta, creativeId }),
+    body: JSON.stringify({ ...meta, creativeId, rightsAttested: true }),
   });
 }
 
-// Admin-only: remove an uploaded video from a campaign that is not live.
+// Remove an uploaded video from a campaign that is not live.
 export const removeUploadedCreative = (creativeId: string) =>
   api<void>(`/creatives/${creativeId}`, { method: "DELETE" });
+
+// --- admin: uploaded-video review --------------------------------------------
+
+export type VideoReview = {
+  creativeId: string;
+  campaignId: string;
+  campaignName: string;
+  businessName: string;
+  landingUrl: string;
+  campaignStatus: CampaignStatus;
+  ownerEmail: string;
+  aspectRatio: "16:9" | "9:16";
+  durationSeconds: number | null;
+  sizeBytes: number | null;
+  reviewStatus: VideoReviewStatus;
+  reviewedAt: string | null;
+  reviewReason: string | null;
+  rightsAttestedAt: string | null;
+  rightsAttestedBy: string | null;
+  createdAt: string;
+  /** Ten-minute playback link. */
+  videoUrl: string | null;
+};
+
+export const listVideoReviews = (status: VideoReviewStatus = "pending_review") =>
+  api<{ status: VideoReviewStatus; videos: VideoReview[] }>(`/admin/video-reviews?status=${status}`);
+
+export const decideVideoReview = (
+  creativeId: string,
+  input: { decision: "approve" } | { decision: "reject"; reason: string },
+) => api<Creative>(`/admin/video-reviews/${creativeId}`, { method: "POST", body: JSON.stringify(input) });
 
 // --- billing ---------------------------------------------------------------
 

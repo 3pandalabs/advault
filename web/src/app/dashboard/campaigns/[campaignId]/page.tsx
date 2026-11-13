@@ -24,8 +24,9 @@ import {
   type Creative,
 } from "@/lib/api/browser";
 import { SquareLogo } from "./square-logo";
-import { AdminVideoUpload } from "./admin-video-upload";
+import { VideoUpload } from "./video-upload";
 import { PerformanceCard } from "./performance-card";
+import { AudienceCard } from "./audience-card";
 import { Badge, Card, CardDescription, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { formatDuration, formatMoney } from "@/lib/utils";
@@ -45,6 +46,14 @@ const LAUNCH_ERRORS: Record<string, string> = {
   no_ready_creatives: "Wait for at least one video to finish rendering first.",
   already_launched: "This campaign has already been sent to Google Ads.",
   no_resolvable_zip_codes: "Google did not recognise any of those ZIP codes.",
+  // US housing-ads policy, re-checked at launch (lib/audience/policy.ts).
+  housing_demographics_not_allowed:
+    "Housing ads in the US can't target by age, gender or family status (Google policy). Remove those filters under “Who should see it”.",
+  housing_zip_targeting_not_allowed:
+    "Housing ads in the US can't target by ZIP code (Google policy). Create the campaign again as Real estate with the listing address.",
+  listing_address_required:
+    "Real-estate campaigns need the listing address. Create the campaign again with it.",
+  zip_codes_required: "This campaign has no ZIP codes to target.",
   // The wallet guard on accounts AdVault funds. Previously unmapped, so a 402
   // surfaced as the raw code.
   insufficient_funds:
@@ -76,7 +85,27 @@ const LAUNCH_ERRORS: Record<string, string> = {
   currency_mismatch:
     "This campaign's budget currency doesn't match the ad account's. Create the campaign again in the account's currency.",
   provisioning_failed: "We couldn't set up your ad account just now. Please try again in a few minutes.",
+  // Customer-uploaded videos are reviewed by AdVault before they can run.
+  video_pending_review:
+    "Your uploaded video is waiting for AdVault's review — usually within a day. Launch unlocks once it's approved.",
+  video_rejected:
+    "Your uploaded video wasn't approved, so there's nothing to launch. See the reason on the video, then upload a new one or remove it.",
 };
+
+// Google reviews every ad again after launch. Raw enums from
+// ad_group_ad.policy_summary, mirrored from api/src/lib/adMetrics/adPolicy.ts.
+function googleReviewLabel(
+  approval: string | null | undefined,
+  review: string | null | undefined,
+): { text: string; tone: "success" | "pending" | "danger" } | null {
+  if (!approval && !review) return null;
+  if (approval === "DISAPPROVED") return { text: "Disapproved", tone: "danger" };
+  if (review === "REVIEW_IN_PROGRESS" || review === "UNDER_APPEAL") return { text: "Under review", tone: "pending" };
+  if (approval === "APPROVED") return { text: "Approved", tone: "success" };
+  if (approval === "APPROVED_LIMITED" || approval === "AREA_OF_INTEREST_ONLY")
+    return { text: "Approved (limited)", tone: "success" };
+  return { text: "Under review", tone: "pending" };
+}
 
 export default function CampaignDetailPage({
   params,
@@ -145,19 +174,24 @@ export default function CampaignDetailPage({
   // Publishing to YouTube counts as pending too. Without it the page stopped
   // polling the moment the encode finished and then sat there showing
   // "Publishing…" forever, with the Launch button withheld and no explanation.
+  // An upload waiting for AdVault's review is not publishing — it waits on a
+  // person, possibly for hours — so it is polled once a minute, not every 5s.
+  // A rejected one is not waiting on anything.
+  const awaitingReview = campaign?.creatives.some((c) => c.reviewStatus === "pending_review") ?? false;
   const pending = campaign?.creatives.some(
     (c) =>
       c.renderStatus === "queued" ||
       c.renderStatus === "rendering" ||
       (c.renderStatus === "ready" &&
         !c.youtubeVideoId &&
-        c.youtubeUploadStatus !== "failed"),
+        c.youtubeUploadStatus !== "failed" &&
+        (c.reviewStatus === null || c.reviewStatus === "approved")),
   );
   useEffect(() => {
-    if (!pending) return;
-    const timer = setInterval(refresh, 5000);
+    if (!pending && !awaitingReview) return;
+    const timer = setInterval(refresh, pending ? 5000 : 60_000);
     return () => clearInterval(timer);
-  }, [pending, refresh]);
+  }, [pending, awaitingReview, refresh]);
 
   // While 3PandaLabs is adding the card to a new ad account, re-check once a
   // minute so Launch appears without a reload. The renderer polls Google every
@@ -204,7 +238,9 @@ export default function CampaignDetailPage({
     try {
       const result = await launchCampaign(campaignId, adAccountId);
       setLaunchNote(
-        `${result.note} Targeted ${result.zipCodesTargeted} of ${result.zipCodesRequested} ZIP codes.`,
+        result.radiusMilesAroundAddress !== null
+          ? `${result.note} Targeted ${result.radiusMilesAroundAddress} miles around your listing.`
+          : `${result.note} Targeted ${result.zipCodesTargeted} of ${result.zipCodesRequested} ZIP codes.`,
       );
       await refresh();
     } catch (err) {
@@ -233,8 +269,14 @@ export default function CampaignDetailPage({
     (c) => c.renderStatus === "ready" && c.youtubeVideoId,
   );
   const renderedNotPublished = campaign.creatives.filter(
-    (c) => c.renderStatus === "ready" && !c.youtubeVideoId,
+    (c) =>
+      c.renderStatus === "ready" &&
+      !c.youtubeVideoId &&
+      (c.reviewStatus === null || c.reviewStatus === "approved"),
   );
+  // Uploads held for AdVault's review; launch refuses while any is pending.
+  const inReview = campaign.creatives.filter((c) => c.reviewStatus === "pending_review");
+  const googleReview = googleReviewLabel(campaign.googleAdApprovalStatus, campaign.googleAdReviewStatus);
   const activeAccounts = adAccounts?.accounts.filter((a) => a.status === "active") ?? [];
   // Accounts a campaign can go into right now. One still waiting for its card
   // gets the "being set up" message instead of a button that would 409.
@@ -249,7 +291,9 @@ export default function CampaignDetailPage({
           <h1 className="text-2xl font-semibold tracking-tight">{campaign.name}</h1>
           <p className="mt-1 text-sm text-zinc-400">
             {formatMoney(campaign.dailyBudgetCents, campaign.currencyCode)}/day &middot;{" "}
-            {campaign.targetZipCodes.join(", ")} within {campaign.radiusMiles} miles
+            {campaign.targetAddress
+              ? `${campaign.radiusMiles} miles around ${campaign.targetAddress.street}, ${campaign.targetAddress.city}`
+              : `${campaign.targetZipCodes.join(", ")} within ${campaign.radiusMiles} miles`}
           </p>
         </div>
         <Badge tone={campaign.status === "live" ? "success" : campaign.status === "failed" ? "danger" : "pending"}>
@@ -326,14 +370,20 @@ export default function CampaignDetailPage({
                   launched with no ad in it. "Ready" here means ready to run. */}
               <Badge
                 tone={
-                  creative.renderStatus === "failed" || creative.youtubeUploadStatus === "failed"
+                  creative.reviewStatus === "rejected" ||
+                  creative.renderStatus === "failed" ||
+                  creative.youtubeUploadStatus === "failed"
                     ? "danger"
                     : creative.renderStatus === "ready" && creative.youtubeVideoId
                       ? "success"
                       : "pending"
                 }
               >
-                {creative.renderStatus === "queued"
+                {creative.reviewStatus === "pending_review"
+                  ? "Pending review"
+                  : creative.reviewStatus === "rejected"
+                    ? "Rejected"
+                    : creative.renderStatus === "queued"
                   ? "Queued"
                   : creative.renderStatus === "rendering"
                     ? "Rendering…"
@@ -355,6 +405,21 @@ export default function CampaignDetailPage({
                   creative.aspectRatio === "9:16" ? "max-h-96" : "w-full"
                 }`}
               />
+            )}
+
+            {creative.reviewStatus === "pending_review" && (
+              <p className="mt-3 text-sm text-amber-200">
+                AdVault is reviewing this video, usually within a day. Launch unlocks once it&apos;s approved.
+              </p>
+            )}
+            {creative.reviewStatus === "rejected" && (
+              <p className="mt-3 text-sm text-red-300">
+                Not approved{creative.reviewReason ? `: ${creative.reviewReason}` : "."} Remove it and
+                upload a new video, or launch with the video AdVault made.
+              </p>
+            )}
+            {creative.kind === "upload" && creative.reviewStatus === "approved" && !creative.youtubeVideoId && (
+              <p className="mt-3 text-xs text-emerald-300">Approved by AdVault.</p>
             )}
 
             {creative.renderStatus === "failed" && (
@@ -399,8 +464,7 @@ export default function CampaignDetailPage({
               </p>
             )}
 
-            {isAdmin &&
-              creative.kind === "upload" &&
+            {creative.kind === "upload" &&
               !creative.googleAdResourceName &&
               !campaign.googleCampaignResourceName &&
               creative.youtubeUploadStatus !== "uploading" && (
@@ -429,18 +493,31 @@ export default function CampaignDetailPage({
         ))}
       </div>
 
-      {isAdmin && !campaign.googleCampaignResourceName && (
-        <AdminVideoUpload campaignId={campaignId} onUploaded={refresh} />
+      {!campaign.googleCampaignResourceName && (
+        <VideoUpload campaignId={campaignId} isAdmin={isAdmin} onUploaded={refresh} />
       )}
 
       <Card className="mt-6">
         <CardTitle>Launch</CardTitle>
         {campaign.googleCampaignResourceName ? (
-          <CardDescription>
-            {launchedForCustomer
-              ? "Your campaign is live. Google reviews new ads first, usually within a day, then they start showing in your area."
-              : "Sent to Google Ads. Open your Google Ads account to review it and switch it on — it was created paused and is not spending yet."}
-          </CardDescription>
+          <>
+            <CardDescription>
+              {launchedForCustomer
+                ? "Your campaign is live. Google reviews new ads first, usually within a day, then they start showing in your area."
+                : "Sent to Google Ads. Open your Google Ads account to review it and switch it on — it was created paused and is not spending yet."}
+            </CardDescription>
+            {/* Google's own ad review, synced hourly. */}
+            {googleReview && (
+              <div className="mt-3 flex flex-wrap items-center gap-2 text-sm text-zinc-400">
+                <Badge tone={googleReview.tone}>Google: {googleReview.text}</Badge>
+                {googleReview.tone === "danger" && (campaign.googleAdPolicyTopics?.length ?? 0) > 0 && (
+                  <span>
+                    {campaign.googleAdPolicyTopics!.map((t) => t.toLowerCase().replace(/_/g, " ")).join(", ")}
+                  </span>
+                )}
+              </div>
+            )}
+          </>
         ) : adAccounts && !adAccounts.configured ? (
           <CardDescription>{LAUNCH_ERRORS.google_ads_not_configured}</CardDescription>
         ) : activeAccounts.length === 0 ? (
@@ -479,6 +556,8 @@ export default function CampaignDetailPage({
             We&apos;re setting up your ad account — nothing for you to do. Launch unlocks here
             automatically, usually within a few hours.
           </CardDescription>
+        ) : inReview.length > 0 ? (
+          <CardDescription>{LAUNCH_ERRORS.video_pending_review}</CardDescription>
         ) : ready.length === 0 ? (
           // Distinguishes the two waits, because they have different answers:
           // rendering finishes on its own, whereas a failed publish needs the
@@ -516,6 +595,11 @@ export default function CampaignDetailPage({
           </>
         )}
       </Card>
+
+      <AudienceCard
+        campaign={campaign}
+        onSaved={(c) => setCampaign((prev) => (prev ? { ...prev, ...c } : prev))}
+      />
 
       {/* Only once Google has the campaign — before launch there is nothing
           to report, and an all-zero card would read as "your ad isn't working". */}
