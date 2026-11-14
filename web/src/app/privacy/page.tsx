@@ -352,16 +352,18 @@ export default function PrivacyPage() {
       <h2>How long we keep it</h2>
       <ul>
         <li>
-          <strong>Your account and campaigns</strong> — for as long as your account is
-          open, and for twelve months after you close it, in case you come back.
+          <strong>Your account</strong> — for as long as it is open. When you delete it
+          (Settings → Delete account), your sign-in, name, business details and phone
+          number are erased at once.
         </li>
         <li>
-          <strong>Uploaded photos and finished videos</strong> — until you delete them, or
-          twelve months after your account closes.
+          <strong>Uploaded photos</strong> — until you delete them or your account.
         </li>
         <li>
-          <strong>Payment and invoice records</strong> — up to eight years, because tax
-          law requires us to keep books of account. These we cannot delete on request.
+          <strong>Payment and invoice records, and the campaigns and finished ads they
+          paid for</strong> — up to eight years, because tax law requires us to keep books
+          of account. These we cannot delete on request; once you delete your account they
+          are no longer linked to your email.
         </li>
         <li>
           <strong>Server logs</strong> — fourteen days.
