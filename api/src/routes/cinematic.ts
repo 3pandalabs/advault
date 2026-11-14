@@ -1,4 +1,4 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { requireAuth } from "../auth/plugin.js";
@@ -10,12 +10,14 @@ import {
   addOnByKey,
   formatMinor,
   isCurrency,
+  maybeAddOnFor,
   type Currency,
 } from "../lib/pricing/index.js";
 import { providerByName, providerFor } from "../lib/payments/index.js";
 import {
   createPurchase,
   markPurchasePaid,
+  packCreditsLeft,
   quoteFor,
   NoSuchAddOn,
 } from "../lib/cinematic/index.js";
@@ -90,7 +92,21 @@ export async function cinematicRoutes(app: FastifyInstance) {
     // -------------------------------------------------------------------
     scoped.get("/cinematic/quote", async (req) => {
       const quote = await quoteFor(req.userId!, "cinematic");
+      const pack = maybeAddOnFor(quote.currency, "cinematic_pack");
       return {
+        // Unspent 3-pack credits; while > 0 an order costs nothing more.
+        creditsLeft: await packCreditsLeft(req.userId!),
+        pack: pack
+          ? {
+              addOnKey: pack.key,
+              credits: pack.credits ?? 3,
+              priceMinor: pack.priceMinor,
+              display: {
+                price: formatMinor(pack.priceMinor, pack.currency),
+                each: formatMinor(Math.round(pack.priceMinor / (pack.credits ?? 3)), pack.currency),
+              },
+            }
+          : null,
         addOnKey: quote.addOn.key,
         currency: quote.currency,
         amountMinor: quote.amountMinor,
@@ -171,6 +187,37 @@ export async function cinematicRoutes(app: FastifyInstance) {
           });
         }
 
+        // A pack credit pays for it: no checkout. The advisory lock makes two
+        // orders pressed at once unable to spend the same last credit.
+        if (user?.role !== "admin") {
+          const viaCredit = await db.transaction(async (tx) => {
+            await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${req.userId!}))`);
+            if ((await packCreditsLeft(req.userId!, tx)) < 1) return null;
+            const [row] = await tx
+              .insert(purchases)
+              .values({
+                userId: req.userId!,
+                campaignId: campaign.id,
+                addOnKey: quote.addOn.key,
+                sku: "cinematic",
+                currencyCode: quote.addOn.currency,
+                amountMinor: 0,
+                provider: "pack",
+                status: "paid",
+                paidAt: new Date(),
+                brief: { description: body.description, brief },
+              })
+              .returning();
+            return row;
+          });
+          if (viaCredit) {
+            return reply.code(201).send({
+              purchase: publicPurchase(viaCredit),
+              checkout: { provider: "pack", redirectUrl: null, clientPayload: null },
+            });
+          }
+        }
+
         let purchase;
         try {
           purchase = await createPurchase({
@@ -246,6 +293,40 @@ export async function cinematicRoutes(app: FastifyInstance) {
         });
       },
     );
+
+    // The 3-pack: paid up front, films nothing itself, grants credits that
+    // the order route above spends. US only (no INR pack in the price list).
+    scoped.post("/cinematic/packs", async (req, reply) => {
+      if (!isCinematicConfigured()) {
+        return reply.code(503).send({ error: "cinematic_unavailable" });
+      }
+      const quote = await quoteFor(req.userId!, "cinematic_pack").catch(() => null);
+      if (!quote?.addOn) return reply.code(404).send({ error: "not_sold_here" });
+      const [user] = await db.select().from(users).where(eq(users.id, req.userId!)).limit(1);
+      const purchase = await createPurchase({
+        userId: req.userId!,
+        addOnKey: quote.addOn.key,
+        amountMinor: quote.amountMinor,
+        provider: providerFor(quote.currency).name,
+      });
+      const provider = providerFor(quote.currency);
+      const session = await provider.createCheckout({
+        paymentId: purchase.id,
+        amountMinor: quote.amountMinor,
+        currency: quote.currency,
+        purpose: "add_on",
+        userEmail: user?.email ?? "",
+        returnUrl: `${WEB_ORIGIN}/dashboard/cinematic?pack=${purchase.id}`,
+      });
+      await db
+        .update(purchases)
+        .set({ providerRef: session.providerRef, updatedAt: new Date() })
+        .where(eq(purchases.id, purchase.id));
+      return reply.code(201).send({
+        purchase: publicPurchase({ ...purchase, providerRef: session.providerRef }),
+        checkout: { provider: provider.name, redirectUrl: session.redirectUrl, clientPayload: session.clientPayload },
+      });
+    });
 
     scoped.get("/cinematic/orders", async (req) => {
       const rows = await db

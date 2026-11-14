@@ -141,6 +141,13 @@
       "when": 1795400100000,
       "tag": "0019_creative_sources_fal",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1795400200000,
+      "tag": "0020_cinematic_pack",
+      "breakpoints": true
     }
   ]
 }
