@@ -334,6 +334,16 @@ export type BusinessSegment =
   | "regular" | "live" | "paused" | "lapsed" | "trying" | "new" | "stalled" | "never_started";
 export type AdminBusiness = {
   generatedAt: string;
+  /** fal credit, read hourly; null until the first reading (needs FAL_BILLING_KEY). */
+  fal: {
+    balance: number;
+    checkedAt: string;
+    level: "ok" | "low" | "critical";
+    threshold: number;
+    critical: number;
+    burnPerDay: number | null;
+    runwayDays: number | null;
+  } | null;
   totals: { customers: number; signups7d: number; signups30d: number; liveNow: number; adsMade: number; totalViews: number };
   funnel: { step: string; count: number }[];
   segments: { key: BusinessSegment; label: string; hint: string; count: number }[];

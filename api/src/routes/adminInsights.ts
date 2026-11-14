@@ -4,6 +4,7 @@ import { db } from "../db/index.js";
 import { requireAdminOrAnalyticsToken } from "../auth/adminAccess.js";
 import { SEGMENTS, segmentOf, type Segment } from "../lib/insights/policy.js";
 import { formatMinor, type Currency } from "../lib/pricing/index.js";
+import { WINDOW_DAYS, assess, dailyBurn } from "../lib/vendors/balancePolicy.js";
 
 // The admin Business page (web /dashboard/admin/business): customers, the
 // signup -> launch funnel, customer groups, categories, revenue and top ads.
@@ -205,8 +206,29 @@ export async function adminInsightsRoutes(app: FastifyInstance) {
       };
     });
 
+    // fal credit (render/falBalanceWatch.ts readings): balance, spend rate,
+    // the dynamic alert line and days left. Null until the first reading.
+    const falRows = (
+      await db.execute<{ balance_micros: number; taken_at: Date }>(sql`
+        select balance_micros, taken_at from vendor_balance_snapshots
+        where vendor = 'fal' and taken_at > now() - make_interval(days => ${WINDOW_DAYS})
+        order by taken_at desc
+      `)
+    ).rows;
+    const fal = falRows.length
+      ? {
+          balance: Number(falRows[0].balance_micros) / 1e6,
+          checkedAt: falRows[0].taken_at,
+          ...assess(
+            Number(falRows[0].balance_micros) / 1e6,
+            dailyBurn(falRows.map((r) => ({ balance: Number(r.balance_micros) / 1e6, at: new Date(r.taken_at) })), now),
+          ),
+        }
+      : null;
+
     return {
       generatedAt: now.toISOString(),
+      fal,
       totals: {
         customers: list.length,
         signups7d: since(7),

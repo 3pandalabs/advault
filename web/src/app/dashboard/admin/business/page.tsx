@@ -97,6 +97,38 @@ export default function AdminBusinessPage() {
             </div>
           </Card>
 
+          <Card>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <CardTitle>fal.ai credit</CardTitle>
+              {data.fal ? (
+                <Badge tone={data.fal.level === "ok" ? "success" : data.fal.level === "low" ? "pending" : "danger"}>
+                  {data.fal.level === "ok" ? "OK" : data.fal.level === "low" ? "Low" : "Critical"}
+                </Badge>
+              ) : null}
+            </div>
+            {data.fal ? (
+              <>
+                <div className="mt-3 grid grid-cols-2 gap-4 sm:grid-cols-4">
+                  <Stat label="Balance" value={`${data.fal.balance.toFixed(2)}`} />
+                  <Stat label="Spend / day" value={data.fal.burnPerDay === null ? "—" : `${data.fal.burnPerDay.toFixed(2)}`} />
+                  <Stat label="Days left" value={data.fal.runwayDays === null ? "—" : String(data.fal.runwayDays)} />
+                  <Stat label="Alert below" value={`${data.fal.threshold.toFixed(2)}`} />
+                </div>
+                <p className="mt-3 text-xs text-zinc-500">
+                  Checked {new Date(data.fal.checkedAt).toLocaleString()}. The alert line is 7 days of recent spend
+                  (minimum $5); critical under ${data.fal.critical.toFixed(2)}. Alerts go to the ops phone.{" "}
+                  <a href="https://fal.ai/dashboard/billing" target="_blank" rel="noreferrer" className="text-amber-300 hover:underline">
+                    Top up →
+                  </a>
+                </p>
+              </>
+            ) : (
+              <CardDescription>
+                No reading yet. The renderer checks hourly once FAL_BILLING_KEY (a fal key with billing read access) is set.
+              </CardDescription>
+            )}
+          </Card>
+
           <div className="grid gap-6 lg:grid-cols-2">
             <Card>
               <CardTitle>Funnel</CardTitle>

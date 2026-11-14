@@ -25,6 +25,8 @@ import { extractThumbnail, renderCreative, type AspectRatio } from "./ffmpeg.js"
 import { TEMPLATE_ENABLED, renderTemplate } from "./template.js";
 import { startSpendSync } from "./spendSync.js";
 import { startAdMetricsSync } from "./adMetricsSync.js";
+import { startFalBalanceWatch } from "./falBalanceWatch.js";
+import { noteFalFailure } from "../lib/vendors/fal.js";
 import { startPlatformBillingSweep } from "../lib/billing/managedCard.js";
 import { startOfferScheduler } from "./offerCycles.js";
 import { startCinematicWorker, stopCinematicWorker } from "./cinematic.js";
@@ -179,6 +181,7 @@ async function generateMotionClips(args: {
         });
       } catch (err) {
         errors.push((err instanceof Error ? err.message : String(err)).slice(0, 300));
+        if (provider.name === "fal") noteFalFailure("motion", err instanceof Error ? err.message : String(err));
         log("motion generation failed; scene falls back to Ken Burns", {
           creativeId: args.creativeId,
           scene: i,
@@ -243,7 +246,10 @@ async function synthesizeVoiceover(args: {
       currency: args.currencyCode === "INR" ? "INR" : "USD",
       voice,
     });
-    if (result.fellBack) log("paid voice failed; used edge-tts", { creativeId: args.creativeId, error: result.fellBack });
+    if (result.fellBack) {
+      log("paid voice failed; used edge-tts", { creativeId: args.creativeId, error: result.fellBack });
+      noteFalFailure("voice", result.fellBack);
+    }
     await writeFile(voicePath, result.audioBytes);
     voiceStats.set(args.creativeId, result.fellBack ? "edge-tts (fallback)" : `${result.source} ${voice}`);
     // A fallback (edge-tts) result is not cached, so the next format tries
@@ -476,6 +482,8 @@ async function main(): Promise<void> {
   // campaign, not just platform-billed ones). Network-bound, so it sits outside
   // RENDER_CONCURRENCY like the YouTube upload worker.
   startAdMetricsSync();
+  // Hourly fal credit check; pages ops when the balance runs low.
+  startFalBalanceWatch();
   // Polls platform accounts waiting for their card and re-alerts the operator.
   startPlatformBillingSweep();
   // Same reasoning: the monthly offer conversation, subscription renewals and

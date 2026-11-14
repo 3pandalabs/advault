@@ -127,8 +127,10 @@ export const falElevenLabs: VoiceProvider = {
       body: JSON.stringify({ text: req.text, voice: req.voice ?? FAL_VOICE, stability: 0.5 }),
       signal: AbortSignal.timeout(30_000),
     });
-    const job = (await submit.json()) as { status_url?: string; response_url?: string };
-    if (!submit.ok || !job.status_url || !job.response_url) throw new Error(`fal submit failed: ${submit.status}`);
+    const job = (await submit.json().catch(() => ({}))) as { status_url?: string; response_url?: string };
+    if (!submit.ok || !job.status_url || !job.response_url) {
+      throw new Error(`fal submit failed: ${submit.status} ${JSON.stringify(job).slice(0, 200)}`);
+    }
 
     const started = Date.now();
     for (;;) {
