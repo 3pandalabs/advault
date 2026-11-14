@@ -1,7 +1,7 @@
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { assets, campaigns, creatives } from "../db/schema.js";
 import {
@@ -15,8 +15,12 @@ import { REAL_PHOTO_CLOSE_SECONDS, type CinematicBrief } from "../lib/cinematic/
 import { addOnByKey } from "../lib/pricing/index.js";
 import { enqueueYoutubeUpload } from "./youtubeJobs.js";
 import { cinematicProvider } from "../lib/ai/cinematic/index.js";
-import { voiceProvider } from "../lib/ai/voice/index.js";
-import { renderCreative, type AspectRatio } from "./ffmpeg.js";
+import { synthesizeVoice, voiceProvider } from "../lib/ai/voice/index.js";
+import { defaultVoiceFor } from "../lib/script/schema.js";
+import { noteFalFailure } from "../lib/vendors/fal.js";
+import { enhancePhotos } from "./enhance.js";
+import { TEMPLATE_ENABLED, renderTemplate } from "./template.js";
+import { extractThumbnail, renderCreative, type AspectRatio } from "./ffmpeg.js";
 import { creativeThumbnailKey, creativeVideoKey, getObjectBytes, putObject } from "../plugins/r2.js";
 import type { AdScript } from "../lib/script/schema.js";
 
@@ -67,8 +71,39 @@ function toAdScript(brief: CinematicBrief, closingCaption: string): AdScript {
     callToAction: brief.callToAction,
     endCardText: brief.closingText,
     voiceoverText: brief.voiceoverText,
+    ...(brief.sticker ? { sticker: brief.sticker } : {}),
+    ...(brief.voice ? { voice: brief.voice } : {}),
   };
 }
+
+// The closing photo: the campaign's own pick (the agent's portrait, else a
+// photo marked as showing people, else its first photo), from its latest
+// photo ad; otherwise the advertiser's most recent photo.
+async function closingPhoto(campaignId: string, userId: string): Promise<{ key: string; isPortrait: boolean } | null> {
+  const [latest] = await db
+    .select({ keys: creatives.sourceAssetKeys, script: creatives.script })
+    .from(creatives)
+    .where(and(eq(creatives.campaignId, campaignId), eq(creatives.kind, "standard")))
+    .orderBy(desc(creatives.createdAt))
+    .limit(1);
+  if (latest?.keys.length) {
+    const sc = latest.script as { portraitIndex?: number; peopleIndexes?: number[] } | null;
+    if (sc?.portraitIndex != null && latest.keys[sc.portraitIndex]) {
+      return { key: latest.keys[sc.portraitIndex], isPortrait: true };
+    }
+    const people = sc?.peopleIndexes?.find((i) => latest.keys[i]);
+    return { key: latest.keys[people ?? 0], isPortrait: false };
+  }
+  const [photo] = await db
+    .select({ key: assets.r2Key })
+    .from(assets)
+    .where(and(eq(assets.userId, userId), eq(assets.kind, "photo")))
+    .orderBy(desc(assets.createdAt))
+    .limit(1);
+  return photo ? { key: photo.key, isPortrait: false } : null;
+}
+
+const FORMATS: AspectRatio[] = ["9:16", "16:9"];
 
 async function produce(purchase: typeof import("../db/schema.js").purchases.$inferSelect) {
   const addOn = addOnByKey(purchase.addOnKey);
@@ -78,165 +113,189 @@ async function produce(purchase: typeof import("../db/schema.js").purchases.$inf
   if (!provider) throw new Error("no cinematic provider is configured");
 
   if (!purchase.campaignId) throw new Error("purchase has no campaign");
-  const [campaign] = await db
-    .select()
-    .from(campaigns)
-    .where(eq(campaigns.id, purchase.campaignId))
-    .limit(1);
+  const [campaign] = await db.select().from(campaigns).where(eq(campaigns.id, purchase.campaignId)).limit(1);
   if (!campaign) throw new Error("campaign no longer exists");
 
   // What the advertiser typed at checkout, stashed on the purchase.
-  const order = (purchase.brief ?? {}) as { description?: string; aspectRatio?: AspectRatio };
-  const aspectRatio: AspectRatio = order.aspectRatio ?? "9:16";
+  const order = (purchase.brief ?? {}) as { description?: string; brief?: CinematicBrief };
   const description = order.description ?? campaign.offerDetails ?? campaign.businessCategory;
 
-  const photos = await db
-    .select()
-    .from(assets)
-    .where(eq(assets.userId, purchase.userId))
-    .limit(10);
-  if (photos.length === 0) {
+  const closing = await closingPhoto(campaign.id, purchase.userId);
+  if (!closing) {
     // The guardrail in policy.ts, enforced before a single billed second: an ad
     // made entirely of generated footage is a stock-footage advertisement for a
     // business that may as well not exist.
     throw new Error("no real photo to close on");
   }
 
-  const brief = await generateCinematicBrief(
-    {
-      businessName: campaign.businessName,
-      businessCategory: campaign.businessCategory,
-      description,
-      offerDetails: campaign.offerDetails,
-      callToAction: campaign.callToAction,
-      aspectRatio,
-      addOn,
-      realAssetCount: photos.length,
-    },
-    log,
-  );
-  await attachBrief(purchase.id, { ...order, brief });
+  // A retry reuses the brief it already wrote (same shots, same narration).
+  const brief =
+    order.brief ??
+    (await generateCinematicBrief(
+      {
+        businessName: campaign.businessName,
+        businessCategory: campaign.businessCategory,
+        description,
+        offerDetails: campaign.offerDetails,
+        callToAction: campaign.callToAction,
+        aspectRatio: "9:16",
+        addOn,
+        realAssetCount: 1,
+      },
+      log,
+    ));
+  if (!order.brief) await attachBrief(purchase.id, { ...order, brief });
 
   const workDir = await mkdtemp(join(WORK_ROOT, "cine-"));
   try {
-    // The advertiser's real photo, which closes the ad.
-    const closingKey = photos[0].r2Key;
-    const closingBytes = await getObjectBytes(closingKey);
-    const closingPath = join(workDir, `real.${closingKey.split(".").pop() ?? "jpg"}`);
-    await writeFile(closingPath, closingBytes);
+    const closingPath = join(workDir, `real.${closing.key.split(".").pop() ?? "jpg"}`);
+    await writeFile(closingPath, await getObjectBytes(closing.key));
+    // The demo "pro photo" pass on the closing photo (never a portrait).
+    const enhanced = await enhancePhotos({
+      campaignId: campaign.id,
+      sourceAssetKeys: [closing.key],
+      imagePaths: [closingPath],
+      skip: closing.isPortrait ? [0] : [],
+      workDir,
+      log: (msg, extra) => log(msg, { purchaseId: purchase.id, ...(extra as object) }),
+    });
+    const imagePath = enhanced.imagePaths[0];
 
-    // Generated footage. NO try/catch per shot, unlike the motion path: a
-    // missing clip there costs polish on a free render, while here it is a hole
-    // in something already paid for. Fail the whole order and refund.
-    const clipPaths = new Map<number, string>();
-    let billedSeconds = 0;
-    for (const [i, shot] of brief.shots.entries()) {
-      const result = await provider.generate({
-        prompt: shot.prompt,
-        seconds: shot.seconds,
-        aspectRatio,
-      });
-      const clipPath = join(workDir, `cine-${i}.mp4`);
-      await writeFile(clipPath, result.videoBytes);
-      clipPaths.set(i, clipPath);
-      billedSeconds += result.billedSeconds;
-      log("cinematic shot generated", {
-        purchaseId: purchase.id,
-        shot: i,
-        source: result.source,
-        billedSeconds: result.billedSeconds,
-      });
-    }
-
-    // Our own TTS, not the vendor's native dialogue — and the renderer strips
-    // vendor audio (`-an`) on purpose.
-    //
-    // Veo will happily invent spoken dialogue, and invented speech in a paid
-    // advertisement is exactly the claim problem the visual guardrail exists to
-    // prevent, just delivered through a different channel. The voiceover is the
-    // one place a factual claim is allowed, so it has to come from the
-    // advertiser's own words via the brief, spoken by a voice we control.
+    // One voiceover for both formats: ElevenLabs through fal with the
+    // brief's narrator. Our own TTS, never the vendor's native audio (the
+    // footage is muted): invented speech in an ad is the claim problem again.
     let voicePath: string | undefined;
-    const voice = voiceProvider();
-    if (voice) {
+    let voiceSource: "fal" | "edge-tts" | "elevenlabs" | "none" = "none";
+    if (voiceProvider()) {
       try {
-        // Currency drives the accent, not the price: an Indian shop's ad must
-        // not open in a US voice, which reads as "not from here" and is the
-        // opposite of the product's entire pitch.
-        const result = await voice.synthesize({
+        const result = await synthesizeVoice({
           text: brief.voiceoverText,
           currency: purchase.currencyCode as "INR" | "USD",
+          voice: process.env.FAL_VOICE ?? brief.voice ?? defaultVoiceFor(campaign.businessCategory),
         });
+        if (result.fellBack) noteFalFailure("cinematic voice", result.fellBack);
         voicePath = join(workDir, "voice.mp3");
         await writeFile(voicePath, result.audioBytes);
+        voiceSource = result.fellBack ? "edge-tts" : result.source === "fal-elevenlabs" ? "fal" : result.source;
       } catch (err) {
         // A silent cut is a degraded ad but still a cinematic one, and the
         // expensive part already succeeded. Not worth failing the order.
         log("cinematic voiceover failed; rendering silent", { purchaseId: purchase.id, err: String(err) });
-        voicePath = undefined;
       }
     }
 
-    const [creative] = await db
-      .insert(creatives)
-      .values({
-        campaignId: campaign.id,
-        aspectRatio,
-        kind: "cinematic",
-        purchaseId: purchase.id,
-        script: toAdScript(brief, campaign.businessName),
-        scriptSource: "ai",
-        sourceAssetKeys: [closingKey],
-        renderStatus: "rendering",
-        motionSource: provider.name,
-        voiceSource: voice ? voice.name : "none",
-      })
-      .returning();
+    // Both formats, like the photo ads (Google serves 9:16 on Shorts and
+    // 16:9 in-stream). Each shot is generated per format: text-to-video
+    // composes for the frame it is given. Shots in parallel, formats in turn.
+    // NO per-shot fallback: a missing shot is a hole in something paid for,
+    // so the whole order fails (and retries, then refunds).
+    const script = toAdScript(brief, campaign.businessName);
+    // A retry after one format was finished must not pay for it again or
+    // leave a duplicate: keep the ready ones, delete anything half-made.
+    const earlier = await db
+      .select({ id: creatives.id, aspectRatio: creatives.aspectRatio, renderStatus: creatives.renderStatus })
+      .from(creatives)
+      .where(eq(creatives.purchaseId, purchase.id));
+    const done = new Set(earlier.filter((c) => c.renderStatus === "ready").map((c) => c.aspectRatio));
+    for (const c of earlier.filter((x) => x.renderStatus !== "ready")) {
+      await db.delete(creatives).where(eq(creatives.id, c.id));
+    }
+    let billedSeconds = 0;
+    for (const aspectRatio of FORMATS.filter((f) => !done.has(f))) {
+      const tag = aspectRatio.replace(":", "x");
+      const clipPaths = new Map<number, string>();
+      await Promise.all(
+        brief.shots.map(async (shot, i) => {
+          const result = await provider
+            .generate({ prompt: shot.prompt, seconds: shot.seconds, aspectRatio })
+            .catch((err: unknown) => {
+              noteFalFailure("cinematic footage", err instanceof Error ? err.message : String(err));
+              throw err;
+            });
+          const clipPath = join(workDir, `cine-${tag}-${i}.mp4`);
+          await writeFile(clipPath, result.videoBytes);
+          clipPaths.set(i, clipPath);
+          billedSeconds += result.billedSeconds;
+          log("cinematic shot generated", { purchaseId: purchase.id, aspectRatio, shot: i, source: result.source });
+        }),
+      );
 
-    const output = await renderCreative({
-      workDir,
-      script: toAdScript(brief, campaign.businessName),
-      aspectRatio,
-      imagePaths: [closingPath],
-      clipPaths,
-      voicePath,
-    });
+      const [creative] = await db
+        .insert(creatives)
+        .values({
+          campaignId: campaign.id,
+          aspectRatio,
+          kind: "cinematic",
+          purchaseId: purchase.id,
+          script,
+          scriptSource: "ai",
+          sourceAssetKeys: [enhanced.keys[0]],
+          renderStatus: "rendering",
+          motionSource: provider.name,
+          voiceSource,
+        })
+        .returning();
 
-    const videoKey = creativeVideoKey(campaign.id, creative.id);
-    const thumbnailKey = creativeThumbnailKey(campaign.id, creative.id);
-    const videoBytes = await readFile(output.videoPath);
-    await putObject(videoKey, videoBytes, "video/mp4");
-    await putObject(thumbnailKey, await readFile(output.thumbnailPath), "image/jpeg");
+      const templated = TEMPLATE_ENABLED
+        ? await renderTemplate(
+            {
+              workDir,
+              script,
+              aspectRatio,
+              imagePaths: [imagePath],
+              clipPaths,
+              voicePath,
+              businessName: campaign.businessName,
+              businessCategory: campaign.businessCategory,
+              landingUrl: campaign.landingUrl,
+              cinematic: true,
+            },
+            (msg, extra) => log(msg, { purchaseId: purchase.id, ...(extra as object) }),
+          )
+        : null;
+      let output: { videoPath: string; thumbnailPath: string; durationSeconds: number };
+      if (templated) {
+        const thumbnailPath = join(workDir, `thumb-${tag}.jpg`);
+        await extractThumbnail(templated.videoPath, thumbnailPath);
+        output = { ...templated, thumbnailPath };
+      } else {
+        output = await renderCreative({ workDir, script, aspectRatio, imagePaths: [imagePath], clipPaths, voicePath });
+      }
 
-    await db
-      .update(creatives)
-      .set({
-        renderStatus: "ready",
-        videoKey,
-        thumbnailKey,
-        durationSeconds: output.durationSeconds,
-        sizeBytes: videoBytes.byteLength,
-      })
-      .where(eq(creatives.id, creative.id));
+      const videoKey = creativeVideoKey(campaign.id, creative.id);
+      const thumbnailKey = creativeThumbnailKey(campaign.id, creative.id);
+      const videoBytes = await readFile(output.videoPath);
+      await putObject(videoKey, videoBytes, "video/mp4");
+      await putObject(thumbnailKey, await readFile(output.thumbnailPath), "image/jpeg");
+      await db
+        .update(creatives)
+        .set({
+          renderStatus: "ready",
+          videoKey,
+          thumbnailKey,
+          durationSeconds: output.durationSeconds,
+          sizeBytes: videoBytes.byteLength,
+          renderedAt: new Date(),
+          renderInfo: {
+            engine: templated ? "template" : "ffmpeg",
+            cinematic: true,
+            footage: provider.name,
+            shots: brief.shots.length,
+            voice: voiceSource,
+            photoEnhanced: enhanced.made + enhanced.reused > 0,
+            at: new Date().toISOString(),
+          },
+        })
+        .where(eq(creatives.id, creative.id));
 
-    // A paid cinematic ad needs the same YouTube trip as a subscription one —
-    // more so, since the customer paid for this single creative specifically.
-    // Logged, never thrown: the purchase IS delivered, and the upload retries
-    // on its own queue.
-    await enqueueYoutubeUpload(creative.id).catch((err) =>
-      log("failed to enqueue the cinematic youtube upload", {
-        creativeId: creative.id,
-        error: String(err),
-      }),
-    );
+      // Logged, never thrown: the ad IS made, and the upload retries on its own queue.
+      await enqueueYoutubeUpload(creative.id).catch((err) =>
+        log("failed to enqueue the cinematic youtube upload", { creativeId: creative.id, error: String(err) }),
+      );
+    }
 
     await markDelivered(purchase.id);
-    log("cinematic ad delivered", {
-      purchaseId: purchase.id,
-      creativeId: creative.id,
-      billedSeconds,
-      sizeBytes: videoBytes.byteLength,
-    });
+    log("cinematic ad delivered", { purchaseId: purchase.id, billedSeconds });
   } finally {
     await rm(workDir, { recursive: true, force: true }).catch((err) =>
       log("failed to clean cinematic scratch directory", String(err)),

@@ -157,6 +157,26 @@ export async function cinematicRoutes(app: FastifyInstance) {
           throw err;
         }
 
+        // Admins test for free: the order is paid on creation and goes
+        // straight to production (same as admin photo ads, which skip the $10).
+        if (user?.role === "admin") {
+          const [paid] = await db
+            .update(purchases)
+            .set({
+              amountMinor: 0,
+              provider: "manual",
+              status: "paid",
+              brief: { description: body.description },
+              updatedAt: new Date(),
+            })
+            .where(eq(purchases.id, purchase.id))
+            .returning();
+          return reply.code(201).send({
+            purchase: publicPurchase(paid),
+            checkout: { provider: "manual", redirectUrl: null, clientPayload: null },
+          });
+        }
+
         // The description rides on the purchase rather than the campaign: two
         // orders for the same campaign are two different ads, and overwriting
         // the campaign would make the second one silently reuse the first's
@@ -164,7 +184,8 @@ export async function cinematicRoutes(app: FastifyInstance) {
         await db
           .update(purchases)
           .set({
-            brief: { description: body.description, aspectRatio: body.aspectRatio },
+            // Both formats are always made; aspectRatio is accepted and ignored.
+            brief: { description: body.description },
             updatedAt: new Date(),
           })
           .where(eq(purchases.id, purchase.id));
@@ -176,7 +197,8 @@ export async function cinematicRoutes(app: FastifyInstance) {
           currency: quote.currency,
           purpose: "add_on",
           userEmail: user?.email ?? "",
-          returnUrl: `${WEB_ORIGIN}/dashboard/cinematic/${purchase.id}`,
+          // The cinematic page lists the order and polls its status.
+          returnUrl: `${WEB_ORIGIN}/dashboard/cinematic?order=${purchase.id}`,
         });
 
         await db

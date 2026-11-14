@@ -503,6 +503,8 @@ number in that envelope that is a work item rather than a statistic. Silently
 shipping a Ken Burns slideshow to someone who bought cinematic footage sells
 them the thing they specifically chose not to buy.
 
+**Since 2026-11-14 the footage comes from fal** (`CINEMATIC_PROVIDER=fal`, Gemini Omni Flash, `falOmni` in `lib/ai/cinematic`, $0.027/s): 3 shots x 5 s, generated for **both formats**, rendered with the template ad in `cinematic` mode (full-screen film, sticker, captions, end card, up to 30 s), the brief's ElevenLabs narrator, and the campaign's own photo (portrait, else a people photo; pro-photo pass unless it is a portrait) as the close. A retry reuses the brief and skips formats already made. Admin orders are free (provider `manual`, paid on creation) for testing.
+
 Two consequences that look like bugs and are not: the renderer strips vendor
 audio (`-an`) and uses our own TTS, because Veo will invent spoken dialogue and
 invented speech is the claim problem again through another channel. And shot

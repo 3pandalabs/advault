@@ -18,6 +18,7 @@
 // is the shop two streets away", and only a real photo says that.
 
 import type { AddOn } from "../pricing/index.js";
+import type { AdSticker, AdVoice } from "../script/schema.js";
 
 /** One generated shot. `seconds` is metered spend, so it is never free-form. */
 export type CinematicShot = {
@@ -35,6 +36,9 @@ export type CinematicBrief = {
   /** Rendered over the real photo at the end. */
   closingText: string;
   callToAction: string;
+  /** Narrator (AD_VOICES) and the offer sticker for the template, both optional. */
+  voice?: AdVoice;
+  sticker?: AdSticker;
 };
 
 // Vendors meter per second and every shot is a separate billed generation, so

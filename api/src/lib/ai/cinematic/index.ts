@@ -23,13 +23,13 @@ export type CinematicRequest = {
 
 export type CinematicResult = {
   videoBytes: Buffer;
-  source: "veo" | "kling";
+  source: "veo" | "kling" | "fal";
   /** What the vendor actually billed for, which may be rounded up from `seconds`. */
   billedSeconds: number;
 };
 
 export interface CinematicProvider {
-  readonly name: "veo" | "kling";
+  readonly name: "veo" | "kling" | "fal";
   isConfigured(): boolean;
   generate(req: CinematicRequest): Promise<CinematicResult>;
 }
@@ -184,6 +184,44 @@ export const klingText: CinematicProvider = {
   },
 };
 
+// --- Google Gemini Omni Flash, through fal ----------------------------------
+//
+// The model behind the home-page demo clips. $0.027 per second at 720p
+// (2026-11-14), so a 15-second ad is about 40 cents per format. 3-15 s per
+// clip; we bill exactly what we ask for.
+
+const FAL_T2V_ENDPOINT = process.env.FAL_T2V_ENDPOINT ?? "google/gemini-omni-flash/v1.2/text-to-video";
+
+export const falOmni: CinematicProvider = {
+  name: "fal",
+  isConfigured: () => Boolean(process.env.FAL_KEY),
+
+  async generate(req) {
+    const seconds = Math.min(15, Math.max(3, Math.round(req.seconds)));
+    const headers = { authorization: `Key ${process.env.FAL_KEY}`, "content-type": "application/json" };
+    const submit = await fetch(`https://queue.fal.run/${FAL_T2V_ENDPOINT}`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ prompt: req.prompt, duration: seconds, aspect_ratio: req.aspectRatio, resolution: "720p" }),
+      signal: AbortSignal.timeout(60_000),
+    });
+    const job = (await submit.json().catch(() => ({}))) as { status_url?: string; response_url?: string };
+    if (!submit.ok || !job.status_url || !job.response_url) {
+      throw new Error(`fal text-to-video submit failed: ${submit.status} ${JSON.stringify(job).slice(0, 300)}`);
+    }
+    await poll(async () => {
+      const st = (await (await fetch(job.status_url!, { headers })).json()) as { status?: string; error?: unknown };
+      if (st.status === "FAILED" || st.error) throw new Error(`fal text-to-video failed: ${JSON.stringify(st).slice(0, 300)}`);
+      return st.status === "COMPLETED" ? { done: true, value: true } : { done: false };
+    });
+    const out = (await (await fetch(job.response_url, { headers })).json()) as { video?: { url?: string } };
+    if (!out.video?.url) throw new Error("fal text-to-video returned no video");
+    const dl = await fetch(out.video.url);
+    if (!dl.ok) throw new Error(`fal text-to-video download failed: ${dl.status}`);
+    return { videoBytes: Buffer.from(await dl.arrayBuffer()), source: "fal", billedSeconds: seconds };
+  },
+};
+
 /**
  * The configured provider, or null.
  *
@@ -194,6 +232,7 @@ export function cinematicProvider(): CinematicProvider | null {
   const preferred = process.env.CINEMATIC_PROVIDER;
   if (preferred === "veo") return veo.isConfigured() ? veo : null;
   if (preferred === "kling") return klingText.isConfigured() ? klingText : null;
+  if (preferred === "fal") return falOmni.isConfigured() ? falOmni : null;
   // Veo first when both are available: it generates synchronised dialogue
   // natively, which is the whole reason the output reads as a film rather than
   // a slideshow with narration bolted on.

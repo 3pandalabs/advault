@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { AD_SCRIPT_JSON_SCHEMA } from "../script/schema.js";
 
 // What Claude returns for a cinematic ad.
 //
@@ -51,7 +52,10 @@ export const CINEMATIC_BRIEF_JSON_SCHEMA = {
     voiceoverText: { type: "string" },
     closingText: { type: "string" },
     callToAction: { type: "string" },
+    // Same narrator list and offer-sticker rules as the photo ads.
+    voice: AD_SCRIPT_JSON_SCHEMA.properties.voice,
+    sticker: AD_SCRIPT_JSON_SCHEMA.properties.sticker,
   },
-  required: ["shots", "voiceoverText", "closingText", "callToAction"],
+  required: ["shots", "voiceoverText", "closingText", "callToAction", "voice", "sticker"],
   additionalProperties: false,
 } as const;

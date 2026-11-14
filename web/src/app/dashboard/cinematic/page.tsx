@@ -170,17 +170,9 @@ export default function CinematicPage() {
           />
           <p className="mt-1 text-xs text-zinc-500">{description.trim().length} / 2000</p>
 
-          <label className="mt-4 block text-sm text-zinc-400">
-            Shape
-            <select
-              className="mt-1 block rounded-lg border border-white/10 bg-black/20 p-2 text-sm"
-              value={aspectRatio}
-              onChange={(e) => setAspectRatio(e.target.value as "16:9" | "9:16")}
-            >
-              <option value="9:16">Tall — Shorts, Reels, WhatsApp</option>
-              <option value="16:9">Wide — YouTube, website</option>
-            </select>
-          </label>
+          <p className="mt-4 text-sm text-zinc-400">
+            You get both shapes: tall for Shorts and Reels, wide for YouTube.
+          </p>
 
           {/*
             Said up front, before payment. The price, the offer and the business

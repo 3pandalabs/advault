@@ -28,7 +28,11 @@ Rules for visualPrompt, all of them absolute:
 
 Rules for captions: at most a few words each, and drawn from what the advertiser actually told you. A caption may state the offer plainly. Use null when a shot is better left clean.
 
-Rules for voiceover: natural spoken language, roughly 2.5 words per second of total runtime, ending with the call to action. State the offer and the business name. Never claim anything the advertiser did not tell you.
+Rules for the sticker (shown big at the start, over your first shot): a price or discount only if the advertiser wrote one; otherwise a plain word like NEW, LOCAL or BOOK NOW. Benefits are facts the advertiser stated, or none.
+
+Pick the narrator voice that suits the business.
+
+Rules for voiceover: start with one ElevenLabs audio tag such as [warmly] or [cheerfully], then natural spoken language, roughly 2.5 words per second of total runtime, ending with the call to action. State the offer and the business name. Never claim anything the advertiser did not tell you.
 
 Return the number of shots you are asked for, no more.`;
 
@@ -53,7 +57,7 @@ export function buildCinematicUserPrompt(input: {
   if (input.offerDetails) lines.push(`This month's offer: ${input.offerDetails}`);
   lines.push(
     `Call to action: ${input.callToAction}`,
-    `Format: ${input.aspectRatio}${input.aspectRatio === "9:16" ? " (vertical, phone-held — keep the subject centred and close)" : " (widescreen)"}`,
+    `Format: every shot is generated twice, 9:16 vertical and 16:9 widescreen, so keep the subject centred and let the frame work both ways`,
     `Shots: exactly ${input.shotCount}`,
     `Total generated runtime: ${input.totalSeconds} seconds`,
   );
