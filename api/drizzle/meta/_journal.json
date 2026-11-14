@@ -120,6 +120,13 @@
       "when": 1795200000000,
       "tag": "0016_campaign_realty",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1795300000000,
+      "tag": "0017_creative_render_info",
+      "breakpoints": true
     }
   ]
 }

@@ -78,7 +78,13 @@ export async function claimNextJob(workerId: string): Promise<RenderJob | null> 
 
 export async function completeJob(
   job: RenderJob,
-  result: { videoKey: string; thumbnailKey: string; durationSeconds: number; sizeBytes: number },
+  result: {
+    videoKey: string;
+    thumbnailKey: string;
+    durationSeconds: number;
+    sizeBytes: number;
+    renderInfo?: Record<string, unknown>;
+  },
 ): Promise<void> {
   await db
     .update(renderJobs)
@@ -95,6 +101,7 @@ export async function completeJob(
       durationSeconds: result.durationSeconds,
       sizeBytes: result.sizeBytes,
       renderedAt: new Date(),
+      ...(result.renderInfo ? { renderInfo: result.renderInfo } : {}),
     })
     .where(eq(creatives.id, job.creativeId));
 }

@@ -77,6 +77,7 @@ CLAUDE.md.
 |---|---|---|---|
 | GET | `/admin/metrics?days=7` | admin session, or `ADMIN_ANALYTICS_TOKEN` bearer | Every launched campaign (live + paused) with business name, owner email, status, currency, Google customer id and the same totals summary; plus `totals` keyed by currency (never summed across currencies). The token is for a server-side caller such as the org admin site's Worker; unset = admin sessions only. Deliberately NOT `METRICS_TOKEN` — this names businesses and their spend. |
 | GET | `/admin/ad-production?since=YYYY-MM-DD&until=YYYY-MM-DD` | admin session, or `ADMIN_ANALYTICS_TOKEN` bearer | Counts only, for the org admin site's cost per ad: `adsMade` (generations: distinct campaign + minute of AdVault-made creatives), `renders` (AdVault-made creatives, one per format, redos included), `paidAds` ($10 `new_ad` orders paid). `until` exclusive. |
+| GET | `/admin/recent-renders?limit=10` | admin session, or `ADMIN_ANALYTICS_TOKEN` bearer | The last renders (1–50): business, format, status/error, and `renderInfo` (engine template/ffmpeg, motion provider, clips made and reused, voice source) plus the script's sticker and people/portrait marks. Ops diagnostics without container logs. |
 
 ## Creatives
 

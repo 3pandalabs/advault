@@ -30,10 +30,10 @@ export type MotionRequest = {
   aspectRatio: "16:9" | "9:16";
 };
 
-export type MotionResult = { videoBytes: Buffer; source: "kling" | "luma" };
+export type MotionResult = { videoBytes: Buffer; source: "kling" | "luma" | "fal-kling" };
 
 export interface MotionProvider {
-  readonly name: "kling" | "luma";
+  readonly name: "kling" | "luma" | "fal";
   isConfigured(): boolean;
   generate(req: MotionRequest): Promise<MotionResult>;
 }
@@ -161,9 +161,53 @@ export const luma: MotionProvider = {
   },
 };
 
+// --- Kling through fal (the demo ads' motion) --------------------------------
+//
+// 2026-11-13: the direct Kling account above ran out of credits in October
+// ("Account balance not enough", code 1102), so every clip failed and every
+// ad fell back to Ken Burns stills. fal's Kling (MOTION_PROVIDER=fal, FAL_KEY)
+// is what the home-page demos were made with. One fixed motion prompt, not
+// the caption: a caption ("$10 off your first cut") is not a camera direction,
+// and a fixed prompt lets the worker reuse one clip per photo across formats.
+
+export const FAL_MOTION_PROMPT =
+  "Small, natural movement: people keep doing what they are doing, hair, cloth, leaves and light move softly; slow gentle push-in. Realistic, steady, natural. No text, no logos, no new objects, faces stay the same.";
+const FAL_MOTION_ENDPOINT = process.env.FAL_MOTION_ENDPOINT ?? "kling/v4/flash/image-to-video";
+
+export const falKling: MotionProvider = {
+  name: "fal",
+  isConfigured: () => Boolean(process.env.FAL_KEY),
+
+  async generate(req) {
+    const headers = { authorization: `Key ${process.env.FAL_KEY}`, "content-type": "application/json" };
+    const image = `data:${req.contentType};base64,${req.imageBytes.toString("base64")}`;
+    const submit = await fetch(`https://queue.fal.run/${FAL_MOTION_ENDPOINT}`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ start_image_url: image, prompt: FAL_MOTION_PROMPT, duration: 5 }),
+      signal: AbortSignal.timeout(60_000),
+    });
+    const job = (await submit.json().catch(() => ({}))) as { status_url?: string; response_url?: string };
+    if (!submit.ok || !job.status_url || !job.response_url) {
+      throw new Error(`fal motion submit failed: ${submit.status} ${JSON.stringify(job).slice(0, 300)}`);
+    }
+    await poll(async () => {
+      const st = (await (await fetch(job.status_url!, { headers })).json()) as { status?: string; error?: unknown };
+      if (st.status === "FAILED" || st.error) throw new Error(`fal motion failed: ${JSON.stringify(st).slice(0, 300)}`);
+      return st.status === "COMPLETED" ? { done: true, value: true } : { done: false };
+    });
+    const out = (await (await fetch(job.response_url, { headers })).json()) as { video?: { url?: string } };
+    if (!out.video?.url) throw new Error("fal motion returned no video");
+    const dl = await fetch(out.video.url);
+    if (!dl.ok) throw new Error(`fal motion download failed: ${dl.status}`);
+    return { videoBytes: Buffer.from(await dl.arrayBuffer()), source: "fal-kling" };
+  },
+};
+
 /** The configured provider, or null — null means "use Ken Burns", not "fail". */
 export function motionProvider(): MotionProvider | null {
   const preferred = process.env.MOTION_PROVIDER;
+  if (preferred === "fal") return falKling.isConfigured() ? falKling : null;
   if (preferred === "kling") return kling.isConfigured() ? kling : null;
   if (preferred === "luma") return luma.isConfigured() ? luma : null;
   if (kling.isConfigured()) return kling;

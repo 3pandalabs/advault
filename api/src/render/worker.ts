@@ -87,11 +87,13 @@ async function generateMotionClips(args: {
   aspectRatio: AspectRatio;
   workDir: string;
   creativeId: string;
+  campaignId: string;
 }): Promise<Map<number, string>> {
   const clips = new Map<number, string>();
   const provider = motionProvider();
   if (!provider || MOTION_MAX_CLIPS <= 0) return clips;
 
+  const reused = new Set<number>();
   // Scenes showing people first: a person moving is what makes the demo ads
   // feel alive, and the clip budget is capped. Then the rest, in order.
   const people = new Set(args.script.peopleIndexes ?? []);
@@ -105,6 +107,27 @@ async function generateMotionClips(args: {
     const imagePath = args.imagePaths[assetIndex];
     const key = args.sourceAssetKeys[assetIndex];
     if (!imagePath || !key) continue;
+
+    // fal clips use one fixed prompt, so a photo's clip is the same for every
+    // format: reuse it from R2 instead of paying twice.
+    const clipKey =
+      provider.name === "fal"
+        ? `campaigns/${args.campaignId}/clips/${createHash("sha256").update(`${key}|${process.env.FAL_MOTION_ENDPOINT ?? ""}`).digest("hex").slice(0, 32)}.mp4`
+        : null;
+    if (clipKey) {
+      try {
+        if (await headObject(clipKey)) {
+          const clipPath = join(args.workDir, `clip-${i}.mp4`);
+          await writeFile(clipPath, await getObjectBytes(clipKey));
+          clips.set(i, clipPath);
+          reused.add(i);
+          log("motion clip reused", { creativeId: args.creativeId, scene: i, key: clipKey });
+          continue;
+        }
+      } catch (err) {
+        log("motion clip cache read failed; generating", { creativeId: args.creativeId, error: String(err) });
+      }
+    }
 
     try {
       const result = await provider.generate({
@@ -122,6 +145,11 @@ async function generateMotionClips(args: {
       const clipPath = join(args.workDir, `clip-${i}.mp4`);
       await writeFile(clipPath, result.videoBytes);
       clips.set(i, clipPath);
+      if (clipKey) {
+        await putObject(clipKey, result.videoBytes, "video/mp4").catch((err) =>
+          log("motion clip cache write failed", { creativeId: args.creativeId, error: String(err) }),
+        );
+      }
       log("motion clip generated", {
         creativeId: args.creativeId,
         scene: i,
@@ -138,8 +166,13 @@ async function generateMotionClips(args: {
     }
   }
 
+  motionStats.set(args.creativeId, { provider: provider.name, reused: reused.size });
   return clips;
 }
+
+// Per-render facts for creatives.render_info (filled by the helpers above).
+const motionStats = new Map<string, { provider: string; reused: number }>();
+const voiceStats = new Map<string, string>();
 
 // Voiceover for the whole spot, or undefined for a silent cut — which is what
 // every ad rendered before this shipped already was.
@@ -169,6 +202,7 @@ async function synthesizeVoiceover(args: {
       if (await headObject(cacheKey)) {
         await writeFile(voicePath, await getObjectBytes(cacheKey));
         log("voiceover reused", { creativeId: args.creativeId, key: cacheKey });
+        voiceStats.set(args.creativeId, `${provider.name} (reused)`);
         return voicePath;
       }
     } catch (err) {
@@ -184,6 +218,7 @@ async function synthesizeVoiceover(args: {
     });
     if (result.fellBack) log("paid voice failed; used edge-tts", { creativeId: args.creativeId, error: result.fellBack });
     await writeFile(voicePath, result.audioBytes);
+    voiceStats.set(args.creativeId, result.fellBack ? "edge-tts (fallback)" : result.source);
     // A fallback (edge-tts) result is not cached, so the next format tries
     // the paid voice again.
     if (provider.name !== "edge-tts" && !result.fellBack) {
@@ -244,6 +279,7 @@ async function processJob(job: RenderJob): Promise<void> {
       aspectRatio,
       workDir,
       creativeId: creative.id,
+      campaignId: creative.campaignId,
     });
 
     const voicePath = await synthesizeVoiceover({
@@ -295,12 +331,25 @@ async function processJob(job: RenderJob): Promise<void> {
     await putObject(videoKey, videoBytes, "video/mp4");
     await putObject(thumbnailKey, await readFile(output.thumbnailPath), "image/jpeg");
 
+    const motion = motionStats.get(creative.id);
     await completeJob(job, {
       videoKey,
       thumbnailKey,
       durationSeconds: output.durationSeconds,
       sizeBytes: videoBytes.byteLength,
+      renderInfo: {
+        engine: templated ? "template" : "ffmpeg",
+        templateEnabled: TEMPLATE_ENABLED,
+        motionProvider: motion?.provider ?? null,
+        motionClips: clipPaths.size,
+        motionReused: motion?.reused ?? 0,
+        scenes: script.scenes.length,
+        voice: voiceStats.get(creative.id) ?? null,
+        at: new Date().toISOString(),
+      },
     });
+    motionStats.delete(creative.id);
+    voiceStats.delete(creative.id);
 
     log("render complete", {
       creativeId: creative.id,
