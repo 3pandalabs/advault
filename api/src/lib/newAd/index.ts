@@ -43,7 +43,12 @@ export async function quoteNewAd(userId: string): Promise<NewAdQuote> {
 // Status use: pending (checkout open) -> paid (money taken, ad not made yet)
 // -> producing (generating right now) -> delivered (creatives queued).
 
-export type NewAdBrief = { assetIds: string[]; aspectRatios: ("16:9" | "9:16")[] };
+export type NewAdBrief = {
+  assetIds: string[];
+  aspectRatios: ("16:9" | "9:16")[];
+  peopleAssetIds?: string[];
+  portraitAssetId?: string | null;
+};
 
 /** First render + two redos per paid ad. */
 export const RENDERS_PER_AD = 3;

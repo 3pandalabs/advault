@@ -387,7 +387,12 @@ export function updateCampaign(
 
 export function generateCreatives(
   campaignId: string,
-  input: { assetIds: string[]; aspectRatios: ("16:9" | "9:16")[] },
+  input: {
+    assetIds: string[];
+    aspectRatios: ("16:9" | "9:16")[];
+    peopleAssetIds?: string[];
+    portraitAssetId?: string | null;
+  },
 ) {
   return api<{ creatives: Creative[] }>(`/campaigns/${campaignId}/creatives/generate`, {
     method: "POST",
@@ -409,7 +414,12 @@ export const getNewAdQuote = () =>
 export const getNewAdStatus = (campaignId: string) => api<NewAdStatus>(`/campaigns/${campaignId}/new-ad`);
 export const orderNewAd = (
   campaignId: string,
-  input?: { assetIds: string[]; aspectRatios: ("16:9" | "9:16")[] },
+  input?: {
+    assetIds: string[];
+    aspectRatios: ("16:9" | "9:16")[];
+    peopleAssetIds?: string[];
+    portraitAssetId?: string | null;
+  },
 ) =>
   api<{ purchaseId: string; checkout: { provider: string; redirectUrl: string | null } }>(
     `/campaigns/${campaignId}/new-ad/order`,

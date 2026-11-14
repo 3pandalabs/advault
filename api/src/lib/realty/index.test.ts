@@ -44,4 +44,10 @@ describe("real estate ad facts", () => {
     expect(adScriptSchema.safeParse(agent).success).toBe(true);
     expect(agent.scenes[1].caption).toBe("Your real estate agent in Austin, TX");
   });
+
+  it("tells the script writer which photos show people and which is the agent", () => {
+    const p = buildAdScriptUserPrompt({ businessName: "Dana Reyes Realty", businessCategory: "Real estate", callToAction: "Call Dana", targetZipCodes: [], radiusMiles: 5, aspectRatio: "9:16", assetCount: 4, targetAddress: addr, realty: listing, peopleIndexes: [1, 3], portraitIndex: 3 });
+    expect(p).toContain("Photos showing real people from the business: 1.");
+    expect(p).toContain("Photo 3 is the agent's own photo");
+  });
 });

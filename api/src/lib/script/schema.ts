@@ -43,6 +43,12 @@ export const adScriptSchema = z.object({
   // now so regenerating isn't required when narration ships.
   voiceoverText: z.string().min(1).max(600),
   sticker: stickerSchema.optional(),
+  // Set by lib/creatives/generate.ts from the advertiser's choices, never by
+  // the model: photos marked as showing people (motion clips go to these
+  // first, render/worker.ts) and the agent's own photo (real estate; shown on
+  // the template's end card, render/template.ts).
+  peopleIndexes: z.array(z.number().int().min(0).max(4)).max(5).optional(),
+  portraitIndex: z.number().int().min(0).max(4).optional(),
 });
 
 export type AdScript = z.infer<typeof adScriptSchema>;

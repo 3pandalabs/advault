@@ -32,6 +32,10 @@ export async function generateForCampaign(args: {
   userId: string;
   assetIds: string[];
   aspectRatios: AspectRatio[];
+  /** Chosen photos the advertiser marked as showing people. */
+  peopleAssetIds?: string[];
+  /** Real estate: the agent's own photo (also counted as people). */
+  portraitAssetId?: string | null;
   warn: (msg: string, err: unknown) => void;
 }): Promise<GenerateResult> {
   const { campaign, userId } = args;
@@ -69,6 +73,17 @@ export async function generateForCampaign(args: {
   // will play in, and the model's assetIndex values point into it.
   const orderedKeys = args.assetIds.map((id) => ownedAssets.find((a) => a.id === id)!.r2Key);
 
+  // Positions in the chosen order, which is what script assetIndex means.
+  const indexOf = (id: string) => args.assetIds.indexOf(id);
+  const portraitIndex = args.portraitAssetId ? indexOf(args.portraitAssetId) : -1;
+  const peopleIndexes = [...new Set([...(args.peopleAssetIds ?? []).map(indexOf), portraitIndex])]
+    .filter((i) => i >= 0)
+    .sort((a, b) => a - b);
+  const marks = {
+    ...(peopleIndexes.length ? { peopleIndexes } : {}),
+    ...(portraitIndex >= 0 ? { portraitIndex } : {}),
+  };
+
   const created = [];
   // The first format's narration and sticker, shared by the others: it is
   // the same spot, so one voiceover serves every format and the renderer
@@ -91,11 +106,13 @@ export async function generateForCampaign(args: {
         assetCount: orderedKeys.length,
         targetAddress: campaign.targetAddress,
         realty: campaign.realty,
+        peopleIndexes,
+        portraitIndex: portraitIndex >= 0 ? portraitIndex : null,
       },
       args.warn,
     );
 
-    const finalScript: AdScript = shared ? { ...script, ...shared } : script;
+    const finalScript: AdScript = { ...(shared ? { ...script, ...shared } : script), ...marks };
     shared ??= { voiceoverText: script.voiceoverText, sticker: script.sticker };
 
     const [creative] = await db
