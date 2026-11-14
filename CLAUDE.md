@@ -283,7 +283,7 @@ Alpine.
   only if the advertiser wrote one (`script/prompt.ts`).
 - Voice: `VOICE_PROVIDER=fal` + `FAL_KEY` is ElevenLabs v3 through fal (the
   demo voice, `FAL_VOICE`, default Sarah). A fal failure falls back to edge-tts
-  (`synthesizeVoice`), never to silence. Scripts start with an audio tag
+  (`synthesizeVoice`), never to silence. One voiceover per ad, not per format: every format of a generation shares the first script's `voiceoverText` and `sticker` (`lib/creatives/generate.ts`), and the worker caches a paid voice in R2 at `campaigns/<id>/voice/<hash>.mp3` keyed by provider, voice and text, so the second format and redos with unchanged narration reuse it. Scripts start with an audio tag
   ("[warmly] …"), stripped for edge-tts.
 - The end card shows the landing page's domain, never a phone number we
   weren't given for the purpose.

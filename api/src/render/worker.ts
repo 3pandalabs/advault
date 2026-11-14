@@ -8,6 +8,7 @@
 // containers migrating on the same deploy race the drizzle bookkeeping table
 // and the loser crash-loops.
 import { hostname } from "node:os";
+import { createHash } from "node:crypto";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -36,6 +37,7 @@ import {
   creativeThumbnailKey,
   creativeVideoKey,
   getObjectBytes,
+  headObject,
   presignDownload,
   putObject,
 } from "../plugins/r2.js";
@@ -135,14 +137,38 @@ async function generateMotionClips(args: {
 
 // Voiceover for the whole spot, or undefined for a silent cut — which is what
 // every ad rendered before this shipped already was.
+// A paid voiceover is kept in R2 under the campaign, keyed by its text and
+// voice, so the campaign's other format (same narration, see
+// lib/creatives/generate.ts) and any redo reuse it instead of paying again.
+function voiceCacheKey(campaignId: string, text: string): string {
+  const h = createHash("sha256").update(`${process.env.VOICE_PROVIDER ?? ""}|${process.env.FAL_VOICE ?? ""}|${text}`).digest("hex").slice(0, 32);
+  return `campaigns/${campaignId}/voice/${h}.mp3`;
+}
+
 async function synthesizeVoiceover(args: {
   script: AdScript;
   currencyCode: string;
   workDir: string;
   creativeId: string;
+  campaignId: string;
 }): Promise<string | undefined> {
   const provider = voiceProvider();
   if (!provider) return undefined;
+  const voicePath = join(args.workDir, "voice.mp3");
+  const cacheKey = voiceCacheKey(args.campaignId, args.script.voiceoverText);
+
+  // Only paid voices are worth caching; edge-tts is free.
+  if (provider.name !== "edge-tts") {
+    try {
+      if (await headObject(cacheKey)) {
+        await writeFile(voicePath, await getObjectBytes(cacheKey));
+        log("voiceover reused", { creativeId: args.creativeId, key: cacheKey });
+        return voicePath;
+      }
+    } catch (err) {
+      log("voiceover cache read failed; synthesizing", { creativeId: args.creativeId, error: String(err) });
+    }
+  }
 
   try {
     // A failed paid voice falls back to edge-tts inside synthesizeVoice.
@@ -151,8 +177,14 @@ async function synthesizeVoiceover(args: {
       currency: args.currencyCode === "INR" ? "INR" : "USD",
     });
     if (result.fellBack) log("paid voice failed; used edge-tts", { creativeId: args.creativeId, error: result.fellBack });
-    const voicePath = join(args.workDir, "voice.mp3");
     await writeFile(voicePath, result.audioBytes);
+    // A fallback (edge-tts) result is not cached, so the next format tries
+    // the paid voice again.
+    if (provider.name !== "edge-tts" && !result.fellBack) {
+      await putObject(cacheKey, result.audioBytes, "audio/mpeg").catch((err) =>
+        log("voiceover cache write failed", { creativeId: args.creativeId, error: String(err) }),
+      );
+    }
     log("voiceover synthesized", {
       creativeId: args.creativeId,
       source: result.source,
@@ -213,6 +245,7 @@ async function processJob(job: RenderJob): Promise<void> {
       currencyCode: creative.currencyCode,
       workDir,
       creativeId: creative.id,
+      campaignId: creative.campaignId,
     });
 
     // The template ad (demo look) when enabled; the ffmpeg layout otherwise,

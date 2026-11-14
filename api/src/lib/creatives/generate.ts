@@ -3,6 +3,7 @@ import { db } from "../../db/index.js";
 import { assets, campaigns, creatives } from "../../db/schema.js";
 import { generateScript } from "../ai/script/index.js";
 import { enqueueRender } from "../../render/jobs.js";
+import type { AdScript } from "../script/schema.js";
 
 // Writing the scripts and queueing the renders for a campaign. Shared by the
 // wizard's generate route and the paid new-ad order (Keep it running), so both
@@ -69,6 +70,11 @@ export async function generateForCampaign(args: {
   const orderedKeys = args.assetIds.map((id) => ownedAssets.find((a) => a.id === id)!.r2Key);
 
   const created = [];
+  // The first format's narration and sticker, shared by the others: it is
+  // the same spot, so one voiceover serves every format and the renderer
+  // pays for it once (render/worker.ts caches it by text). Captions stay
+  // per format.
+  let shared: Pick<AdScript, "voiceoverText" | "sticker"> | null = null;
   for (const aspectRatio of args.aspectRatios) {
     // Scripted per aspect ratio, not once and reused: a 9:16 Shorts
     // caption sits over a vertical crop with far less horizontal room than
@@ -87,12 +93,15 @@ export async function generateForCampaign(args: {
       args.warn,
     );
 
+    const finalScript: AdScript = shared ? { ...script, ...shared } : script;
+    shared ??= { voiceoverText: script.voiceoverText, sticker: script.sticker };
+
     const [creative] = await db
       .insert(creatives)
       .values({
         campaignId: campaign.id,
         aspectRatio,
-        script,
+        script: finalScript,
         scriptSource: source,
         sourceAssetKeys: orderedKeys,
       })
