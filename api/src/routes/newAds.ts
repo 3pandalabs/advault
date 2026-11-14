@@ -62,6 +62,8 @@ export async function newAdRoutes(app: FastifyInstance) {
         body: z
           .object({
             assetIds: z.array(z.string().uuid()).min(1).max(5),
+            peopleAssetIds: z.array(z.string().uuid()).max(5).optional(),
+            portraitAssetId: z.string().uuid().nullish(),
             aspectRatios: z.array(z.enum(["16:9", "9:16"])).min(1).max(2).default(["16:9", "9:16"]),
           })
           .optional(),
@@ -172,6 +174,8 @@ export async function newAdRoutes(app: FastifyInstance) {
           campaign,
           userId: req.userId!,
           assetIds: brief.assetIds,
+          peopleAssetIds: brief.peopleAssetIds,
+          portraitAssetId: brief.portraitAssetId,
           aspectRatios: brief.aspectRatios,
           warn: (msg, err) => req.log.warn({ err, purchaseId }, msg),
         });

@@ -29,13 +29,20 @@ export async function creativeRoutes(app: FastifyInstance) {
         params: z.object({ campaignId: z.string().uuid() }),
         body: z.object({
           assetIds: z.array(z.string().uuid()).min(1).max(5),
+          peopleAssetIds: z.array(z.string().uuid()).max(5).optional(),
+          portraitAssetId: z.string().uuid().nullish(),
           aspectRatios: z.array(z.enum(ASPECT_RATIOS)).min(1).max(2).default(["16:9", "9:16"]),
         }),
       },
     },
     async (req, reply) => {
       const { campaignId } = req.params as { campaignId: string };
-      const body = req.body as { assetIds: string[]; aspectRatios: ("16:9" | "9:16")[] };
+      const body = req.body as {
+        assetIds: string[];
+        aspectRatios: ("16:9" | "9:16")[];
+        peopleAssetIds?: string[];
+        portraitAssetId?: string | null;
+      };
 
       const campaign = await loadOwnedCampaign(campaignId, req.userId!, reply);
       if (!campaign) return;
@@ -52,6 +59,8 @@ export async function creativeRoutes(app: FastifyInstance) {
         campaign,
         userId: req.userId!,
         assetIds: body.assetIds,
+        peopleAssetIds: body.peopleAssetIds,
+        portraitAssetId: body.portraitAssetId,
         aspectRatios: body.aspectRatios,
         warn: (msg, err) => req.log.warn({ err, campaignId }, msg),
       });

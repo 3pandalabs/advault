@@ -40,6 +40,8 @@ export type OfferAdProps = {
   accentColor: string;
   photos: string[];
   voiceover?: string;
+  /** Real estate: the agent's own photo, shown round on the end card. */
+  portrait?: string;
   captions: Caption[];
   durationSeconds: number;
   width: number;
@@ -298,6 +300,20 @@ const EndCard: React.FC<OfferAdProps & { vertical: boolean }> = (p) => {
         padding: 60 * u,
       }}
     >
+      {p.portrait && (
+        <Img
+          src={p.portrait}
+          style={{
+            width: 300 * u,
+            height: 300 * u,
+            borderRadius: "50%",
+            objectFit: "cover",
+            border: `${10 * u}px solid ${p.accentColor}`,
+            boxShadow: "0 20px 60px rgba(0,0,0,.45)",
+            transform: `scale(${interpolate(inS, [0, 1], [0.8, 1])})`,
+          }}
+        />
+      )}
       <div style={{ fontFamily, fontWeight: 900, fontSize: nameSize, color: "#fff", textAlign: "center", lineHeight: 1.05 }}>
         {p.shopName}
       </div>

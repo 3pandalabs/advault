@@ -149,6 +149,10 @@ export async function renderTemplate(input: TemplateInputs, log: (msg: string, e
     accentColor: ACCENT,
     photos,
     voiceover: input.voicePath ? basename(input.voicePath) : undefined,
+    portrait:
+      script.portraitIndex != null && input.imagePaths[script.portraitIndex]
+        ? basename(input.imagePaths[script.portraitIndex])
+        : undefined,
     captions,
     durationSeconds,
     width,

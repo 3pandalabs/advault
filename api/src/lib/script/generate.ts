@@ -28,6 +28,9 @@ export type GenerateScriptInput = {
   // with the listing facts the advertiser entered.
   targetAddress?: { street: string; city: string; state: string; postalCode: string } | null;
   realty?: Realty | null;
+  // Photos the advertiser marked as showing people, and the agent's photo.
+  peopleIndexes?: number[];
+  portraitIndex?: number | null;
 };
 
 // Structured outputs rather than tool use: there is one shape to return and no

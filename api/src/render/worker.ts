@@ -92,7 +92,13 @@ async function generateMotionClips(args: {
   const provider = motionProvider();
   if (!provider || MOTION_MAX_CLIPS <= 0) return clips;
 
-  for (const [i, scene] of args.script.scenes.entries()) {
+  // Scenes showing people first: a person moving is what makes the demo ads
+  // feel alive, and the clip budget is capped. Then the rest, in order.
+  const people = new Set(args.script.peopleIndexes ?? []);
+  const order = [...args.script.scenes.entries()].sort(
+    ([, a], [, b]) => Number(people.has(b.assetIndex)) - Number(people.has(a.assetIndex)),
+  );
+  for (const [i, scene] of order) {
     if (clips.size >= MOTION_MAX_CLIPS) break;
 
     const assetIndex = Math.min(scene.assetIndex, args.imagePaths.length - 1);

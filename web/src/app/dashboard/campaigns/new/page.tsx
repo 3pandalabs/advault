@@ -82,6 +82,23 @@ const LISTING_EXAMPLE =
 const AGENT_EXAMPLE =
   "Sold 40+ homes in Austin last year. Free home valuation. Available evenings and weekends.";
 
+const PHOTO_TIPS: Record<string, string> = {
+  Plumbing: "A photo of you or your crew at a job, or with your van.",
+  Electrical: "A photo of you or your electrician at work.",
+  HVAC: "A photo of your technician at a unit, or with your truck.",
+  Dentistry: "A photo of your dentist with a patient, and your front-desk team.",
+  Restaurant: "A photo of your cooks in the kitchen, or staff serving guests.",
+  Landscaping: "A photo of your crew working on a yard.",
+  "Auto repair": "A photo of your mechanic working on a car.",
+  "Cleaning services": "A photo of your cleaners at work.",
+  "Real estate": "For a listing, the home itself; add your own photo in the next step.",
+};
+
+function photoTip(category: string): string {
+  if (isHousingCategory(category)) return PHOTO_TIPS["Real estate"];
+  return PHOTO_TIPS[category] ?? "A photo of you, your team at work, or a happy customer (with their permission).";
+}
+
 function offerPlaceholder(category: string, isListing: boolean): string {
   if (isHousingCategory(category)) return isListing ? LISTING_EXAMPLE : AGENT_EXAMPLE;
   return OFFER_EXAMPLES[category] ?? "Your deal or price, how long it lasts, and what makes you the one to call.";
@@ -108,6 +125,11 @@ export default function NewCampaignPage() {
   const [assets, setAssets] = useState<Asset[]>([]);
   const [selectedAssetIds, setSelectedAssetIds] = useState<string[]>([]);
   const [thumbs, setThumbs] = useState<Record<string, string>>({});
+  // Photos the advertiser marked as showing people (motion goes to these
+  // first), and, for real estate, the agent's own photo.
+  const [peopleIds, setPeopleIds] = useState<string[]>([]);
+  const [portrait, setPortrait] = useState<{ id: string; url: string } | null>(null);
+  const [portraitBusy, setPortraitBusy] = useState(false);
   const [uploading, setUploading] = useState(false);
 
   // Step 2 — targeting
@@ -315,13 +337,13 @@ export default function NewCampaignPage() {
         }
       } else if (newAdPrice) {
         // Pay first; the campaign page makes the ad once the payment lands.
-        const { checkout } = await orderNewAd(campaign.id, { assetIds: selectedAssetIds, aspectRatios });
+        const { checkout } = await orderNewAd(campaign.id, adChoices());
         if (checkout.redirectUrl) {
           window.location.assign(checkout.redirectUrl);
           return;
         }
       } else {
-        await generateCreatives(campaign.id, { assetIds: selectedAssetIds, aspectRatios });
+        await generateCreatives(campaign.id, adChoices());
       }
       router.push(`/dashboard/campaigns/${campaign.id}`);
     } catch (err) {
@@ -340,6 +362,36 @@ export default function NewCampaignPage() {
         setError("Could not create the campaign. Please try again.");
       }
       setBusy(false);
+    }
+  }
+
+  // What the ad is made from: the chosen photos in order, then the agent's
+  // photo (real estate) last, at most MAX_PHOTOS in all.
+  function adChoices() {
+    const agent = housing && portrait ? portrait.id : null;
+    const photos = selectedAssetIds.filter((id) => id !== agent).slice(0, agent ? MAX_PHOTOS - 1 : MAX_PHOTOS);
+    const assetIds = agent ? [...photos, agent] : photos;
+    return {
+      assetIds,
+      aspectRatios,
+      peopleAssetIds: peopleIds.filter((id) => assetIds.includes(id)),
+      portraitAssetId: agent,
+    };
+  }
+
+  async function onPortrait(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setPortraitBusy(true);
+    setError(null);
+    try {
+      const asset = await uploadAsset(file, "photo");
+      setPortrait({ id: asset.id, url: URL.createObjectURL(file) });
+    } catch {
+      setError("Photo upload failed. Check your connection and try again.");
+    } finally {
+      setPortraitBusy(false);
+      e.target.value = "";
     }
   }
 
@@ -459,9 +511,14 @@ export default function NewCampaignPage() {
         <Card>
           <CardTitle>Add photos of your business</CardTitle>
           <CardDescription>
-            Three to five works best — your storefront, your van, your finished work. These
-            become the scenes in your ad, so pick shots you would show a customer.
+            Three to five works best. These become the scenes in your ad, so pick shots you
+            would show a customer.
           </CardDescription>
+          <p className="mt-3 rounded-lg border border-amber-400/20 bg-amber-400/5 px-3 py-2 text-sm text-zinc-300">
+            <span className="font-medium text-amber-300">Include people.</span>{" "}
+            {photoTip(category)} Ads with real people from your business feel alive: we
+            animate those photos first.
+          </p>
 
           <div className="mt-5 flex flex-wrap gap-2">
             <label className="inline-flex cursor-pointer items-center rounded-lg border border-white/15 bg-white/5 px-4 py-2 text-sm hover:bg-white/10">
@@ -529,6 +586,28 @@ export default function NewCampaignPage() {
                         {index + 1}
                       </span>
                     )}
+                    {index >= 0 && (
+                      <span
+                        role="checkbox"
+                        aria-checked={peopleIds.includes(asset.id)}
+                        tabIndex={0}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setPeopleIds((p) => (p.includes(asset.id) ? p.filter((x) => x !== asset.id) : [...p, asset.id]));
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key !== " " && e.key !== "Enter") return;
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setPeopleIds((p) => (p.includes(asset.id) ? p.filter((x) => x !== asset.id) : [...p, asset.id]));
+                        }}
+                        className={`absolute bottom-1 left-1 right-1 rounded-md px-2 py-1 text-center text-[11px] font-medium ${
+                          peopleIds.includes(asset.id) ? "bg-amber-400 text-zinc-950" : "bg-black/70 text-zinc-200 hover:bg-black/85"
+                        }`}
+                      >
+                        {peopleIds.includes(asset.id) ? "✓ People in it" : "People in it?"}
+                      </span>
+                    )}
                   </button>
                 );
               })}
@@ -536,7 +615,8 @@ export default function NewCampaignPage() {
           )}
 
           <p className="mt-4 text-xs text-zinc-500">
-            Selected photos play in the order you picked them.
+            Selected photos play in the order you picked them. Tap &quot;People in it?&quot; on
+            photos that show you, your team or your customers.
           </p>
 
           <div className="mt-6 flex justify-end">
@@ -597,6 +677,40 @@ export default function NewCampaignPage() {
                 )}
               </div>
             </div>
+
+            {housing && (
+              <div>
+                <Label className="flex items-center gap-2">
+                  Your photo
+                  <span className="rounded-full bg-amber-400/15 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-amber-300">
+                    Recommended
+                  </span>
+                </Label>
+                <div className="mt-2 flex items-center gap-3">
+                  {portrait ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={portrait.url} alt="Your photo" className="h-16 w-16 rounded-full object-cover ring-2 ring-amber-400" />
+                  ) : (
+                    <span className="flex h-16 w-16 items-center justify-center rounded-full border border-dashed border-white/20 text-xs text-zinc-500">
+                      You
+                    </span>
+                  )}
+                  <label className="inline-flex cursor-pointer items-center rounded-lg border border-white/15 bg-white/5 px-4 py-2 text-sm hover:bg-white/10">
+                    <input type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={onPortrait} disabled={portraitBusy} />
+                    {portraitBusy ? "Uploading…" : portrait ? "Change photo" : "Add your photo"}
+                  </label>
+                  {portrait && (
+                    <Button type="button" variant="ghost" size="sm" onClick={() => setPortrait(null)}>
+                      Remove
+                    </Button>
+                  )}
+                </div>
+                <FieldHint>
+                  A clear photo of you, the agent. It closes the ad next to &quot;Call&quot;:
+                  people call a face they recognise.
+                </FieldHint>
+              </div>
+            )}
 
             {housing && (
               <div>

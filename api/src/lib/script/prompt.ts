@@ -36,6 +36,8 @@ export function buildAdScriptUserPrompt(input: {
   assetCount: number;
   targetAddress?: { street: string; city: string; state: string; postalCode: string } | null;
   realty?: Realty | null;
+  peopleIndexes?: number[];
+  portraitIndex?: number | null;
 }): string {
   const addr = input.targetAddress;
   const place = addr ? `${addr.street}, ${addr.city}, ${addr.state}` : null;
@@ -70,6 +72,17 @@ export function buildAdScriptUserPrompt(input: {
   } else if (r?.adType === "agent") {
     lines.push("", "Ad type: AGENT ad promoting the agent, not one listing.");
     if (addr) lines.push(`Office or area served: ${addr.city}, ${addr.state}`);
+  }
+
+  // Real people sell a local business: put them on screen.
+  const people = (input.peopleIndexes ?? []).filter((i) => i !== input.portraitIndex);
+  if (people.length) {
+    lines.push(`Photos showing real people from the business: ${people.join(", ")}. Use each of them for a scene.`);
+  }
+  if (input.portraitIndex != null && input.portraitIndex >= 0) {
+    lines.push(
+      `Photo ${input.portraitIndex} is the agent's own photo: use it for the last scene, with the call to action and their name.`,
+    );
   }
 
   if (input.offerDetails?.trim()) {
