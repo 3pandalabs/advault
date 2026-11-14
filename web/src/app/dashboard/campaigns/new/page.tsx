@@ -91,7 +91,7 @@ const PHOTO_TIPS: Record<string, string> = {
   Landscaping: "A photo of your crew working on a yard.",
   "Auto repair": "A photo of your mechanic working on a car.",
   "Cleaning services": "A photo of your cleaners at work.",
-  "Real estate": "For a listing, the home itself; add your own photo in the next step.",
+  "Real estate": "For a listing, the home itself: outside, the main rooms, the yard. Add your own photo below.",
 };
 
 function photoTip(category: string): string {
@@ -130,6 +130,8 @@ export default function NewCampaignPage() {
   const [peopleIds, setPeopleIds] = useState<string[]>([]);
   const [portrait, setPortrait] = useState<{ id: string; url: string } | null>(null);
   const [portraitBusy, setPortraitBusy] = useState(false);
+  // Photos added under "You and your team" (always people).
+  const [teamIds, setTeamIds] = useState<string[]>([]);
   const [uploading, setUploading] = useState(false);
 
   // Step 2 — targeting
@@ -379,6 +381,27 @@ export default function NewCampaignPage() {
     };
   }
 
+  async function onTeamUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files ?? []);
+    if (files.length === 0) return;
+    setUploading(true);
+    setError(null);
+    try {
+      for (const file of files) {
+        const asset = await uploadAsset(file, "photo");
+        setAssets((a) => [asset, ...a]);
+        setTeamIds((t) => [...t, asset.id]);
+        setPeopleIds((p) => [...p, asset.id]);
+        setSelectedAssetIds((sel) => (sel.length < MAX_PHOTOS ? [...sel, asset.id] : sel));
+      }
+    } catch {
+      setError("Upload failed. Check your connection and try again.");
+    } finally {
+      setUploading(false);
+      e.target.value = "";
+    }
+  }
+
   async function onPortrait(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -410,7 +433,7 @@ export default function NewCampaignPage() {
       <h1 className="text-2xl font-semibold tracking-tight">New campaign</h1>
 
       <ol className="mt-6 mb-8 flex items-center gap-2 text-sm">
-        {(useVideo ? ["Video", "Where & how much"] : ["Photos", "Where & how much", "Formats"]).map((label, i, all) => (
+        {(useVideo ? ["Where & how much", "Video"] : ["Where & how much", "Photos", "Formats"]).map((label, i, all) => (
           <li key={label} className="flex items-center gap-2">
             <span
               className={
@@ -434,7 +457,7 @@ export default function NewCampaignPage() {
         </p>
       )}
 
-      {step === 1 && (
+      {step === 2 && (
         <div className="mb-4 flex flex-wrap gap-2" role="radiogroup" aria-label="Ad video source">
           {(
             [
@@ -460,7 +483,7 @@ export default function NewCampaignPage() {
         </div>
       )}
 
-      {step === 1 && useVideo && (
+      {step === 2 && useVideo && (
         <Card>
           <CardTitle>Upload the finished ad video</CardTitle>
           <CardDescription>
@@ -499,25 +522,28 @@ export default function NewCampaignPage() {
               </p>
             )}
           </div>
-          <div className="mt-6 flex justify-end">
-            <Button onClick={() => setStep(2)} disabled={!canAdvanceFrom1}>
-              Continue
+          <div className="mt-6 flex justify-between">
+            <Button variant="ghost" onClick={() => setStep(1)}>
+              Back
+            </Button>
+            <Button onClick={onFinish} disabled={busy || !canAdvanceFrom1 || !canAdvanceFrom2}>
+              {busy ? "Creating and uploading…" : "Create campaign and upload video"}
             </Button>
           </div>
         </Card>
       )}
 
-      {step === 1 && !useVideo && (
+      {step === 2 && !useVideo && (
         <Card>
-          <CardTitle>Add photos of your business</CardTitle>
+          <CardTitle>{isListing ? "Photos of the home" : housing ? "Photos of your work" : "Photos of your business"}</CardTitle>
           <CardDescription>
             Three to five works best. These become the scenes in your ad, so pick shots you
             would show a customer.
           </CardDescription>
           <p className="mt-3 rounded-lg border border-amber-400/20 bg-amber-400/5 px-3 py-2 text-sm text-zinc-300">
-            <span className="font-medium text-amber-300">Include people.</span>{" "}
-            {photoTip(category)} Ads with real people from your business feel alive: we
-            animate those photos first.
+            <span className="font-medium text-amber-300">{housing ? "What to show." : "Include people."}</span>{" "}
+            {photoTip(category)}
+            {housing ? "" : " Ads with real people from your business feel alive: we animate those photos first."}
           </p>
 
           <div className="mt-5 flex flex-wrap gap-2">
@@ -558,7 +584,7 @@ export default function NewCampaignPage() {
 
           {assets.length > 0 && (
             <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
-              {assets.map((asset) => {
+              {assets.filter((a) => !teamIds.includes(a.id)).map((asset) => {
                 const index = selectedAssetIds.indexOf(asset.id);
                 return (
                   <button
@@ -616,18 +642,92 @@ export default function NewCampaignPage() {
 
           <p className="mt-4 text-xs text-zinc-500">
             Selected photos play in the order you picked them. Tap &quot;People in it?&quot; on
-            photos that show you, your team or your customers.
+            any that show people.
           </p>
 
-          <div className="mt-6 flex justify-end">
-            <Button onClick={() => setStep(2)} disabled={!canAdvanceFrom1}>
+          <div className="mt-8 border-t border-white/10 pt-6">
+            <h3 className="flex items-center gap-2 text-base font-semibold text-zinc-100">
+              {housing ? "Your photo" : "You and your team"}
+              <span className="rounded-full bg-amber-400/15 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-amber-300">
+                Highly recommended
+              </span>
+            </h3>
+            <p className="mt-1 text-sm text-zinc-400">
+              {housing
+                ? "A clear photo of you, the agent. It closes the ad next to your call to action: people call a face they recognise."
+                : "Real people make a local ad. A photo of you, your staff at work, or a happy customer (with their permission). We animate these first."}
+            </p>
+            {housing ? (
+              <div className="mt-3 flex items-center gap-3">
+                {portrait ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={portrait.url} alt="Your photo" className="h-20 w-20 rounded-full object-cover ring-2 ring-amber-400" />
+                ) : (
+                  <span className="flex h-20 w-20 items-center justify-center rounded-full border border-dashed border-white/20 text-xs text-zinc-500">
+                    You
+                  </span>
+                )}
+                <label className="inline-flex cursor-pointer items-center rounded-lg border border-white/15 bg-white/5 px-4 py-2 text-sm hover:bg-white/10">
+                  <input type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={onPortrait} disabled={portraitBusy} />
+                  {portraitBusy ? "Uploading…" : portrait ? "Change photo" : "Add your photo"}
+                </label>
+                {portrait && (
+                  <Button type="button" variant="ghost" size="sm" onClick={() => setPortrait(null)}>
+                    Remove
+                  </Button>
+                )}
+              </div>
+            ) : (
+              <>
+                <label className="mt-3 inline-flex cursor-pointer items-center rounded-lg border border-white/15 bg-white/5 px-4 py-2 text-sm hover:bg-white/10">
+                  <input type="file" accept="image/jpeg,image/png,image/webp" multiple className="hidden" onChange={onTeamUpload} disabled={uploading} />
+                  {uploading ? "Uploading…" : "Add photos of people"}
+                </label>
+                {teamIds.length > 0 && (
+                  <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                    {assets.filter((a) => teamIds.includes(a.id)).map((asset) => {
+                      const index = selectedAssetIds.indexOf(asset.id);
+                      return (
+                        <button
+                          key={asset.id}
+                          type="button"
+                          onClick={() => toggleAsset(asset.id)}
+                          className={`relative aspect-square overflow-hidden rounded-lg border-2 transition-colors ${
+                            index >= 0 ? "border-amber-400" : "border-white/10 hover:border-white/25"
+                          }`}
+                        >
+                          {thumbs[asset.id] ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={thumbs[asset.id]} alt={asset.originalFilename ?? "Photo of people"} className="h-full w-full object-cover" />
+                          ) : (
+                            <span className="flex h-full items-center justify-center text-xs text-zinc-600">…</span>
+                          )}
+                          {index >= 0 && (
+                            <span className="absolute top-1 left-1 flex h-6 w-6 items-center justify-center rounded-full bg-amber-400 text-xs font-semibold text-zinc-950">
+                              {index + 1}
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+
+          <div className="mt-6 flex justify-between">
+            <Button variant="ghost" onClick={() => setStep(1)}>
+              Back
+            </Button>
+            <Button onClick={() => setStep(3)} disabled={!canAdvanceFrom1}>
               Continue
             </Button>
           </div>
         </Card>
       )}
 
-      {step === 2 && (
+      {step === 1 && (
         <Card>
           <CardTitle>Where should this run, and for how much?</CardTitle>
           <CardDescription>
@@ -677,40 +777,6 @@ export default function NewCampaignPage() {
                 )}
               </div>
             </div>
-
-            {housing && (
-              <div>
-                <Label className="flex items-center gap-2">
-                  Your photo
-                  <span className="rounded-full bg-amber-400/15 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-amber-300">
-                    Recommended
-                  </span>
-                </Label>
-                <div className="mt-2 flex items-center gap-3">
-                  {portrait ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={portrait.url} alt="Your photo" className="h-16 w-16 rounded-full object-cover ring-2 ring-amber-400" />
-                  ) : (
-                    <span className="flex h-16 w-16 items-center justify-center rounded-full border border-dashed border-white/20 text-xs text-zinc-500">
-                      You
-                    </span>
-                  )}
-                  <label className="inline-flex cursor-pointer items-center rounded-lg border border-white/15 bg-white/5 px-4 py-2 text-sm hover:bg-white/10">
-                    <input type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={onPortrait} disabled={portraitBusy} />
-                    {portraitBusy ? "Uploading…" : portrait ? "Change photo" : "Add your photo"}
-                  </label>
-                  {portrait && (
-                    <Button type="button" variant="ghost" size="sm" onClick={() => setPortrait(null)}>
-                      Remove
-                    </Button>
-                  )}
-                </div>
-                <FieldHint>
-                  A clear photo of you, the agent. It closes the ad next to &quot;Call&quot;:
-                  people call a face they recognise.
-                </FieldHint>
-              </div>
-            )}
 
             {housing && (
               <div>
@@ -954,19 +1020,10 @@ export default function NewCampaignPage() {
             )}
           </div>
 
-          <div className="mt-6 flex justify-between">
-            <Button variant="ghost" onClick={() => setStep(1)}>
-              Back
+          <div className="mt-6 flex justify-end">
+            <Button onClick={() => setStep(2)} disabled={!canAdvanceFrom2}>
+              Continue
             </Button>
-            {useVideo ? (
-              <Button onClick={onFinish} disabled={busy || !canAdvanceFrom2}>
-                {busy ? "Creating and uploading…" : "Create campaign and upload video"}
-              </Button>
-            ) : (
-              <Button onClick={() => setStep(3)} disabled={!canAdvanceFrom2}>
-                Continue
-              </Button>
-            )}
           </div>
         </Card>
       )}
