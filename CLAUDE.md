@@ -267,6 +267,17 @@ Google reviews the ad again after launch: `adMetricsSync` also reads
 `ad_group_ad.policy_summary` (read-only) into `campaigns.google_ad_*`, shown on
 the campaign page as "Google: Approved / Under review / Disapproved".
 
+## Real estate: listing/open-house ads and agent ads
+
+A real-estate campaign picks one (2026-11-13, `campaigns.realty`, `lib/realty`):
+a **listing** ad (one home: the street, price, beds/baths and an optional open
+house day/time go to the script writer, and from there into the hook,
+voiceover and sticker) or an **agent** ad (the agent and their city, no home).
+The facts are the advertiser's own, so they may appear in the ad. The script
+prompt carries a **Fair Housing Act** rule: describe the property, never who
+it suits (no families, age, religion, "safe", "exclusive"…). Keep it when
+editing `script/prompt.ts`. `fallback.ts` builds both kinds without the model.
+
 ## Two render engines: the template ad, and the ffmpeg layout behind it
 
 Since 2026-11-13 the renderer can make the **template ad**, the look of the

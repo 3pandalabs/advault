@@ -101,7 +101,15 @@ export default function NewCampaignPage() {
     zipInput: "",
     radiusMiles: "10",
     dailyBudget: "15",
-    // Real estate only: the listing the radius is drawn around.
+    // Real estate only: the listing (or office) the radius is drawn around,
+    // the kind of ad, and the listing facts the script uses.
+    realtyType: "listing",
+    price: "",
+    beds: "",
+    baths: "",
+    ohDate: "",
+    ohStart: "",
+    ohEnd: "",
     street: "",
     city: "",
     addressState: "",
@@ -178,6 +186,13 @@ export default function NewCampaignPage() {
     form.city.trim() !== "" &&
     /^[A-Za-z]{2}$/.test(form.addressState.trim()) &&
     /^\d{5}$/.test(form.addressZip.trim());
+  const isListing = housing && form.realtyType === "listing";
+  // Open house: all three or none; end after start.
+  const ohAny = form.ohDate !== "" || form.ohStart !== "" || form.ohEnd !== "";
+  const ohValid = !ohAny || (form.ohDate !== "" && form.ohStart !== "" && form.ohEnd !== "" && form.ohEnd > form.ohStart);
+  const bedsValid = form.beds.trim() === "" || /^\d{1,2}$/.test(form.beds.trim());
+  const bathsValid = form.baths.trim() === "" || /^\d{1,2}(\.5)?$/.test(form.baths.trim());
+  const realtyValid = !isListing || (ohValid && bedsValid && bathsValid);
   const budgetCents = parseDollarsToCents(form.dailyBudget);
   const budgetOutOfRange =
     budgetCents !== null && (budgetCents < MIN_DAILY_BUDGET_CENTS || budgetCents > MAX_DAILY_BUDGET_CENTS);
@@ -250,6 +265,17 @@ export default function NewCampaignPage() {
         radiusMiles: Number(form.radiusMiles),
         dailyBudgetCents,
         audienceFilters: filtersForSave(audienceFilters, housing),
+        realty: !housing
+          ? null
+          : form.realtyType === "agent"
+            ? { adType: "agent" }
+            : {
+                adType: "listing",
+                price: form.price.trim() || null,
+                beds: form.beds.trim() ? Number(form.beds) : null,
+                baths: form.baths.trim() ? Number(form.baths) : null,
+                openHouse: ohAny ? { date: form.ohDate, start: form.ohStart, end: form.ohEnd } : null,
+              },
       });
 
       // 202 — the API writes the scripts and queues the renders, then returns.
@@ -303,7 +329,7 @@ export default function NewCampaignPage() {
     form.businessName.trim() &&
     category &&
     /^https?:\/\//i.test(form.landingUrl.trim()) &&
-    (housing ? addressValid : zipCodes.length > 0 && invalidZips.length === 0 && !mixedCountries) &&
+    (housing ? addressValid && realtyValid : zipCodes.length > 0 && invalidZips.length === 0 && !mixedCountries) &&
     budgetCents !== null &&
     !budgetOutOfRange;
 
@@ -552,13 +578,43 @@ export default function NewCampaignPage() {
               </div>
             </div>
 
+            {housing && (
+              <div>
+                <Label>What is this ad for?</Label>
+                <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                  {[
+                    { v: "listing", t: "A listing or open house", h: "One home for sale: the address, price and open house time are in the ad." },
+                    { v: "agent", t: "Me, as an agent", h: "Promote yourself and the area you serve, not one home." },
+                  ].map((o) => (
+                    <label
+                      key={o.v}
+                      className={`flex cursor-pointer gap-3 rounded-lg border p-3 ${form.realtyType === o.v ? "border-amber-400/70 bg-amber-400/5" : "border-white/15 bg-white/[0.02] hover:border-white/25"}`}
+                    >
+                      <input
+                        type="radio"
+                        name="realtyType"
+                        value={o.v}
+                        checked={form.realtyType === o.v}
+                        onChange={() => setForm((f) => ({ ...f, realtyType: o.v }))}
+                        className="mt-1 accent-amber-400"
+                      />
+                      <span>
+                        <span className="block text-sm font-medium text-zinc-100">{o.t}</span>
+                        <span className="block text-xs text-zinc-500">{o.h}</span>
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {housing ? (
               <div>
-                <Label htmlFor="street">Listing address</Label>
+                <Label htmlFor="street">{isListing ? "Listing address" : "Office address, or the center of the area you serve"}</Label>
                 <FieldHint>
                   Housing ads in the US can&apos;t target ZIP codes (Google policy), so we show
-                  your ad to people within the radius below of this address — a listing, open
-                  house or your office.
+                  your ad to people within the radius below of this address.
+                  {isListing ? " The street is said in the ad." : " Only the city appears in the ad."}
                 </FieldHint>
                 <div className="mt-2 grid gap-2 sm:grid-cols-6">
                   <Input
@@ -595,6 +651,40 @@ export default function NewCampaignPage() {
                     onChange={set("addressZip")}
                   />
                 </div>
+                {isListing && (
+                  <>
+                    <div className="mt-4 grid gap-2 sm:grid-cols-3">
+                      <div>
+                        <Label htmlFor="price">Price</Label>
+                        <Input id="price" placeholder="$489,000" maxLength={20} value={form.price} onChange={set("price")} />
+                      </div>
+                      <div>
+                        <Label htmlFor="beds">Bedrooms</Label>
+                        <Input id="beds" inputMode="numeric" placeholder="3" maxLength={2} value={form.beds} onChange={set("beds")} />
+                      </div>
+                      <div>
+                        <Label htmlFor="baths">Bathrooms</Label>
+                        <Input id="baths" inputMode="decimal" placeholder="2.5" maxLength={4} value={form.baths} onChange={set("baths")} />
+                      </div>
+                    </div>
+                    {(!bedsValid || !bathsValid) && (
+                      <p className="mt-1.5 text-xs text-red-300">Bedrooms is a whole number; bathrooms can end in .5.</p>
+                    )}
+                    <div className="mt-4">
+                      <Label htmlFor="ohDate">Open house (optional)</Label>
+                      <div className="mt-2 grid gap-2 sm:grid-cols-3">
+                        <Input id="ohDate" type="date" aria-label="Open house date" value={form.ohDate} onChange={set("ohDate")} />
+                        <Input type="time" aria-label="Starts" value={form.ohStart} onChange={set("ohStart")} />
+                        <Input type="time" aria-label="Ends" value={form.ohEnd} onChange={set("ohEnd")} />
+                      </div>
+                      {ohValid ? (
+                        <FieldHint>Date, start and end. The ad says it, for example &quot;Open house Sunday, 1–4 PM&quot;.</FieldHint>
+                      ) : (
+                        <p className="mt-1.5 text-xs text-red-300">Fill in the date, start and end, with the end after the start.</p>
+                      )}
+                    </div>
+                  </>
+                )}
               </div>
             ) : (
             <div>

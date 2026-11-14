@@ -1,4 +1,5 @@
 import type { AdScript } from "./schema.js";
+import { bedsBaths, openHouseLong, openHouseTag, shortPrice, type Realty } from "../realty/index.js";
 
 // Deterministic script used when ANTHROPIC_API_KEY is unset, or when the model
 // call fails. Not a placeholder to be replaced later — it is the reason a
@@ -72,7 +73,12 @@ export function buildFallbackScript(input: {
   offerDetails?: string | null;
   targetZipCodes: string[];
   assetCount: number;
+  targetAddress?: { street: string; city: string; state: string; postalCode: string } | null;
+  realty?: Realty | null;
 }): AdScript {
+  const realty = realtyFallback(input);
+  if (realty) return realty;
+
   const area = areaPhrase();
   const headline = offerHeadline(input.offerDetails);
   const spoken = offerSentence(input.offerDetails);
@@ -113,5 +119,58 @@ export function buildFallbackScript(input: {
       tagline: input.callToAction.toUpperCase().slice(0, 26).trim() || "NEAR YOU",
       benefits: [],
     },
+  };
+}
+
+/**
+ * Real estate without the model: the listing facts the advertiser entered,
+ * word for word (street, price, beds/baths, open house), or an agent ad.
+ */
+function realtyFallback(input: Parameters<typeof buildFallbackScript>[0]): AdScript | null {
+  const r = input.realty;
+  const a = input.targetAddress;
+  if (!r) return null;
+  const n = Math.max(input.assetCount, 1);
+  const scene = (i: number, caption: string) => ({ assetIndex: i % n, caption: caption.slice(0, 60), durationSeconds: SCENE_SECONDS });
+
+  if (r.adType === "listing") {
+    const bb = bedsBaths(r);
+    const captions = [
+      a ? `Just listed: ${a.street}` : "Just listed",
+      [bb?.toLowerCase(), r.price].filter(Boolean).join(", ") || input.businessName,
+      r.openHouse ? `Open house ${openHouseLong(r.openHouse)}` : input.callToAction,
+    ];
+    const spoken = [
+      "[warmly]",
+      a ? `Just listed, on ${a.street} in ${a.city}!` : "Just listed!",
+      bb ? `${r.beds ?? ""} bedrooms, ${r.baths ?? ""} baths.`.replace(" ,", ",") : "",
+      r.price ? `${r.price}.` : "",
+      r.openHouse ? `Open house ${openHouseLong(r.openHouse)}.` : "",
+      `${input.callToAction}, ${input.businessName}.`,
+    ].filter(Boolean).join(" ");
+    return {
+      hook: captions[0],
+      scenes: captions.map((c, i) => scene(i, c)),
+      callToAction: input.callToAction,
+      endCardText: input.businessName,
+      voiceoverText: spoken.slice(0, 600),
+      sticker: {
+        badge: r.price ? shortPrice(r.price) : "JUST LISTED",
+        headline: (bb ?? "JUST LISTED").slice(0, 24),
+        tagline: (r.openHouse ? openHouseTag(r.openHouse) : (a?.city ?? "NEAR YOU").toUpperCase()).slice(0, 26),
+        benefits: [],
+      },
+    };
+  }
+
+  const where = a ? `${a.city}, ${a.state}` : "near you";
+  const captions = [input.businessName, `Your real estate agent in ${where}`, input.callToAction];
+  return {
+    hook: `${input.businessName}, real estate in ${where}`.slice(0, 80),
+    scenes: captions.map((c, i) => scene(i, c)),
+    callToAction: input.callToAction,
+    endCardText: input.businessName,
+    voiceoverText: `[warmly] Buying or selling in ${where}? ${input.businessName} can help. ${input.callToAction}.`,
+    sticker: { badge: "LOCAL", headline: "REAL ESTATE AGENT", tagline: where.toUpperCase().slice(0, 26), benefits: [] },
   };
 }

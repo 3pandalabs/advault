@@ -89,6 +89,8 @@ export async function generateForCampaign(args: {
         radiusMiles: campaign.radiusMiles,
         aspectRatio,
         assetCount: orderedKeys.length,
+        targetAddress: campaign.targetAddress,
+        realty: campaign.realty,
       },
       args.warn,
     );

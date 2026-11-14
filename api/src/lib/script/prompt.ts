@@ -1,3 +1,5 @@
+import { bedsBaths, openHouseLong, openHouseTag, shortPrice, type Realty } from "../realty/index.js";
+
 // The system prompt is deliberately stable — no interpolated business details,
 // no timestamps. Everything variable goes in the user turn, so the system
 // prompt caches across every advertiser on the platform (see the org's prompt
@@ -19,6 +21,8 @@ The sticker is the first thing on screen. Its badge may show a price or discount
 
 The voiceover is read by an expressive voice: about 25 words, starting with one audio tag such as [warmly] or [cheerfully], spelling numbers the way they are spoken.
 
+Real estate ads follow the US Fair Housing Act. Describe the property and the agent, never the people: do not say or imply who the home or neighbourhood suits or who is welcome (no families, children, singles, couples, seniors, students, religion, race, national origin, sex or disability), and avoid coded words such as "safe", "exclusive" or "private community". For a listing ad, the hook names the street, and if there is an open house the voiceover and a caption say its day and time exactly as given; the sticker badge is the price, the headline the beds and baths, the tagline the open house. For an agent ad, promote the agent and the area they serve; do not describe any particular home.
+
 Aim for a 15-second spot unless the scene count makes that impossible. Assign each scene to one of the supplied photos by index, and use each photo at most once unless there are fewer photos than scenes.`;
 
 export function buildAdScriptUserPrompt(input: {
@@ -30,7 +34,11 @@ export function buildAdScriptUserPrompt(input: {
   radiusMiles: number;
   aspectRatio: "16:9" | "9:16";
   assetCount: number;
+  targetAddress?: { street: string; city: string; state: string; postalCode: string } | null;
+  realty?: Realty | null;
 }): string {
+  const addr = input.targetAddress;
+  const place = addr ? `${addr.street}, ${addr.city}, ${addr.state}` : null;
   const lines = [
     `Business: ${input.businessName}`,
     `Category: ${input.businessCategory}`,
@@ -38,7 +46,7 @@ export function buildAdScriptUserPrompt(input: {
     // listing), so don't feed the model an empty "ZIP".
     input.targetZipCodes.length > 0
       ? `Service area: within ${input.radiusMiles} miles of ZIP ${input.targetZipCodes.join(", ")}`
-      : `Service area: within ${input.radiusMiles} miles of the listing`,
+      : `Service area: within ${input.radiusMiles} miles of ${place ?? "the listing"}`,
     `Call to action: ${input.callToAction}`,
     `Photos supplied: ${input.assetCount} (use indices 0 to ${input.assetCount - 1})`,
     // Format is a real constraint on the writing, not just on the render: a
@@ -48,6 +56,21 @@ export function buildAdScriptUserPrompt(input: {
       ? "Format: 9:16 vertical Shorts — keep captions to roughly five words per line."
       : "Format: 16:9 YouTube pre-roll.",
   ];
+
+  // Real estate: what kind of ad, and the listing facts the advertiser typed
+  // (theirs to claim, so they may appear in the ad).
+  const r = input.realty;
+  if (r?.adType === "listing") {
+    lines.push("", "Ad type: LISTING ad for one home for sale" + (r.openHouse ? ", with an open house" : "") + ".");
+    if (place) lines.push(`Listing address: ${place}`);
+    if (r.price) lines.push(`Price: ${r.price} (sticker badge: ${shortPrice(r.price)})`);
+    const bb = bedsBaths(r);
+    if (bb) lines.push(`Size: ${[r.beds != null ? `${r.beds} bedrooms` : null, r.baths != null ? `${r.baths} bathrooms` : null].filter(Boolean).join(", ")} (sticker headline: ${bb})`);
+    if (r.openHouse) lines.push(`Open house: ${openHouseLong(r.openHouse)} (sticker tagline: ${openHouseTag(r.openHouse)})`);
+  } else if (r?.adType === "agent") {
+    lines.push("", "Ad type: AGENT ad promoting the agent, not one listing.");
+    if (addr) lines.push(`Office or area served: ${addr.city}, ${addr.state}`);
+  }
 
   if (input.offerDetails?.trim()) {
     // Fenced so a business "description" that contains instruction-shaped text
