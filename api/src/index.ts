@@ -6,6 +6,7 @@ import { env } from "./env.js";
 import { recordRequest, startCpuSampler } from "./metrics/collector.js";
 import { adAccountRoutes } from "./routes/adAccounts.js";
 import { adMetricsRoutes } from "./routes/adMetrics.js";
+import { adminInsightsRoutes } from "./routes/adminInsights.js";
 import { assetRoutes } from "./routes/assets.js";
 import { authRoutes } from "./routes/auth.js";
 import { billingRoutes } from "./routes/billing.js";
@@ -114,6 +115,7 @@ await app.register(newAdRoutes);
 await app.register(adAccountRoutes);
 // Read-only ad performance (from campaign_daily_metrics, never Google directly).
 await app.register(adMetricsRoutes);
+await app.register(adminInsightsRoutes);
 // Admin review queue for customer-uploaded videos.
 await app.register(videoReviewRoutes);
 // Registered last and on its own, because it is the only route in this app

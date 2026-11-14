@@ -330,6 +330,28 @@ export type AdminMetrics = {
 // Admin only (the API enforces it).
 export const getAdminMetrics = (days = 7) => api<AdminMetrics>(`/admin/metrics?days=${days}`);
 
+export type BusinessSegment =
+  | "regular" | "live" | "paused" | "lapsed" | "trying" | "new" | "stalled" | "never_started";
+export type AdminBusiness = {
+  generatedAt: string;
+  totals: { customers: number; signups7d: number; signups30d: number; liveNow: number; adsMade: number; totalViews: number };
+  funnel: { step: string; count: number }[];
+  segments: { key: BusinessSegment; label: string; hint: string; count: number }[];
+  categories: { category: string; customers: number; campaigns: number; ads_made: number; launched: number; views: number }[];
+  revenue: { source: string; currency: string; count: number; last30Display: string; allTimeDisplay: string }[];
+  topAds: {
+    campaignId: string; businessName: string; category: string; email: string; status: string;
+    views: number; clicks: number; viewRate: number | null; costPerView: number | null;
+  }[];
+  customers: {
+    id: string; email: string; businessName: string | null; category: string | null; createdAt: string;
+    segment: BusinessSegment; photos: number; campaigns: number; adsMade: number; paidAds: number;
+    launched: number; liveNow: number; views: number; revenueDisplay: string; lastActivityAt: string | null;
+  }[];
+};
+// Admin only (the API enforces it): customers, funnel, groups, categories.
+export const getAdminBusiness = () => api<AdminBusiness>("/admin/business");
+
 export const getCampaignMetrics = (id: string, days = 7) =>
   api<CampaignMetrics>(`/campaigns/${id}/metrics?days=${days}`);
 
