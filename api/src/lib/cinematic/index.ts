@@ -195,7 +195,11 @@ export async function markPurchasePaid(args: {
  * ad and bill the vendor twice for footage only one of them can deliver.
  */
 export async function claimNextPurchase(): Promise<typeof purchases.$inferSelect | null> {
-  const rows = await db.execute<typeof purchases.$inferSelect>(sql`
+  // Raw SQL returns snake_case columns (add_on_key, user_id...), not the
+  // camelCase drizzle shape, so only the id is taken from it and the row is
+  // re-read through drizzle. Reading it as $inferSelect left every field
+  // undefined ("unknown add-on undefined", first real order 2026-11-14).
+  const rows = await db.execute<{ id: string }>(sql`
     with claimed as (
       select id from purchases
       where status = 'paid'
@@ -211,9 +215,12 @@ export async function claimNextPurchase(): Promise<typeof purchases.$inferSelect
            updated_at = now()
       from claimed
      where p.id = claimed.id
-    returning p.*
+    returning p.id
   `);
-  return (rows as unknown as { rows?: (typeof purchases.$inferSelect)[] }).rows?.[0] ?? null;
+  const id = (rows as unknown as { rows?: { id: string }[] }).rows?.[0]?.id;
+  if (!id) return null;
+  const [row] = await db.select().from(purchases).where(eq(purchases.id, id)).limit(1);
+  return row ?? null;
 }
 
 export async function attachBrief(purchaseId: string, brief: unknown): Promise<void> {
