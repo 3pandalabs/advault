@@ -11,6 +11,7 @@ import {
 import { hashSecret, verifySecret } from "../auth/password.js";
 import { db } from "../db/index.js";
 import { sessions, users } from "../db/schema.js";
+import { deleteAccount, deletionPreview } from "../lib/accountDeletion.js";
 
 // No password-reset flow here, deliberately — unlike RsvpVault, which has one.
 // The shared 3pandalabs/mailer gateway sends through Resend, and only
@@ -213,4 +214,29 @@ export async function authRoutes(app: FastifyInstance) {
     await db.delete(sessions).where(eq(sessions.userId, req.userId!));
     return reply.code(204).send();
   });
+
+  // ---- account deletion (api/ROUTES.md "Account deletion") ----
+
+  app.get("/auth/me/deletion", { preHandler: requireAuth }, async (req) => deletionPreview(req.userId!));
+
+  app.post(
+    "/auth/me/delete",
+    { preHandler: requireAuth, schema: { body: z.object({ password: z.string().min(1).max(200) }) } },
+    async (req, reply) => {
+      const userId = req.userId!;
+      const [user] = await db
+        .select({ passwordHash: users.passwordHash, deletedAt: users.deletedAt })
+        .from(users)
+        .where(eq(users.id, userId))
+        .limit(1);
+      if (!user || user.deletedAt) return reply.code(401).send({ error: "account_deleted" });
+      if (!(await verifySecret((req.body as { password: string }).password, user.passwordHash))) {
+        return reply.code(403).send({ error: "wrong_password" });
+      }
+      const res = await deleteAccount(userId);
+      if (!res.ok) return reply.code(401).send({ error: "account_deleted" });
+      req.log.info({ userId }, "account deleted");
+      return reply.code(204).send();
+    },
+  );
 }

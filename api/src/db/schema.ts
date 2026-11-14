@@ -50,6 +50,10 @@ export const users = pgTable(
     // at 0% margin. A real mode, not a coupon — see lib/pricing.
     marginMode: text("margin_mode").notNull().default("standard"),
 
+    // Set when the user deleted their account (lib/accountDeletion.ts). The row
+    // is kept, anonymised, because the financial records point at it.
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [

@@ -1,0 +1,50 @@
+{
+  "packageId": "com.threepanda.advault",
+  "host": "advault.3pandalabs.com",
+  "name": "AdVault",
+  "launcherName": "AdVault",
+  "display": "standalone",
+  "themeColor": "#09090B",
+  "themeColorDark": "#000000",
+  "navigationColor": "#09090B",
+  "navigationColorDark": "#000000",
+  "navigationDividerColor": "#27272A",
+  "navigationDividerColorDark": "#000000",
+  "backgroundColor": "#09090B",
+  "enableNotifications": false,
+  "startUrl": "/dashboard",
+  "iconUrl": "https://advault.3pandalabs.com/icons/icon-512.png",
+  "maskableIconUrl": "https://advault.3pandalabs.com/icons/maskable-512.png",
+  "splashScreenFadeOutDuration": 300,
+  "signingKey": {
+    "path": "../../keys/advault-upload.jks",
+    "alias": "upload"
+  },
+  "appVersionName": "1.0.0",
+  "appVersionCode": 1,
+  "shortcuts": [
+    {
+      "name": "New ad",
+      "shortName": "New ad",
+      "url": "/dashboard/campaigns/new",
+      "chosenIconUrl": "https://advault.3pandalabs.com/icons/icon-192.png"
+    }
+  ],
+  "generatorApp": "bubblewrap-cli",
+  "webManifestUrl": "https://advault.3pandalabs.com/manifest.webmanifest",
+  "fallbackType": "customtabs",
+  "features": {},
+  "alphaDependencies": {
+    "enabled": false
+  },
+  "enableSiteSettingsShortcut": true,
+  "isChromeOSOnly": false,
+  "isMetaQuest": false,
+  "minSdkVersion": 24,
+  "orientation": "portrait",
+  "fingerprints": [],
+  "additionalTrustedOrigins": [],
+  "retainedBundles": [],
+  "displayOverride": [],
+  "appVersion": "1.0.0"
+}

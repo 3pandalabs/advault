@@ -1,5 +1,6 @@
 import fp from "fastify-plugin";
 import type { FastifyReply, FastifyRequest } from "fastify";
+import { isUserDeleted } from "./deleted.js";
 import { verifyAccessToken, type UserRole } from "./jwt.js";
 
 declare module "fastify" {
@@ -44,6 +45,9 @@ export const authPlugin = fp(async (fastify) => {
 export async function requireAuth(req: FastifyRequest, reply: FastifyReply) {
   if (!req.userId) {
     reply.code(401).send({ error: "not_authenticated" });
+  } else if (isUserDeleted(req.userId)) {
+    // An access token issued before the account was deleted (15-minute TTL).
+    reply.code(401).send({ error: "account_deleted" });
   }
 }
 

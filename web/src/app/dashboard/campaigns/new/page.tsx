@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import {
   ApiError,
   assetDownloadUrl,
@@ -64,6 +64,8 @@ const FIELD_LABELS: Record<string, string> = {
 };
 
 const PRESET_CATEGORIES: readonly string[] = CATEGORIES;
+
+const noopSubscribe = () => () => {};
 
 export default function NewCampaignPage() {
   const router = useRouter();
@@ -179,6 +181,14 @@ export default function NewCampaignPage() {
   const budgetCents = parseDollarsToCents(form.dailyBudget);
   const budgetOutOfRange =
     budgetCents !== null && (budgetCents < MIN_DAILY_BUDGET_CENTS || budgetCents > MAX_DAILY_BUDGET_CENTS);
+
+  // A phone or tablet (touch-first screen): offer "Take photo" beside the picker.
+  // False on the server and during hydration, so the markup matches.
+  const hasCamera = useSyncExternalStore(
+    noopSubscribe,
+    () => window.matchMedia("(pointer: coarse)").matches,
+    () => false,
+  );
 
   async function onUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files ?? []);
@@ -407,7 +417,7 @@ export default function NewCampaignPage() {
             become the scenes in your ad, so pick shots you would show a customer.
           </CardDescription>
 
-          <div className="mt-5">
+          <div className="mt-5 flex flex-wrap gap-2">
             <label className="inline-flex cursor-pointer items-center rounded-lg border border-white/15 bg-white/5 px-4 py-2 text-sm hover:bg-white/10">
               <input
                 type="file"
@@ -419,6 +429,24 @@ export default function NewCampaignPage() {
               />
               {uploading ? "Uploading…" : "Choose photos"}
             </label>
+            {/* Phones only: capture opens the rear camera directly (Chrome asks
+                for camera permission the first time, in the Android app too).
+                On a desktop it would just open the same file picker twice. */}
+            {hasCamera && (
+              <label className="inline-flex cursor-pointer items-center rounded-lg border border-white/15 bg-white/5 px-4 py-2 text-sm hover:bg-white/10">
+                <input
+                  type="file"
+                  accept="image/jpeg"
+                  capture="environment"
+                  className="hidden"
+                  onChange={onUpload}
+                  disabled={uploading}
+                />
+                Take photo
+              </label>
+            )}
+          </div>
+          <div>
             {/* AVIF is deliberately absent from the accept list: the renderer's
                 alpine ffmpeg has no AVIF decoder, so it would upload cleanly
                 and then fail at encode time. */}
