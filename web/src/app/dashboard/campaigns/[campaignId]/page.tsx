@@ -10,6 +10,7 @@ import {
   getMe,
   getNewAdStatus,
   orderNewAd,
+  redoAd,
   type NewAdStatus,
   isAwaitingPlatformSetup,
   launchCampaign,
@@ -131,6 +132,7 @@ export default function CampaignDetailPage({
   const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
   // Keep it running: the campaign's paid-ad order, if this user pays per ad.
   const [newAd, setNewAd] = useState<NewAdStatus | null>(null);
+  const [redoConfirm, setRedoConfirm] = useState(false);
   const generatingRef = useRef(false);
 
   const refresh = useCallback(
@@ -348,6 +350,61 @@ export default function CampaignDetailPage({
           )}
         </Card>
       )}
+
+      {(() => {
+        // "Make it again": only for an AdVault-made ad that is finished, not live.
+        const made = campaign.creatives.filter((c) => c.kind !== "upload");
+        const busyRendering = made.some((c) => c.renderStatus === "queued" || c.renderStatus === "rendering");
+        if (campaign.status === "live" || made.length === 0 || busyRendering || !newAd) return null;
+        const left = newAd.redosLeft;
+        const metered = newAd.required;
+        const canRedo = !metered || (left ?? 0) > 0;
+        return (
+          <Card className="mb-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <CardTitle>Not quite right?</CardTitle>
+                <CardDescription>
+                  {canRedo
+                    ? `We write a new script and make a new version from the same photos. It replaces the current one.${metered ? ` ${left} free ${left === 1 ? "redo" : "redos"} left on this ad.` : ""}`
+                    : `You've used this ad's free redos. A new version is ${newAd.display}, including two more redos.`}
+                </CardDescription>
+              </div>
+              {redoConfirm ? (
+                <div className="flex items-center gap-2">
+                  <Button variant="ghost" size="sm" disabled={busy} onClick={() => setRedoConfirm(false)}>
+                    Cancel
+                  </Button>
+                  <Button
+                    size="sm"
+                    disabled={busy}
+                    onClick={() => {
+                      setBusy(true);
+                      setError(null);
+                      const go = canRedo
+                        ? redoAd(campaign.id).then(() => Promise.all([refresh(), getNewAdStatus(campaignId).then(setNewAd)]))
+                        : orderNewAd(campaign.id).then(({ checkout }) => {
+                            if (checkout.redirectUrl) window.location.href = checkout.redirectUrl;
+                          });
+                      go.catch(() => setError("Could not start a new version. Please try again."))
+                        .finally(() => {
+                          setBusy(false);
+                          setRedoConfirm(false);
+                        });
+                    }}
+                  >
+                    {canRedo ? "Yes, replace it" : `Pay ${newAd.display}`}
+                  </Button>
+                </div>
+              ) : (
+                <Button variant="outline" size="sm" onClick={() => setRedoConfirm(true)}>
+                  {canRedo ? `Make it again${metered ? ` (${left} left)` : ""}` : `New version for ${newAd.display}`}
+                </Button>
+              )}
+            </div>
+          </Card>
+        );
+      })()}
 
       <div className="space-y-3">
         {campaign.creatives.map((creative) => (

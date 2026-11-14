@@ -1,15 +1,15 @@
-import { and, eq } from "drizzle-orm";
+import { and, desc, eq, inArray, ne, notInArray } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { requireAuth } from "../auth/plugin.js";
 import { db } from "../db/index.js";
-import { campaigns, creatives } from "../db/schema.js";
+import { assets, campaigns, creatives } from "../db/schema.js";
 import { loadOwnedCampaign, loadOwnedCreative } from "../lib/ownership.js";
 import { generateForCampaign } from "../lib/creatives/generate.js";
 import { newAdGate, returnRender } from "../lib/newAd/index.js";
 import { adScriptSchema } from "../lib/script/schema.js";
 import { enqueueRender } from "../render/jobs.js";
-import { campaignIdForCreativeKey, presignDownload } from "../plugins/r2.js";
+import { campaignIdForCreativeKey, deleteObject, presignDownload } from "../plugins/r2.js";
 
 const ASPECT_RATIOS = ["16:9", "9:16"] as const;
 
@@ -68,6 +68,77 @@ export async function creativeRoutes(app: FastifyInstance) {
         if (gate.renderFrom) await returnRender(gate.renderFrom);
         return reply.code(result.status).send(result.body);
       }
+      return reply.code(202).send({ creatives: result.creatives });
+    },
+  );
+
+  // "Make it again": a fresh script and render from the same photos, people
+  // marks and formats as the campaign's current ad, replacing it (launch uses
+  // every ready creative, so the old versions must go). Spends one of the paid
+  // ad's redos (newAdGate); 402 new_ad_payment_required when none are left.
+  app.post(
+    "/campaigns/:campaignId/creatives/redo",
+    { schema: { params: z.object({ campaignId: z.string().uuid() }) } },
+    async (req, reply) => {
+      const { campaignId } = req.params as { campaignId: string };
+      const campaign = await loadOwnedCampaign(campaignId, req.userId!, reply);
+      if (!campaign) return;
+      if (campaign.status === "live") return reply.code(409).send({ error: "campaign_is_live" });
+
+      const current = await db
+        .select()
+        .from(creatives)
+        .where(and(eq(creatives.campaignId, campaign.id), ne(creatives.kind, "upload")))
+        .orderBy(desc(creatives.createdAt));
+      if (current.length === 0) return reply.code(409).send({ error: "nothing_to_redo" });
+      if (current.some((c) => c.renderStatus === "queued" || c.renderStatus === "rendering")) {
+        return reply.code(409).send({ error: "already_rendering" });
+      }
+
+      // The latest generation: same photos (keys -> this user's asset ids),
+      // the people/portrait marks from its script, and its formats.
+      const latest = current[0];
+      const keys = latest.sourceAssetKeys;
+      const owned = await db
+        .select({ id: assets.id, r2Key: assets.r2Key })
+        .from(assets)
+        .where(and(eq(assets.userId, req.userId!), inArray(assets.r2Key, keys)));
+      const idFor = new Map(owned.map((a) => [a.r2Key, a.id]));
+      const assetIds = keys.map((k) => idFor.get(k)).filter((id): id is string => Boolean(id));
+      if (assetIds.length === 0) return reply.code(409).send({ error: "photos_deleted" });
+      const script = adScriptSchema.safeParse(latest.script);
+      const marks = script.success ? script.data : null;
+      const byIndex = (i: number) => (keys[i] ? idFor.get(keys[i]) : undefined);
+      const aspectRatios = [
+        ...new Set(current.filter((c) => c.sourceAssetKeys.join() === keys.join()).map((c) => c.aspectRatio)),
+      ] as ("16:9" | "9:16")[];
+
+      const gate = await newAdGate(req.userId!, campaign.id);
+      if (!gate.ok) return reply.code(402).send(gate.body);
+
+      const result = await generateForCampaign({
+        campaign,
+        userId: req.userId!,
+        assetIds,
+        aspectRatios,
+        peopleAssetIds: (marks?.peopleIndexes ?? []).map(byIndex).filter((id): id is string => Boolean(id)),
+        portraitAssetId: marks?.portraitIndex != null ? byIndex(marks.portraitIndex) ?? null : null,
+        warn: (msg, err) => req.log.warn({ err, campaignId }, msg),
+      });
+      if (!result.ok) {
+        if (gate.renderFrom) await returnRender(gate.renderFrom);
+        return reply.code(result.status).send(result.body);
+      }
+
+      // Replace: drop the previous AdVault-made versions and their files.
+      const keep = result.creatives.map((c) => c.id);
+      const old = await db
+        .delete(creatives)
+        .where(and(eq(creatives.campaignId, campaign.id), ne(creatives.kind, "upload"), notInArray(creatives.id, keep)))
+        .returning({ videoKey: creatives.videoKey, thumbnailKey: creatives.thumbnailKey });
+      await Promise.all(
+        old.flatMap((o) => [o.videoKey, o.thumbnailKey]).filter((k): k is string => Boolean(k)).map((k) => deleteObject(k).catch(() => undefined)),
+      );
       return reply.code(202).send({ creatives: result.creatives });
     },
   );

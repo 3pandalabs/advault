@@ -1,9 +1,10 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, ne, notInArray } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { requireAuth } from "../auth/plugin.js";
 import { db } from "../db/index.js";
-import { assets, purchases, users } from "../db/schema.js";
+import { assets, creatives, purchases, users } from "../db/schema.js";
+import { deleteObject } from "../plugins/r2.js";
 import { loadOwnedCampaign } from "../lib/ownership.js";
 import { formatMinor } from "../lib/pricing/index.js";
 import { providerFor } from "../lib/payments/index.js";
@@ -14,6 +15,7 @@ import {
   claimNewAdOrder,
   paysPerAd,
   quoteNewAd,
+  RENDERS_PER_AD,
   releaseNewAdOrder,
   type NewAdBrief,
 } from "../lib/newAd/index.js";
@@ -186,6 +188,16 @@ export async function newAdRoutes(app: FastifyInstance) {
         await markDelivered(order.id);
         // The first of the order's RENDERS_PER_AD renders.
         await db.update(purchases).set({ rendersUsed: 1 }).where(eq(purchases.id, order.id));
+        // A paid new version replaces the previous AdVault-made one (launch
+        // uses every ready creative). Uploaded videos stay.
+        const keep = result.creatives.map((c) => c.id);
+        const old = await db
+          .delete(creatives)
+          .where(and(eq(creatives.campaignId, campaign.id), ne(creatives.kind, "upload"), notInArray(creatives.id, keep)))
+          .returning({ videoKey: creatives.videoKey, thumbnailKey: creatives.thumbnailKey });
+        await Promise.all(
+          old.flatMap((o) => [o.videoKey, o.thumbnailKey]).filter((k): k is string => Boolean(k)).map((k) => deleteObject(k).catch(() => undefined)),
+        );
         return reply.code(202).send({ creatives: result.creatives });
       } catch (err) {
         await releaseNewAdOrder(order.id, err);
@@ -204,8 +216,18 @@ async function newAdStatus(userId: string, campaignId: string) {
     .orderBy(desc(purchases.createdAt))
     .limit(1);
   const quote = required ? await quoteNewAd(userId) : null;
+  // Redos left on the campaign's made ad (null = not metered: admin/at_cost).
+  const [made] = required
+    ? await db
+        .select({ used: purchases.rendersUsed })
+        .from(purchases)
+        .where(and(eq(purchases.campaignId, campaignId), eq(purchases.sku, "new_ad"), eq(purchases.status, "delivered")))
+        .orderBy(desc(purchases.createdAt))
+        .limit(1)
+    : [];
   return {
     required,
+    redosLeft: required ? (made ? Math.max(0, RENDERS_PER_AD - made.used) : 0) : null,
     display: quote ? formatMinor(quote.amountMinor, quote.currency) : null,
     freeLaunchOffer: quote?.freeLaunchOffer ?? false,
     order: order ?? null,
