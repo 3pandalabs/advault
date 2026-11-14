@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addOnFor, addOnPriceMinor, freeFirstAd, freeFirstAdPlacesLeft, buysMedia, hasMonthlyOffers, planByKey, PLANS, PRODUCT_LINES } from "./index.js";
+import { addOnFor, addOnPriceMinor, maybeAddOnFor, freeFirstAd, freeFirstAdPlacesLeft, buysMedia, hasMonthlyOffers, planByKey, PLANS, PRODUCT_LINES } from "./index.js";
 
 describe("plans", () => {
   it("every plan's line is a known product line", () => {
@@ -27,6 +27,7 @@ describe("plans", () => {
 describe("new ad", () => {
   it("costs $10 for the first ad and every one after", () => {
     const a = addOnFor("USD", "new_ad");
+
     expect(a.key).toBe("us-new_ad");
     expect(addOnPriceMinor(a, { priorPaidCount: 0 })).toBe(1_000);
     expect(addOnPriceMinor(a, { priorPaidCount: 5 })).toBe(1_000);
@@ -38,5 +39,21 @@ describe("free first ad launch offer", () => {
   it("gives no free ads", () => {
     expect(freeFirstAd({ priorAdsClaimed: 0, freeAdsClaimedByAnyone: 0 })).toBe(false);
     expect(freeFirstAdPlacesLeft(0)).toBe(0);
+  });
+});
+
+describe("cinematic pricing (2026-11-14)", () => {
+  it("is $29 the first time and $39 after", () => {
+    const a = addOnFor("USD", "cinematic");
+    expect(addOnPriceMinor(a, { priorPaidCount: 0 })).toBe(2_900);
+    expect(addOnPriceMinor(a, { priorPaidCount: 1 })).toBe(3_900);
+  });
+
+  it("sells three for $99 in the US only", () => {
+    const pack = maybeAddOnFor("USD", "cinematic_pack");
+    expect(pack?.credits).toBe(3);
+    expect(addOnPriceMinor(pack!, { priorPaidCount: 0 })).toBe(9_900);
+    expect(addOnPriceMinor(pack!, { priorPaidCount: 5 })).toBe(9_900);
+    expect(maybeAddOnFor("INR", "cinematic_pack")).toBeNull();
   });
 });

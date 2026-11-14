@@ -257,7 +257,10 @@ export function estimateReach(adBudgetMinor: number, currency: Currency): ReachE
 // `new_ad` (2026-11-11; $10 from 2026-11-12) is the $10 ad for Keep it running subscribers: that
 // plan bundles no creatives, so every ad it runs, the first included, is one of
 // these. Same price first and repeat; it is not an intro offer.
-export const ADD_ON_SKUS = ["cinematic", "new_ad"] as const;
+// `cinematic_pack` (2026-11-14): three cinematic ads paid up front. It is never
+// produced itself; it grants credits that later cinematic orders spend
+// (lib/cinematic: packCreditsLeft). US only.
+export const ADD_ON_SKUS = ["cinematic", "new_ad", "cinematic_pack"] as const;
 export type AddOnSku = (typeof ADD_ON_SKUS)[number];
 
 export type AddOn = {
@@ -282,6 +285,8 @@ export type AddOn = {
    * margin, and it must not be settable from a request body.
    */
   generatedSeconds: number;
+  /** Cinematic ads a pack grants (cinematic_pack only). */
+  credits?: number;
   label: string;
   blurb: string;
 };
@@ -301,11 +306,22 @@ export const ADD_ONS: Record<string, AddOn> = {
     key: "us-cinematic",
     sku: "cinematic",
     currency: "USD",
-    priceMinor: 9_900, // $99
+    priceMinor: 3_900, // $39 (was $99 until 2026-11-14)
     firstPurchasePriceMinor: 2_900, // $29
     generatedSeconds: 15,
     label: "US — Cinematic Ad",
     blurb: "A filmed-looking ad built from a description, closing on your own photo.",
+  },
+  "us-cinematic_pack": {
+    key: "us-cinematic_pack",
+    sku: "cinematic_pack",
+    currency: "USD",
+    priceMinor: 9_900, // $99 for three ($33 each)
+    firstPurchasePriceMinor: 9_900, // same price first time
+    generatedSeconds: 0, // the pack films nothing; each credit's order does
+    credits: 3,
+    label: "US — Cinematic 3-pack",
+    blurb: "Three cinematic ads, paid up front.",
   },
   "us-new_ad": {
     key: "us-new_ad",
@@ -341,6 +357,11 @@ export function freeFirstAdPlacesLeft(freeAdsClaimedByAnyone: number): number {
 
 export function addOnFor(currency: Currency, sku: AddOnSku): AddOn {
   return ADD_ONS[`${currency === "INR" ? "in" : "us"}-${sku}`];
+}
+
+/** Like addOnFor, but null where the SKU is not sold in that currency (the pack in India). */
+export function maybeAddOnFor(currency: Currency, sku: AddOnSku): AddOn | null {
+  return ADD_ONS[`${currency === "INR" ? "in" : "us"}-${sku}`] ?? null;
 }
 
 export function addOnByKey(key: string): AddOn | null {

@@ -1,4 +1,4 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "../../db/index.js";
 import { purchases, users } from "../../db/schema.js";
 import {
@@ -42,17 +42,40 @@ export class PurchaseNotProducible extends Error {
  * quoted full freight for an ad they never got.
  */
 export async function priorPaidCount(userId: string, sku: AddOnSku): Promise<number> {
+  // A pack bought counts as having bought cinematic: the $29 intro price is
+  // for trying it once, and a pack buyer already has.
+  const skus = sku === "cinematic" ? ["cinematic", "cinematic_pack"] : [sku];
   const [row] = await db
     .select({ n: sql<number>`count(*)::int` })
     .from(purchases)
     .where(
       and(
         eq(purchases.userId, userId),
-        eq(purchases.sku, sku),
+        inArray(purchases.sku, skus),
         sql`${purchases.status} in ('paid','producing','delivered')`,
       ),
     );
   return row?.n ?? 0;
+}
+
+/**
+ * Unspent pack credits: credits from paid packs minus cinematic orders paid
+ * with one. A pack order that FAILED gives its credit back automatically
+ * (only paid/producing/delivered orders count as spent), which is the pack
+ * equivalent of the refund a card-paid failure gets.
+ */
+export async function packCreditsLeft(userId: string, executor: Pick<typeof db, "execute"> = db): Promise<number> {
+  const res = await executor.execute(sql`
+    select
+      coalesce((select sum(3) from purchases
+        where user_id = ${userId} and sku = 'cinematic_pack'
+          and status in ('paid','producing','delivered')), 0)::int as granted,
+      (select count(*) from purchases
+        where user_id = ${userId} and sku = 'cinematic' and provider = 'pack'
+          and status in ('paid','producing','delivered'))::int as spent
+  `);
+  const row = res.rows[0] as { granted: number; spent: number } | undefined;
+  return Math.max(0, Number(row?.granted ?? 0) - Number(row?.spent ?? 0));
 }
 
 export type Quote = {
@@ -149,7 +172,12 @@ export async function markPurchasePaid(args: {
         currency,
         type: "topup",
         amountMinor: purchase.amountMinor,
-        description: purchase.sku === "new_ad" ? "New ad payment received" : "Cinematic ad payment received",
+        description:
+          purchase.sku === "new_ad"
+            ? "New ad payment received"
+            : purchase.sku === "cinematic_pack"
+              ? "Cinematic 3-pack payment received"
+              : "Cinematic ad payment received",
         externalRef: refs.credit,
       });
     } catch (err) {

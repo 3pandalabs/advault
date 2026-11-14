@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
+  buyCinematicPack,
   cinematicQuote,
   listCampaigns,
   listCinematicOrders,
@@ -93,7 +94,25 @@ export default function CinematicPage() {
     }
   }
 
+  async function onBuyPack() {
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await buyCinematicPack();
+      if (result.checkout.redirectUrl) {
+        window.location.assign(result.checkout.redirectUrl);
+        return;
+      }
+      await refresh();
+    } catch {
+      setError("Could not start the purchase. Nothing was charged; please try again.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const unavailable = quote !== null && !quote.available;
+  const credits = quote?.creditsLeft ?? 0;
 
   return (
     <div className="space-y-6">
@@ -126,19 +145,34 @@ export default function CinematicPage() {
         <Card>
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
-              <CardTitle>{quote.display.amount}</CardTitle>
+              <CardTitle>
+                {credits > 0
+                  ? `${credits} cinematic ad${credits === 1 ? "" : "s"} left in your pack`
+                  : quote.display.amount}
+              </CardTitle>
               <CardDescription>
                 {quote.totalSeconds} seconds — {quote.generatedSeconds} filmed by us, then your own
                 photo.
               </CardDescription>
             </div>
-            {quote.isFirstPurchase ? <Badge>First one — {quote.display.amount}</Badge> : null}
+            {quote.isFirstPurchase && credits === 0 ? <Badge>First one — {quote.display.amount}</Badge> : null}
           </div>
-          {quote.isFirstPurchase ? (
+          {quote.isFirstPurchase && credits === 0 ? (
             <p className="mt-3 text-sm text-zinc-400">
               Your first one is {quote.display.amount} instead of {quote.display.listPrice}, so you
               can see whether you like it before paying full price.
             </p>
+          ) : null}
+          {quote.pack ? (
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-white/10 bg-white/[0.02] p-3">
+              <p className="text-sm text-zinc-300">
+                Or get {quote.pack.credits} for {quote.pack.display.price} ({quote.pack.display.each} each).
+                Use them on any campaign, any time.
+              </p>
+              <Button variant="outline" onClick={onBuyPack} disabled={busy}>
+                Get {quote.pack.credits} for {quote.pack.display.price}
+              </Button>
+            </div>
           ) : null}
         </Card>
       ) : null}
@@ -198,7 +232,11 @@ export default function CinematicPage() {
             onClick={onOrder}
             disabled={busy || !campaignId || description.trim().length < 20}
           >
-            {busy ? "Planning your shots… (up to a minute)" : `Make it — ${quote.display.amount}`}
+            {busy
+              ? "Planning your shots… (up to a minute)"
+              : credits > 0
+                ? "Make it — uses 1 pack credit"
+                : `Make it — ${quote.display.amount}`}
           </Button>
           {campaigns.length === 0 ? (
             <p className="mt-2 text-sm text-zinc-400">
@@ -220,7 +258,7 @@ export default function CinematicPage() {
                 <div>
                   <p className="text-sm">{STATUS_COPY[order.status]}</p>
                   <p className="text-xs text-zinc-500">
-                    {order.display.amount} · {formatDate(order.createdAt)}
+                    {order.amountMinor === 0 ? "Included" : order.display.amount} · {formatDate(order.createdAt)}
                   </p>
                   {/*
                     Shown, not hidden. Someone who paid and has no ad is owed an

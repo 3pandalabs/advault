@@ -120,7 +120,8 @@ export default function TermsPage() {
       </p>
       <p>
         We may also offer one-off extras. The <strong>cinematic advertisement</strong>{" "}
-        currently costs ₹2,999 or $99, reduced to ₹999 or $29 the first time you buy one.
+        currently costs $29 the first time and $39 after that (₹999, then ₹2,999, in India),
+        or $99 for a pack of three to use whenever you like.
         Prices shown in the product at the time you buy are the ones that apply. We may
         change prices for future billing periods, and will tell you before a change
         affects you.
@@ -179,6 +180,11 @@ export default function TermsPage() {
         <li>
           <strong>Once it is delivered, it is not refundable</strong>, because it was made
           for you and cannot be resold.
+        </li>
+        <li>
+          <strong>For a pack of three</strong>, an ad that fails to be made gives its
+          credit back automatically, and credits you have not used are refunded if you
+          ask.
         </li>
       </ul>
       <p>

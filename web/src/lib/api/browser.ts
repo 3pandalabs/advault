@@ -901,10 +901,21 @@ export type CinematicQuote = {
   totalSeconds: number;
   available: boolean;
   display: { amount: string; listPrice: string };
+  /** Unspent 3-pack credits; while > 0 an order costs nothing more. */
+  creditsLeft: number;
+  /** The 3-pack offer, or null where it isn't sold. */
+  pack: { addOnKey: string; credits: number; priceMinor: number; display: { price: string; each: string } } | null;
 };
 
 export function cinematicQuote() {
   return api<CinematicQuote>("/cinematic/quote");
+}
+
+export function buyCinematicPack() {
+  return api<{
+    purchase: { id: string };
+    checkout: { provider: string; redirectUrl: string | null; clientPayload: Record<string, unknown> | null };
+  }>("/cinematic/packs", { method: "POST" });
 }
 
 export type PurchaseStatus =
