@@ -23,7 +23,8 @@ Rules for visualPrompt, all of them absolute:
 2. NEVER include digits, currency symbols, percentages, or the words "free", "off", "sale" or "discount".
 3. NEVER depict a specific named product the business may not actually sell, and never imply a claim about quality, price or origin. If the advertiser says they are a bakery, you may film warm light on unspecified pastries; you may not film "the best croissant in town".
 4. NEVER depict identifiable real people's faces, celebrities, brands, or copyrighted characters.
-5. DO specify the cinematography concretely: lens and depth of field, light source and direction, camera movement, time of day, colour temperature, texture. This is what the model actually needs.
+5. DO specify the cinematography concretely: lens and depth of field, light source and direction, camera movement, time of day, colour temperature, texture. This is what the model actually needs. Describe lenses in words ("wide lens", "telephoto", "macro"), not focal lengths.
+7. Keep each visualPrompt under 350 characters: two or three dense sentences.
 6. Each shot must stand alone. They are generated independently, so a shot that depends on continuity with another one will not match.
 
 Rules for captions: at most a few words each, and drawn from what the advertiser actually told you. A caption may state the offer plainly. Use null when a shot is better left clean.

@@ -130,7 +130,9 @@ export async function generateCinematicBrief(
       sticker?: CinematicBrief["sticker"];
       voice?: CinematicBrief["voice"];
     };
-    const parsed = cinematicBriefSchema.safeParse(raw);
+    // Over-long copy is trimmed, not failed: the schema bounds protect the
+    // vendor and the layout, and a few extra words are never worth a refused order.
+    const parsed = cinematicBriefSchema.safeParse(clampBrief(raw));
     if (!parsed.success) {
       log?.("cinematic brief failed schema validation", parsed.error);
       throw new CinematicBriefError("the model returned an unusable brief", "malformed");
@@ -178,6 +180,35 @@ export async function generateCinematicBrief(
     `the model kept putting claims or text in the footage (last: "${lastRejection?.match}")`,
     "unsafe_after_retries",
   );
+}
+
+/** Cut at the last word boundary that fits. */
+function clip(value: unknown, max: number): unknown {
+  if (typeof value !== "string" || value.length <= max) return value;
+  const cut = value.slice(0, max);
+  const space = cut.lastIndexOf(" ");
+  return (space > max * 0.6 ? cut.slice(0, space) : cut).replace(/[s,;:–-]+$/, "");
+}
+
+function clampBrief(raw: Record<string, unknown>): Record<string, unknown> {
+  const shots = Array.isArray(raw.shots)
+    ? raw.shots.map((s) =>
+        s && typeof s === "object"
+          ? {
+              ...(s as Record<string, unknown>),
+              visualPrompt: clip((s as Record<string, unknown>).visualPrompt, 400),
+              caption: clip((s as Record<string, unknown>).caption, 60),
+            }
+          : s,
+      )
+    : raw.shots;
+  return {
+    ...raw,
+    shots,
+    voiceoverText: clip(raw.voiceoverText, 600),
+    closingText: clip(raw.closingText, 60),
+    callToAction: clip(raw.callToAction, 40),
+  };
 }
 
 /** Exposed for the dashboard preview, which shows the prompts before paying. */

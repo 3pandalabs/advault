@@ -21,7 +21,7 @@ import {
 } from "../lib/cinematic/index.js";
 import { isCinematicConfigured } from "../lib/ai/cinematic/index.js";
 import { REAL_PHOTO_CLOSE_SECONDS } from "../lib/cinematic/policy.js";
-import { generateCinematicBrief } from "../lib/cinematic/brief.js";
+import { CinematicBriefError, generateCinematicBrief } from "../lib/cinematic/brief.js";
 
 const WEB_ORIGIN = process.env.WEB_ORIGIN ?? "https://advault.3pandalabs.com";
 
@@ -163,7 +163,12 @@ export async function cinematicRoutes(app: FastifyInstance) {
           );
         } catch (err) {
           req.log.error({ err }, "cinematic brief failed at order time");
-          return reply.code(502).send({ error: "brief_failed" });
+          // The reason goes back to the page: without it a failed order is
+          // undiagnosable from outside the server. No secrets in these messages.
+          return reply.code(502).send({
+            error: "brief_failed",
+            detail: err instanceof CinematicBriefError ? `${err.code}: ${err.message}` : String(err).slice(0, 300),
+          });
         }
 
         let purchase;
