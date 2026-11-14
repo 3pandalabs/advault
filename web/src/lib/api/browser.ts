@@ -407,8 +407,13 @@ export type NewAdStatus = {
   required: boolean;
   display: string | null;
   freeLaunchOffer: boolean;
+  /** Redos left on the made ad; null when not metered (admin). */
+  redosLeft: number | null;
   order: { id: string; status: string; amountMinor: number; currency: string } | null;
 };
+/** "Make it again": a new version from the same photos, replacing the current one. */
+export const redoAd = (campaignId: string) =>
+  api<{ creatives: Creative[] }>(`/campaigns/${campaignId}/creatives/redo`, { method: "POST" });
 export const getNewAdQuote = () =>
   api<{ required: boolean; display?: string; freeLaunchOffer?: boolean }>("/new-ad/quote");
 export const getNewAdStatus = (campaignId: string) => api<NewAdStatus>(`/campaigns/${campaignId}/new-ad`);
