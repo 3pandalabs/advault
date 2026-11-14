@@ -79,8 +79,15 @@ export default function CinematicPage() {
         return;
       }
       await refresh();
-    } catch {
-      setError("Could not start the order. Nothing was charged; please try again.");
+    } catch (err) {
+      const e = err as { code?: string; detail?: unknown };
+      setError(
+        e.code === "brief_failed"
+          ? `We couldn't plan the shots for this ad. Nothing was charged; please try again.${
+              typeof e.detail === "string" ? ` (${e.detail})` : ""
+            }`
+          : "Could not start the order. Nothing was charged; please try again.",
+      );
     } finally {
       setBusy(false);
     }

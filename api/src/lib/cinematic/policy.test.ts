@@ -86,9 +86,17 @@ describe("rejectVisualPrompt", () => {
       "Warm morning light through a bakery window, steam rising",
       "Close on flour-dusted hands folding dough, shallow depth of field",
       "Slow dolly across a wooden counter, golden hour",
+      // Camera specs carry digits but are not claims.
+      "Macro on a breaker panel, 85mm lens at f/1.8, 24fps, 4K",
+      // An electrician's lights switching off is not "20% off".
+      "Pendant lights switching off one by one at dusk",
     ]) {
       expect(rejectVisualPrompt(prompt)).toBeNull();
     }
+  });
+
+  it("still rejects a number that is not a camera spec", () => {
+    expect(rejectVisualPrompt("Warm light, 85mm lens, a door marked 24")).not.toBeNull();
   });
 
   it("lets facts through in the voiceover and captions, which ffmpeg renders exactly", () => {

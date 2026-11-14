@@ -109,7 +109,16 @@ export function billedSeconds(shots: CinematicShot[]): number {
 // ---------------------------------------------------------------------------
 
 /** Digits, currency and percentages: the three shapes a factual claim takes. */
-const CLAIM_PATTERN = /[0-9]|%|₹|\$|£|€|\bfree\b|\boff\b|\bsale\b|\bdiscount\b/i;
+// No bare "off": with digits and "%" already caught, "20% off" is still
+// rejected, while an electrician's "lights switching off" is not a claim.
+const CLAIM_PATTERN = /[0-9]|%|₹|\$|£|€|\bfree\b|\bsale\b|\bdiscount\b/i;
+
+/**
+ * Camera vocabulary that contains digits but is never a claim and never
+ * rendered as text: "35mm lens", "f/1.8", "24fps", "4K". The system prompt asks
+ * for lens and light detail, so these are expected; ignored by the claim check.
+ */
+const CAMERA_SPEC_PATTERN = /\b\d+(?:\.\d+)?\s?(?:mm|fps|k)\b|\bf\/\d+(?:\.\d+)?/gi;
 
 /** Instructions to render words inside the frame, which we never allow. */
 // Includes the SURFACES that imply rendered text, not just the word "text".
@@ -130,7 +139,7 @@ export type VisualRejection = { reason: "claim" | "on_screen_text"; match: strin
 export function rejectVisualPrompt(prompt: string): VisualRejection | null {
   const onScreen = prompt.match(ON_SCREEN_TEXT_PATTERN);
   if (onScreen) return { reason: "on_screen_text", match: onScreen[0] };
-  const claim = prompt.match(CLAIM_PATTERN);
+  const claim = prompt.replace(CAMERA_SPEC_PATTERN, " ").match(CLAIM_PATTERN);
   if (claim) return { reason: "claim", match: claim[0] };
   return null;
 }
