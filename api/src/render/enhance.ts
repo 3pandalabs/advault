@@ -4,6 +4,7 @@ import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { getObjectBytes, headObject, presignDownload, putObject } from "../plugins/r2.js";
+import { noteFalFailure } from "../lib/vendors/fal.js";
 
 // "Pro photo" pass, the step that made the demo ads look polished
 // (advault-creative-lab/stepH-us-demos.mjs): every customer photo goes through
@@ -139,6 +140,7 @@ export async function enhancePhotos(args: {
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         result.errors.push(message.slice(0, 200));
+        noteFalFailure("photo enhance", message);
         args.log("photo enhance failed; using the original", { index: i, error: message });
       }
     }),

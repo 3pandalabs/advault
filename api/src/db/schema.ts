@@ -1209,3 +1209,21 @@ export const campaignDailyMetrics = pgTable(
     index("idx_campaign_daily_metrics_date").on(t.date),
   ],
 );
+
+// Prepaid vendor balances over time (migration 0018). fal's credit balance is
+// read hourly by the renderer (render/falBalanceWatch.ts); the readings size
+// the low-balance alert from the real spend rate (lib/vendors/balancePolicy.ts).
+export const vendorBalanceSnapshots = pgTable(
+  "vendor_balance_snapshots",
+  {
+    id: bigint("id", { mode: "number" }).primaryKey().generatedByDefaultAsIdentity(),
+    vendor: text("vendor").notNull(),
+    // Millionths of the currency unit, so cents-and-below survive exactly.
+    balanceMicros: bigint("balance_micros", { mode: "number" }).notNull(),
+    currencyCode: text("currency_code").notNull().default("USD"),
+    alertLevel: text("alert_level").notNull().default("ok"),
+    alerted: boolean("alerted").notNull().default(false),
+    takenAt: timestamp("taken_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("idx_vendor_balance_snapshots_vendor_taken").on(t.vendor, t.takenAt)],
+);

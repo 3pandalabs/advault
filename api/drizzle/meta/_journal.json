@@ -127,6 +127,13 @@
       "when": 1795300000000,
       "tag": "0017_creative_render_info",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1795400000000,
+      "tag": "0018_vendor_balance_snapshots",
+      "breakpoints": true
     }
   ]
 }
