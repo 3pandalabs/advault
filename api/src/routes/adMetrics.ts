@@ -1,8 +1,8 @@
 import type { FastifyInstance } from "fastify";
-import { and, gte, lt, ne, sql } from "drizzle-orm";
+import { and, desc, eq, gte, lt, ne, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../db/index.js";
-import { creatives, purchases } from "../db/schema.js";
+import { campaigns, creatives, purchases } from "../db/schema.js";
 import { requireAdminOrAnalyticsToken } from "../auth/adminAccess.js";
 import { requireAuth } from "../auth/plugin.js";
 import { allCampaignMetrics, campaignMetrics } from "../lib/adMetrics/index.js";
@@ -50,6 +50,41 @@ export async function adMetricsRoutes(app: FastifyInstance) {
       const days = clampRangeDays((req.query as { days?: number }).days);
       const since = isoDaysAgo(days - 1);
       return { days, since, note: NOTE, ...(await allCampaignMetrics(since)) };
+    },
+  );
+
+  // The last renders and what each used (creatives.render_info): engine,
+  // motion clips, voice. Ops diagnostics without container logs.
+  app.get(
+    "/admin/recent-renders",
+    {
+      preHandler: requireAdminOrAnalyticsToken,
+      schema: { querystring: z.object({ limit: z.coerce.number().int().min(1).max(50).default(10) }) },
+    },
+    async (req) => {
+      const { limit } = req.query as { limit: number };
+      const rows = await db
+        .select({
+          creativeId: creatives.id,
+          campaignId: creatives.campaignId,
+          businessName: campaigns.businessName,
+          businessCategory: campaigns.businessCategory,
+          aspectRatio: creatives.aspectRatio,
+          kind: creatives.kind,
+          renderStatus: creatives.renderStatus,
+          renderError: creatives.renderError,
+          renderedAt: creatives.renderedAt,
+          createdAt: creatives.createdAt,
+          renderInfo: creatives.renderInfo,
+          sticker: sql<unknown>`${creatives.script} -> 'sticker'`,
+          peopleIndexes: sql<unknown>`${creatives.script} -> 'peopleIndexes'`,
+          portraitIndex: sql<unknown>`${creatives.script} -> 'portraitIndex'`,
+        })
+        .from(creatives)
+        .innerJoin(campaigns, eq(creatives.campaignId, campaigns.id))
+        .orderBy(desc(creatives.createdAt))
+        .limit(limit);
+      return { renders: rows };
     },
   );
 

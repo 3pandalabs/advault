@@ -584,6 +584,9 @@ export const creatives = pgTable(
     // queued -> rendering -> ready | failed
     renderStatus: text("render_status").notNull().default("queued"),
     renderError: text("render_error"),
+    // What the last render used (migration 0017): { engine, motionClips,
+    // motionReused, motionProvider, voice, at }. Written by render/worker.ts.
+    renderInfo: jsonb("render_info").$type<Record<string, unknown>>(),
 
     videoKey: text("video_key"),
     thumbnailKey: text("thumbnail_key"),
