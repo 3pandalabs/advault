@@ -267,6 +267,27 @@ Google reviews the ad again after launch: `adMetricsSync` also reads
 `ad_group_ad.policy_summary` (read-only) into `campaigns.google_ad_*`, shown on
 the campaign page as "Google: Approved / Under review / Disapproved".
 
+## Two render engines: the template ad, and the ffmpeg layout behind it
+
+Since 2026-11-13 the renderer can make the **template ad**, the look of the
+home-page demos (offer sticker, word-by-word captions, end card), with
+Remotion's headless Chrome: `api/remotion/` (own package, README there) driven
+by `src/render/template.ts`. It is on when `RENDER_ENGINE=template` on
+`advault-renderer`. **Any template failure falls back to the old ffmpeg
+layout** (`render/ffmpeg.ts`), so the template can never cost a customer their
+ad; keep that fallback. The renderer image is Debian for Chrome (glibc), not
+Alpine.
+
+- The script's optional `sticker` (`badge`, `headline`, `tagline`,
+  `benefits`) feeds the sticker. Same rule as all copy: a price or discount
+  only if the advertiser wrote one (`script/prompt.ts`).
+- Voice: `VOICE_PROVIDER=fal` + `FAL_KEY` is ElevenLabs v3 through fal (the
+  demo voice, `FAL_VOICE`, default Sarah). A fal failure falls back to edge-tts
+  (`synthesizeVoice`), never to silence. Scripts start with an audio tag
+  ("[warmly] …"), stripped for edge-tts.
+- The end card shows the landing page's domain, never a phone number we
+  weren't given for the purpose.
+
 ## Google Ads API access: developer tokens are gone, and the version pin is load-bearing
 
 **Developer tokens were sunset on 9 Sep 2026.** API access level is now a
@@ -379,11 +400,17 @@ and `POST /offers/current` refuses it (`plan_has_no_offers`): an offer sets an
 expiry that pauses the campaign, which is the opposite of what the plan sells.
 Use `hasMonthlyOffers(line)` rather than comparing line names.
 
-**Evergreen ads are bought one at a time** (`new_ad` purchase, $10 first and
-repeat, `lib/newAd` + `routes/newAds.ts`). Generation for an evergreen
-subscriber's campaign answers 402 until that campaign has a paid order; the
-order saves the wizard's photos and formats, and the campaign page spends it
-once the webhook marks it paid. **A customer-uploaded video is free** (decided
+**Every ad is bought one at a time** (`new_ad` purchase, $10 first and
+repeat, `lib/newAd` + `routes/newAds.ts`). Since 2026-11-13 this applies to
+**every advertiser** (not admins or `at_cost`), plan or no plan: before that,
+anyone without a plan got ads made free while we paid the vendors. No free
+first ad (`FREE_FIRST_AD_LIMIT = 0`). Generation answers 402 until the campaign
+has a paid order; the order saves the wizard's photos and formats, and the
+campaign page spends it once the webhook marks it paid. A paid ad includes
+`RENDERS_PER_AD` = 3 renders (first + 2 redos, `purchases.renders_used`):
+generate-again and script edits spend one; retrying a FAILED render is free and
+retry refuses anything that didn't fail. Every render costs vendor money, so
+never add a re-render path that skips `newAdGate`. **A customer-uploaded video is free** (decided
 2026-11-13): only generation is gated (`newAdGate` in `routes/creatives.ts`);
 uploads and launch never ask for a paid order. Keep it that way. It shares the `purchases` table and webhook with
 cinematic, so `claimNextPurchase` must keep filtering `sku = 'cinematic'` or the

@@ -103,10 +103,10 @@ export default function TermsPage() {
             <td>$19/month</td>
             <td>
               One ad kept running in a campaign we run for you, with no monthly offer.
-              Each ad we make for this plan is a one-off $10 charge, including the first.
-              A video you upload yourself has no charge; it runs after we review it.
-              Launch offer: the first ad is free for a limited number of new customers,
-              one per customer, while the offer lasts.
+              Each ad we make is a one-off $10 charge, paid before we make it, including
+              the first. It includes the first version and up to two redos; a version that
+              fails to render is redone at no charge. A video you upload yourself has no
+              charge; it runs after we review it.
               We may show it as one monthly total with your ad budget (for example $49 =
               $30 ad budget + $19 fee); the split is always shown next to it.
             </td>

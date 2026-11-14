@@ -327,7 +327,9 @@ export const ADD_ONS: Record<string, AddOn> = {
 // the customer's favour and is not worth a lock.
 // ---------------------------------------------------------------------------
 
-export const FREE_FIRST_AD_LIMIT = 30;
+// Dropped 2026-11-13: every ad is paid. Kept as a number so the offer can come
+// back without code; 0 means no free ads.
+export const FREE_FIRST_AD_LIMIT = 0;
 
 export function freeFirstAd(args: { priorAdsClaimed: number; freeAdsClaimedByAnyone: number }): boolean {
   return args.priorAdsClaimed === 0 && args.freeAdsClaimedByAnyone < FREE_FIRST_AD_LIMIT;

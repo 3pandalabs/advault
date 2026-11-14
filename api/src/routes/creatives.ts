@@ -6,7 +6,7 @@ import { db } from "../db/index.js";
 import { campaigns, creatives } from "../db/schema.js";
 import { loadOwnedCampaign, loadOwnedCreative } from "../lib/ownership.js";
 import { generateForCampaign } from "../lib/creatives/generate.js";
-import { newAdGate } from "../lib/newAd/index.js";
+import { newAdGate, returnRender } from "../lib/newAd/index.js";
 import { adScriptSchema } from "../lib/script/schema.js";
 import { enqueueRender } from "../render/jobs.js";
 import { campaignIdForCreativeKey, presignDownload } from "../plugins/r2.js";
@@ -43,10 +43,10 @@ export async function creativeRoutes(app: FastifyInstance) {
         return reply.code(409).send({ error: "campaign_is_live" });
       }
 
-      // Keep it running: each ad is a paid one-off. A campaign that already
-      // has its paid ad may regenerate (the daily ceiling still applies).
+      // Every ad is a paid one-off (lib/newAd). Generating again spends one of
+      // the paid ad's redos; with none left this is a 402 for another $10 ad.
       const gate = await newAdGate(req.userId!, campaign.id);
-      if (gate) return reply.code(402).send(gate);
+      if (!gate.ok) return reply.code(402).send(gate.body);
 
       const result = await generateForCampaign({
         campaign,
@@ -55,7 +55,10 @@ export async function creativeRoutes(app: FastifyInstance) {
         aspectRatios: body.aspectRatios,
         warn: (msg, err) => req.log.warn({ err, campaignId }, msg),
       });
-      if (!result.ok) return reply.code(result.status).send(result.body);
+      if (!result.ok) {
+        if (gate.renderFrom) await returnRender(gate.renderFrom);
+        return reply.code(result.status).send(result.body);
+      }
       return reply.code(202).send({ creatives: result.creatives });
     },
   );
@@ -117,6 +120,10 @@ export async function creativeRoutes(app: FastifyInstance) {
         return reply.code(400).send({ error: "asset_index_out_of_range" });
       }
 
+      // A re-render costs vendor money, so it spends one of the paid ad's redos.
+      const gate = await newAdGate(req.userId!, owned.creative.campaignId);
+      if (!gate.ok) return reply.code(402).send(gate.body);
+
       const [updated] = await db
         .update(creatives)
         .set({
@@ -162,6 +169,12 @@ export async function creativeRoutes(app: FastifyInstance) {
       }
       if (owned.creative.renderStatus === "rendering") {
         return reply.code(409).send({ error: "already_rendering" });
+      }
+      // Free, so only for a render that actually failed: retrying a finished
+      // one would be an unlimited free re-render (vendor money per render).
+      // Changing a finished ad goes through the script edit, which is metered.
+      if (owned.creative.renderStatus !== "failed") {
+        return reply.code(409).send({ error: "not_failed" });
       }
 
       // Same reasoning as the edit route: a live ad points at a specific

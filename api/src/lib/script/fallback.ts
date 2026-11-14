@@ -106,5 +106,12 @@ export function buildFallbackScript(input: {
     callToAction: input.callToAction,
     endCardText: input.businessName,
     voiceoverText: voiceover,
+    // No model, so nothing that could be a claim: the service, "near you".
+    sticker: {
+      badge: "LOCAL",
+      headline: input.businessCategory.toUpperCase().slice(0, 24).trim() || "NEAR YOU",
+      tagline: input.callToAction.toUpperCase().slice(0, 26).trim() || "NEAR YOU",
+      benefits: [],
+    },
   };
 }

@@ -2,7 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { buildFallbackScript } from "./fallback.js";
 import { scriptEnv } from "./env.js";
 import { AD_SCRIPT_SYSTEM_PROMPT, buildAdScriptUserPrompt } from "./prompt.js";
-import { AD_SCRIPT_JSON_SCHEMA, adScriptSchema, type AdScript } from "./schema.js";
+import { AD_SCRIPT_JSON_SCHEMA, adScriptSchema, normalizeScriptJson, type AdScript } from "./schema.js";
 
 let client: Anthropic | undefined;
 function getClient(): Anthropic {
@@ -86,7 +86,7 @@ export async function generateScript(
     // subset can't express (caption lengths, scene counts, durations). A model
     // that returns a 200-character caption is not usable output — the renderer
     // would burn text off the edge of the frame — so it takes the fallback.
-    const parsed = adScriptSchema.safeParse(JSON.parse(text));
+    const parsed = adScriptSchema.safeParse(normalizeScriptJson(JSON.parse(text)));
     if (!parsed.success) {
       log?.("script generation returned an out-of-bounds script", parsed.error);
       return fallback();

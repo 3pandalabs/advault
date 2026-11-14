@@ -1,8 +1,6 @@
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "../../db/index.js";
-import { purchases } from "../../db/schema.js";
-import { entitlesToService, type SubscriptionStatus } from "../subscriptions/policy.js";
-import { liveSubscriptionFor } from "../subscriptions/index.js";
+import { purchases, users } from "../../db/schema.js";
 import { formatMinor, freeFirstAd } from "../pricing/index.js";
 import { quoteFor, type Quote } from "../cinematic/index.js";
 
@@ -31,10 +29,14 @@ export async function quoteNewAd(userId: string): Promise<NewAdQuote> {
 }
 
 
-// The $10 new ad for Keep it running (evergreen) subscribers.
+// The $10 new ad. Since 2026-11-13 EVERY advertiser pays it before AdVault
+// writes and renders an ad (it used to be Keep it running subscribers only,
+// which let anyone without a plan get ads made free while we paid the
+// vendors). Admins and at_cost accounts are exempt, same as the launch gate.
 //
-// That plan's fee bundles no creatives, so before AdVault writes and renders
-// an ad for one of its campaigns, a `new_ad` purchase must be paid. The order
+// A paid ad includes RENDERS_PER_AD renders: the first, plus redos (generate
+// again, or a script edit that re-renders). A render that FAILED is retried
+// free. Past the allowance the campaign needs another $10 ad. The order
 // carries the wizard's choices (photos, formats) in `brief`, and once paid the
 // campaign page calls POST /new-ad/orders/:id/generate, which spends it.
 //
@@ -43,13 +45,23 @@ export async function quoteNewAd(userId: string): Promise<NewAdQuote> {
 
 export type NewAdBrief = { assetIds: string[]; aspectRatios: ("16:9" | "9:16")[] };
 
-/** Does this user pay per ad? Only live Keep it running subscribers do. */
+/** First render + two redos per paid ad. */
+export const RENDERS_PER_AD = 3;
+
+/** Does this user pay per ad? Everyone but admins and at_cost accounts. */
 export async function paysPerAd(userId: string): Promise<boolean> {
-  const sub = await liveSubscriptionFor(userId);
-  return !!sub && sub.line === "evergreen" && entitlesToService(sub.status as SubscriptionStatus);
+  const [u] = await db
+    .select({ role: users.role, marginMode: users.marginMode })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+  return !!u && u.role !== "admin" && u.marginMode !== "at_cost";
 }
 
-/** Has this campaign's ad already been paid for and made? */
+/**
+ * Does this campaign have a paid ad with renders left (or one paid and not
+ * yet made)? Then a new $10 order would charge twice for the same ad.
+ */
 export async function campaignHasPaidAd(campaignId: string): Promise<boolean> {
   const [row] = await db
     .select({ n: sql<number>`count(*)::int` })
@@ -58,26 +70,63 @@ export async function campaignHasPaidAd(campaignId: string): Promise<boolean> {
       and(
         eq(purchases.campaignId, campaignId),
         eq(purchases.sku, "new_ad"),
-        inArray(purchases.status, ["producing", "delivered"]),
+        sql`(${purchases.status} in ('paid', 'producing') or (${purchases.status} = 'delivered' and ${purchases.rendersUsed} < ${RENDERS_PER_AD}))`,
       ),
     );
   return (row?.n ?? 0) > 0;
 }
 
 /**
- * The 402 body when generating this campaign's ad needs a payment first, or
- * null when it may go ahead.
+ * Spends one render from the campaign's delivered ad, atomically. Returns
+ * the order id it was taken from, or null when none has renders left.
  */
-export async function newAdGate(userId: string, campaignId: string) {
-  if (!(await paysPerAd(userId))) return null;
-  if (await campaignHasPaidAd(campaignId)) return null;
+export async function takeRender(campaignId: string): Promise<string | null> {
+  const res = await db.execute(sql`
+    update purchases set renders_used = renders_used + 1, updated_at = now()
+    where id = (
+      select id from purchases
+      where campaign_id = ${campaignId} and sku = 'new_ad' and status = 'delivered'
+        and renders_used < ${RENDERS_PER_AD}
+      order by created_at desc limit 1
+      for update skip locked
+    )
+    returning id`);
+  return (res.rows[0] as { id: string } | undefined)?.id ?? null;
+}
+
+/** Gives back a render whose generation was refused (daily cap, no photos…). */
+export async function returnRender(purchaseId: string): Promise<void> {
+  await db
+    .update(purchases)
+    .set({ rendersUsed: sql`greatest(${purchases.rendersUsed} - 1, 0)`, updatedAt: new Date() })
+    .where(eq(purchases.id, purchaseId));
+}
+
+export type GateResult =
+  | { ok: true; renderFrom: string | null }
+  | { ok: false; body: Record<string, unknown> };
+
+/**
+ * May this user (re)render this campaign's ad? Exempt users always may. A
+ * payer spends one render from the campaign's paid ad; with none left the
+ * answer is a 402 asking for another $10 ad. On a refused generation, call
+ * returnRender(renderFrom).
+ */
+export async function newAdGate(userId: string, campaignId: string): Promise<GateResult> {
+  if (!(await paysPerAd(userId))) return { ok: true, renderFrom: null };
+  const taken = await takeRender(campaignId);
+  if (taken) return { ok: true, renderFrom: taken };
   const quote = await quoteNewAd(userId);
   return {
-    error: "new_ad_payment_required",
-    amountMinor: quote.amountMinor,
-    currency: quote.currency,
-    display: formatMinor(quote.amountMinor, quote.currency),
-    freeLaunchOffer: quote.freeLaunchOffer,
+    ok: false,
+    body: {
+      error: "new_ad_payment_required",
+      amountMinor: quote.amountMinor,
+      currency: quote.currency,
+      display: formatMinor(quote.amountMinor, quote.currency),
+      freeLaunchOffer: quote.freeLaunchOffer,
+      rendersPerAd: RENDERS_PER_AD,
+    },
   };
 }
 

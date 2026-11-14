@@ -180,6 +180,8 @@ export async function newAdRoutes(app: FastifyInstance) {
           return reply.code(result.status).send(result.body);
         }
         await markDelivered(order.id);
+        // The first of the order's RENDERS_PER_AD renders.
+        await db.update(purchases).set({ rendersUsed: 1 }).where(eq(purchases.id, order.id));
         return reply.code(202).send({ creatives: result.creatives });
       } catch (err) {
         await releaseNewAdOrder(order.id, err);

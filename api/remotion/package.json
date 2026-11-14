@@ -1,0 +1,26 @@
+{
+  "name": "advault-template-renderer",
+  "private": true,
+  "type": "module",
+  "description": "The template ad (the home-page demo look) rendered with Remotion inside advault-renderer. Own package so the API image never installs Chrome or Remotion. See README.md.",
+  "scripts": {
+    "bundle": "remotion bundle src/index.ts --out-dir build",
+    "studio": "remotion studio src/index.ts"
+  },
+  "dependencies": {
+    "@remotion/bundler": "4.0.539",
+    "@remotion/cli": "4.0.539",
+    "@remotion/google-fonts": "4.0.539",
+    "@remotion/renderer": "4.0.539",
+    "react": "19.1.0",
+    "react-dom": "19.1.0",
+    "remotion": "4.0.539"
+  },
+  "devDependencies": {
+    "@types/react": "19.1.8",
+    "typescript": "5.8.3"
+  },
+  "allowScripts": {
+    "esbuild@0.28.1": true
+  }
+}
