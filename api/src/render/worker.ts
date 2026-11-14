@@ -20,7 +20,8 @@ import {
   reclaimStalled,
   type RenderJob,
 } from "./jobs.js";
-import { renderCreative, type AspectRatio } from "./ffmpeg.js";
+import { extractThumbnail, renderCreative, type AspectRatio } from "./ffmpeg.js";
+import { TEMPLATE_ENABLED, renderTemplate } from "./template.js";
 import { startSpendSync } from "./spendSync.js";
 import { startAdMetricsSync } from "./adMetricsSync.js";
 import { startPlatformBillingSweep } from "../lib/billing/managedCard.js";
@@ -30,7 +31,7 @@ import { enqueueYoutubeUpload } from "./youtubeJobs.js";
 import { startYoutubeUploadWorker, stopYoutubeUploadWorker } from "./youtubeUploads.js";
 import { adScriptSchema, type AdScript } from "../lib/script/schema.js";
 import { motionProvider } from "../lib/ai/motion/index.js";
-import { voiceProvider } from "../lib/ai/voice/index.js";
+import { synthesizeVoice, voiceProvider } from "../lib/ai/voice/index.js";
 import {
   creativeThumbnailKey,
   creativeVideoKey,
@@ -144,10 +145,12 @@ async function synthesizeVoiceover(args: {
   if (!provider) return undefined;
 
   try {
-    const result = await provider.synthesize({
+    // A failed paid voice falls back to edge-tts inside synthesizeVoice.
+    const result = await synthesizeVoice({
       text: args.script.voiceoverText,
       currency: args.currencyCode === "INR" ? "INR" : "USD",
     });
+    if (result.fellBack) log("paid voice failed; used edge-tts", { creativeId: args.creativeId, error: result.fellBack });
     const voicePath = join(args.workDir, "voice.mp3");
     await writeFile(voicePath, result.audioBytes);
     log("voiceover synthesized", {
@@ -212,14 +215,39 @@ async function processJob(job: RenderJob): Promise<void> {
       creativeId: creative.id,
     });
 
-    const output = await renderCreative({
-      workDir,
-      script,
-      aspectRatio,
-      imagePaths,
-      clipPaths,
-      voicePath,
-    });
+    // The template ad (demo look) when enabled; the ffmpeg layout otherwise,
+    // and whenever the template fails.
+    const templated = TEMPLATE_ENABLED
+      ? await renderTemplate(
+          {
+            workDir,
+            script,
+            aspectRatio,
+            imagePaths,
+            clipPaths,
+            voicePath,
+            businessName: creative.businessName,
+            businessCategory: creative.businessCategory,
+            landingUrl: creative.landingUrl,
+          },
+          (msg, extra) => log(msg, { creativeId: creative.id, ...(extra as object) }),
+        )
+      : null;
+    let output: { videoPath: string; thumbnailPath: string; durationSeconds: number };
+    if (templated) {
+      const thumbnailPath = join(workDir, "thumbnail.jpg");
+      await extractThumbnail(templated.videoPath, thumbnailPath);
+      output = { ...templated, thumbnailPath };
+    } else {
+      output = await renderCreative({
+        workDir,
+        script,
+        aspectRatio,
+        imagePaths,
+        clipPaths,
+        voicePath,
+      });
+    }
 
     const videoKey = creativeVideoKey(creative.campaignId, creative.id);
     const thumbnailKey = creativeThumbnailKey(creative.campaignId, creative.id);
@@ -240,6 +268,7 @@ async function processJob(job: RenderJob): Promise<void> {
       sizeBytes: videoBytes.byteLength,
       motionClips: clipPaths.size,
       voiceover: Boolean(voicePath),
+      engine: templated ? "template" : "ffmpeg",
     });
 
     // A rendered MP4 is not yet an ad. Google Ads video ads reference a YouTube

@@ -324,7 +324,7 @@ export default function CampaignDetailPage({
               <CardDescription>
                 {newAd.freeLaunchOffer
                   ? "This campaign has no ad yet. Your first ad is free (launch offer)."
-                  : `This campaign has no ad yet. Your plan charges ${newAd.display} per ad.`}
+                  : `This campaign has no ad yet. Making it costs ${newAd.display}, including up to two redos.`}
               </CardDescription>
               {newAd.order && (
                 <Button

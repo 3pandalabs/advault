@@ -34,15 +34,9 @@ describe("new ad", () => {
 });
 
 describe("free first ad launch offer", () => {
-  it("is the first ad only, for the first 30 customers", () => {
-    expect(freeFirstAd({ priorAdsClaimed: 0, freeAdsClaimedByAnyone: 0 })).toBe(true);
-    expect(freeFirstAd({ priorAdsClaimed: 0, freeAdsClaimedByAnyone: 29 })).toBe(true);
-    expect(freeFirstAd({ priorAdsClaimed: 0, freeAdsClaimedByAnyone: 30 })).toBe(false);
-    expect(freeFirstAd({ priorAdsClaimed: 1, freeAdsClaimedByAnyone: 0 })).toBe(false);
-  });
-
-  it("counts places left without going negative", () => {
-    expect(freeFirstAdPlacesLeft(0)).toBe(30);
-    expect(freeFirstAdPlacesLeft(31)).toBe(0);
+  // Dropped 2026-11-13 (FREE_FIRST_AD_LIMIT = 0): every ad is paid.
+  it("gives no free ads", () => {
+    expect(freeFirstAd({ priorAdsClaimed: 0, freeAdsClaimedByAnyone: 0 })).toBe(false);
+    expect(freeFirstAdPlacesLeft(0)).toBe(0);
   });
 });

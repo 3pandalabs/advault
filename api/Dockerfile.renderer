@@ -1,61 +1,71 @@
 # Renderer container (Coolify resource `advault-renderer`). Same workspace,
-# same build, different entrypoint — it polls `render_jobs` and shells out to
-# ffmpeg. Not an HTTP service: it EXPOSEs nothing and Coolify should leave
+# same build, different entrypoint — it polls `render_jobs` and renders ads.
+# Not an HTTP service: it EXPOSEs nothing and Coolify should leave
 # "Ports Exposes" empty, with no domain attached.
 #
 # In Coolify: Base Directory `api`, Dockerfile Location `Dockerfile.renderer`
 # (relative to the base directory, so NOT `api/Dockerfile.renderer`).
-FROM node:20-alpine AS build
+#
+# Debian, not Alpine (2026-11-13): the template ad (api/remotion, the home-page
+# demo look) renders in Remotion's headless Chrome, which needs glibc. With
+# RENDER_ENGINE unset the worker still renders the ffmpeg layout exactly as
+# before, so this image is safe to deploy before the template is switched on.
+FROM node:20-bookworm-slim AS build
 WORKDIR /app
 COPY package.json package-lock.json* ./
 RUN npm ci
 COPY . .
 RUN npm run build
 
-FROM node:20-alpine AS runtime
+# The template package: its own node_modules (Remotion, React, Chrome) so the
+# API image never carries them. Bundled and the browser downloaded at BUILD
+# time, so a render never waits on (or fails at) a download.
+FROM node:20-bookworm-slim AS template
+WORKDIR /t
+COPY remotion/package.json remotion/package-lock.json ./
+RUN npm ci
+COPY remotion/ ./
+RUN npm run bundle && npx remotion browser ensure
+
+FROM node:20-bookworm-slim AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
 
-# The one real difference from the API image. ffmpeg on alpine pulls in the
-# codecs needed for H.264/AAC MP4 output, which is what both YouTube and Shorts
-# ingest. ~80MB — acceptable for a container that exists to encode video.
+# ffmpeg (+ ffprobe): segments, muxing, thumbnails, and the fallback layout.
 #
-# font-dejavu and fontconfig are NOT optional and NOT incidental. `apk add
-# ffmpeg` installs zero fonts, and every creative this app renders burns a
-# caption in with the drawtext filter — so without them EVERY render fails with
-# "Cannot find a valid font for the family Sans", no matter how good the input
-# image is. Found by an end-to-end render test on 2026-08-01, after the two
-# containers were already deployed and healthy; nothing short of actually
-# encoding a file surfaces it.
+# Fonts are NOT optional: `apt-get install ffmpeg` installs no fonts, and
+# every ffmpeg-layout creative burns a caption in with drawtext — without them
+# EVERY render fails with "Cannot find a valid font for the family Sans".
+# Found by an end-to-end render test on 2026-08-01. The absolute paths are
+# pinned (ENV below) and asserted here so a moved font fails the BUILD.
 #
-# fontconfig is what makes `fc-match` resolve a family name; src/render/ffmpeg.ts
-# additionally pins an absolute fontfile path so a font that moves between
-# alpine releases fails loudly at build time rather than silently at encode time.
-RUN apk add --no-cache ffmpeg font-dejavu fontconfig \
- && test -f /usr/share/fonts/dejavu/DejaVuSans.ttf \
- && test -f /usr/share/fonts/dejavu/DejaVuSans-Bold.ttf
+# The lib* packages are headless Chrome's runtime dependencies (Remotion's
+# Linux list); fonts-noto-color-emoji keeps an emoji in an advertiser's text
+# from rendering as a box.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+      ffmpeg fonts-dejavu-core fontconfig fonts-noto-color-emoji ca-certificates \
+      python3 python3-pip \
+      libnss3 libdbus-1-3 libatk1.0-0 libgbm1 libasound2 libxrandr2 libxkbcommon0 \
+      libxfixes3 libxcomposite1 libxdamage1 libatk-bridge2.0-0 libpango-1.0-0 libcairo2 libcups2 \
+ && rm -rf /var/lib/apt/lists/*
+ENV RENDER_FONT_REGULAR=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf \
+    RENDER_FONT_BOLD=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf
+RUN test -f "$RENDER_FONT_REGULAR" && test -f "$RENDER_FONT_BOLD" && ffprobe -version > /dev/null
 
-# edge-tts for voiceover. Python because that is what the package is; it drives
-# Microsoft Edge's online neural voices and needs no account, no API key and no
-# per-use cost — which is why it is the default voice provider rather than
-# ElevenLabs. A metered vendor in the render path would make voiceover a billing
-# decision instead of a feature everyone gets on day one.
-#
-# --break-system-packages is required on Alpine's externally-managed Python.
-# Safe here: this is a single-purpose container, not a shared system.
-#
-# Asserted at build time for the same reason as the fonts above — a missing
-# binary must fail the BUILD, not every render. That lesson cost a deploy on
-# 2026-08-01.
-RUN apk add --no-cache python3 py3-pip \
- && pip3 install --no-cache-dir --break-system-packages edge-tts \
+# edge-tts: the free voice, and the fallback when the paid one (fal) fails.
+# --break-system-packages is required on Debian's externally-managed Python;
+# safe in a single-purpose container. Asserted at build time for the same
+# reason as the fonts — a missing binary must fail the BUILD, not every render.
+RUN pip3 install --no-cache-dir --break-system-packages edge-tts \
  && edge-tts --list-voices > /dev/null
 
 COPY package.json package-lock.json* ./
 RUN npm ci --omit=dev
 COPY --from=build /app/dist ./dist
+COPY --from=template /t ./remotion
 
-RUN addgroup -S advault && adduser -S advault -G advault
+RUN groupadd -r advault && useradd -r -g advault -m advault
 # Scratch space for frames and intermediate files. Created before dropping
 # privileges because /tmp on a read-only-ish container layer is not guaranteed
 # writable by an unprivileged user.

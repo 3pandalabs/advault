@@ -2,7 +2,7 @@ import "dotenv/config";
 import { generateScript as generateWithClaude } from "../../script/generate.js";
 import type { GenerateScriptInput, GenerateScriptResult } from "../../script/generate.js";
 import { buildFallbackScript } from "../../script/fallback.js";
-import { AD_SCRIPT_JSON_SCHEMA, adScriptSchema } from "../../script/schema.js";
+import { AD_SCRIPT_JSON_SCHEMA, adScriptSchema, normalizeScriptJson } from "../../script/schema.js";
 import { AD_SCRIPT_SYSTEM_PROMPT, buildAdScriptUserPrompt } from "../../script/prompt.js";
 
 // Script generation, now behind a provider switch.
@@ -86,7 +86,7 @@ async function generateWithOpenAiCompatible(
     // Same bounds enforcement as the Claude path: the JSON schema pins the
     // structure, Zod enforces the caption lengths and durations the schema
     // subset cannot express. A 200-character caption would render off-frame.
-    const parsed = adScriptSchema.safeParse(JSON.parse(text));
+    const parsed = adScriptSchema.safeParse(normalizeScriptJson(JSON.parse(text)));
     if (!parsed.success) {
       log?.(`${provider} returned an out-of-bounds script`, parsed.error);
       return fallback();

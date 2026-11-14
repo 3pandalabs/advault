@@ -249,7 +249,7 @@ async function concatSegments(listFilePath: string, outputPath: string): Promise
   ]);
 }
 
-async function extractThumbnail(videoPath: string, outputPath: string): Promise<void> {
+export async function extractThumbnail(videoPath: string, outputPath: string): Promise<void> {
   // One second in, not frame zero — the first frame of a zoompan segment is the
   // least interesting frame of the whole ad.
   await ffmpeg(["-ss", "1", "-i", videoPath, "-frames:v", "1", "-q:v", "3", outputPath]);

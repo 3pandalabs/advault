@@ -234,8 +234,8 @@ export default function PrivacyPage() {
         <strong>
           we never send data retrieved from your Google Ads account to any AI provider
         </strong>
-        . The only material that reaches an AI provider is the campaign description you
-        wrote yourself.
+        . The only material that reaches an AI provider is what you gave us for the ad:
+        the campaign description you wrote and the photos you uploaded.
       </p>
 
       <h2>Where your finished ads are published</h2>
@@ -311,9 +311,9 @@ export default function PrivacyPage() {
             <td>The servers the application runs on</td>
           </tr>
           <tr>
-            <td>AI providers for script, video and voice</td>
-            <td>Your business name, category and offer text</td>
-            <td>To write the script and produce the video</td>
+            <td>AI providers for script, video and voice (Anthropic; Kling; ElevenLabs through fal.ai)</td>
+            <td>Your business name, category and offer text; the photos you uploaded for the ad; the ad's narration text</td>
+            <td>To write the script, animate your photos and read the voiceover</td>
           </tr>
           <tr>
             <td>Payment providers</td>

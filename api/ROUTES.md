@@ -82,15 +82,15 @@ CLAUDE.md.
 | Method | Path | Notes |
 |---|---|---|
 | — | (launch) | `POST /campaigns/:id/launch` answers **402 `plan_required`** without a live plan, **402 `plan_has_no_ads`** on the offer line. Admins and at_cost accounts are exempt; skipped on `validateOnly`. |
-| POST | `/campaigns/:campaignId/creatives/generate` | **202.** Writes the scripts, queues the renders, returns. One creative per requested aspect ratio. **402 `new_ad_payment_required`** for a Keep it running subscriber whose campaign has no paid ad yet. |
-| GET | `/new-ad/quote` | `{required, display}`: does this user pay per ad (Keep it running), and how much. |
+| POST | `/campaigns/:campaignId/creatives/generate` | **202.** Writes the scripts, queues the renders, returns. One creative per requested aspect ratio. **402 `new_ad_payment_required`** (`{display, rendersPerAd}`) for any advertiser (not admin / `at_cost`) whose campaign has no paid `new_ad` with renders left. Spends one of the paid ad's `RENDERS_PER_AD` (3: first + 2 redos, `purchases.renders_used`), given back if generation is refused. No free first ad since 2026-11-13. |
+| GET | `/new-ad/quote` | `{required, display}`: does this user pay per ad (everyone but admins and `at_cost`), and how much. |
 | GET | `/campaigns/:campaignId/new-ad` | `{required, display, order}`: the campaign's latest new-ad order. |
 | POST | `/webhooks/stripe` | **The only Stripe endpoint to register.** Routes each event to the payments / purchases / subscriptions handler (which verify the signature); 200 `ignored` for other apps on the shared account and unwanted events. See infra/stripe-setup.md. |
-| POST | `/campaigns/:campaignId/new-ad/order` | Opens a $10 checkout. Body `{assetIds, aspectRatios}` is saved on the order; omit it to reuse the last order's. 409 `ad_included_in_plan` / `already_paid` / `campaign_is_live`. Paid via the shared `/webhooks/purchases/:provider`. |
-| POST | `/new-ad/orders/:purchaseId/generate` | Spends a paid order: generates from its saved choices, marks it delivered. 409 `payment_pending` / `in_progress`; 200 `alreadyGenerated`. |
+| POST | `/campaigns/:campaignId/new-ad/order` | Opens a $10 checkout. Body `{assetIds, aspectRatios}` is saved on the order; omit it to reuse the last order's. 409 `ad_included_in_plan` (admin / `at_cost`) / `already_paid` (a paid ad not made yet, or made with renders left) / `campaign_is_live`. Paid via the shared `/webhooks/purchases/:provider`. |
+| POST | `/new-ad/orders/:purchaseId/generate` | Spends a paid order: generates from its saved choices, marks it delivered with `renders_used = 1`. 409 `payment_pending` / `in_progress`; 200 `alreadyGenerated`. |
 | GET | `/campaigns/:campaignId/creatives` | |
-| PATCH | `/creatives/:creativeId/script` | Hand-edited copy, re-validated against the generator's own schema. Re-queues the render. 409 `creative_is_upload` for uploaded videos. |
-| POST | `/creatives/:creativeId/retry` | 409 `already_rendering`. |
+| PATCH | `/creatives/:creativeId/script` | Hand-edited copy, re-validated against the generator's own schema. Re-queues the render, spending one render (402 `new_ad_payment_required` when none left). 409 `creative_is_upload` for uploaded videos. |
+| POST | `/creatives/:creativeId/retry` | Free, **failed renders only** (409 `not_failed` otherwise, so it can't be a free re-render). 409 `already_rendering`. |
 | POST | `/creatives/download-url` | Authorized by the key's `campaigns/<id>/` prefix. |
 | POST | `/campaigns/:campaignId/creatives/upload-url` | "Use my own video". Any user, own campaigns only. Body `{width, height, durationSeconds}` (read in the browser); refuses non-9:16/16:9, <720p, and lengths outside **6–60s** for customers (5–180s for admins). Returns `{creativeId, uploadUrl, contentType}` for a PUT to R2. |
 | POST | `/campaigns/:campaignId/creatives/upload` | Confirms the PUT. Body adds `creativeId` and **`rightsAttested: true` (required)**; who/when is stored. HEADs the object (exists, video/mp4, ≤200 MB), inserts a `kind='upload'` creative already `ready`. A customer's is `reviewStatus: 'pending_review'`, is **not** published to YouTube and pings ops (ntfy); an admin's is `approved` and queues the YouTube upload. 201. |

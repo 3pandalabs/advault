@@ -19,6 +19,12 @@ const exec = promisify(execFile);
 //
 // Like motion clips, this is optional: no provider means a silent cut, which is
 // exactly what the renderer already produces today.
+//
+// 2026-11-13: the paid default is ElevenLabs v3 through fal (VOICE_PROVIDER=fal,
+// FAL_KEY), the voice the home-page demos use; edge-tts sounded robotic next
+// to them. A failed fal call falls back to edge-tts (synthesizeVoice), never
+// to silence. Scripts start with an ElevenLabs audio tag ("[warmly] ..."),
+// which edge-tts would read aloud, so it is stripped for edge-tts.
 
 export type VoiceRequest = {
   text: string;
@@ -26,10 +32,10 @@ export type VoiceRequest = {
   currency: "INR" | "USD";
 };
 
-export type VoiceResult = { audioBytes: Buffer; source: "edge-tts" | "elevenlabs" };
+export type VoiceResult = { audioBytes: Buffer; source: "edge-tts" | "elevenlabs" | "fal-elevenlabs" };
 
 export interface VoiceProvider {
-  readonly name: "edge-tts" | "elevenlabs";
+  readonly name: "edge-tts" | "elevenlabs" | "fal";
   isConfigured(): boolean;
   synthesize(req: VoiceRequest): Promise<VoiceResult>;
 }
@@ -61,7 +67,7 @@ export const edgeTts: VoiceProvider = {
       // injection. Same rule as the ffmpeg calls in render/ffmpeg.ts.
       await exec(
         "edge-tts",
-        ["--voice", EDGE_VOICES[req.currency], "--text", req.text, "--write-media", out],
+        ["--voice", EDGE_VOICES[req.currency], "--text", stripAudioTags(req.text), "--write-media", out],
         { timeout: 60_000, maxBuffer: 4 * 1024 * 1024 },
       );
       return { audioBytes: await readFile(out), source: "edge-tts" };
@@ -95,12 +101,80 @@ export const elevenLabs: VoiceProvider = {
   },
 };
 
+// --- ElevenLabs v3 through fal (paid, the demo voice) -----------------------
+
+/** "[warmly] Hello" -> "Hello": audio tags are for ElevenLabs v3 only. */
+export function stripAudioTags(text: string): string {
+  return text.replace(/\[[a-z ]{2,30}\]\s*/gi, "").trim();
+}
+
+const FAL_ENDPOINT = "fal-ai/elevenlabs/tts/eleven-v3";
+// ElevenLabs premade voices by name, as the demos use them.
+const FAL_VOICE = process.env.FAL_VOICE ?? "Sarah";
+const FAL_TIMEOUT_MS = 120_000;
+
+export const falElevenLabs: VoiceProvider = {
+  name: "fal",
+  isConfigured: () => Boolean(process.env.FAL_KEY),
+
+  async synthesize(req) {
+    const headers = { authorization: `Key ${process.env.FAL_KEY}`, "content-type": "application/json" };
+    const submit = await fetch(`https://queue.fal.run/${FAL_ENDPOINT}`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ text: req.text, voice: FAL_VOICE, stability: 0.5 }),
+      signal: AbortSignal.timeout(30_000),
+    });
+    const job = (await submit.json()) as { status_url?: string; response_url?: string };
+    if (!submit.ok || !job.status_url || !job.response_url) throw new Error(`fal submit failed: ${submit.status}`);
+
+    const started = Date.now();
+    for (;;) {
+      await new Promise((r) => setTimeout(r, 1500));
+      const st = (await (await fetch(job.status_url, { headers, signal: AbortSignal.timeout(15_000) })).json()) as {
+        status?: string;
+        error?: unknown;
+      };
+      if (st.status === "COMPLETED") break;
+      if (st.status === "FAILED" || st.error) throw new Error("fal voice failed");
+      if (Date.now() - started > FAL_TIMEOUT_MS) throw new Error("fal voice timed out");
+    }
+    const out = (await (await fetch(job.response_url, { headers, signal: AbortSignal.timeout(15_000) })).json()) as {
+      audio?: { url?: string };
+      audio_url?: string;
+      url?: string;
+    };
+    const url = out.audio?.url ?? out.audio_url ?? out.url;
+    if (!url) throw new Error("fal voice returned no audio");
+    const audio = await fetch(url, { signal: AbortSignal.timeout(30_000) });
+    if (!audio.ok) throw new Error(`fal audio download failed: ${audio.status}`);
+    return { audioBytes: Buffer.from(await audio.arrayBuffer()), source: "fal-elevenlabs" };
+  },
+};
+
 /** Configured provider, or null for a silent cut. ElevenLabs wins if both exist. */
 export function voiceProvider(): VoiceProvider | null {
   const preferred = process.env.VOICE_PROVIDER;
+  if (preferred === "fal") return falElevenLabs.isConfigured() ? falElevenLabs : edgeTts.isConfigured() ? edgeTts : null;
   if (preferred === "elevenlabs") return elevenLabs.isConfigured() ? elevenLabs : null;
   if (preferred === "edge-tts") return edgeTts.isConfigured() ? edgeTts : null;
   if (elevenLabs.isConfigured()) return elevenLabs;
   if (edgeTts.isConfigured()) return edgeTts;
   return null;
+}
+
+/**
+ * The configured provider, and if it is a paid one that fails, edge-tts: a
+ * vendor outage costs voice quality, never the voiceover.
+ */
+export async function synthesizeVoice(req: VoiceRequest): Promise<VoiceResult & { fellBack?: string }> {
+  const provider = voiceProvider();
+  if (!provider) throw new Error("no voice provider");
+  try {
+    return await provider.synthesize(req);
+  } catch (err) {
+    if (provider === edgeTts || !edgeTts.isConfigured()) throw err;
+    const res = await edgeTts.synthesize(req);
+    return { ...res, fellBack: err instanceof Error ? err.message : String(err) };
+  }
 }

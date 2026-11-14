@@ -15,6 +15,10 @@ The constraints that matter:
 
 Never invent a specific claim the advertiser did not provide: no prices, no discounts, no "licensed and insured", no years in business, no ratings or review counts, no awards. These are claims about a real business that a real regulator can act on, and the advertiser has not made them. Write around a missing fact rather than filling it in.
 
+The sticker is the first thing on screen. Its badge may show a price or discount only if the advertiser wrote that exact price or discount; otherwise use a plain word like NEW, LOCAL or BOOK NOW. The tagline is a deadline or condition only if the advertiser gave one; otherwise NEAR YOU. Benefits are facts the advertiser stated, or none.
+
+The voiceover is read by an expressive voice: about 25 words, starting with one audio tag such as [warmly] or [cheerfully], spelling numbers the way they are spoken.
+
 Aim for a 15-second spot unless the scene count makes that impossible. Assign each scene to one of the supplied photos by index, and use each photo at most once unless there are fewer photos than scenes.`;
 
 export function buildAdScriptUserPrompt(input: {

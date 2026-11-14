@@ -176,6 +176,10 @@ export async function loadCreativeForRender(creativeId: string) {
       script: creatives.script,
       sourceAssetKeys: creatives.sourceAssetKeys,
       currencyCode: users.currencyCode,
+      // For the template ad's end card and colours (render/template.ts).
+      businessName: campaigns.businessName,
+      businessCategory: campaigns.businessCategory,
+      landingUrl: campaigns.landingUrl,
     })
     .from(creatives)
     .innerJoin(campaigns, eq(creatives.campaignId, campaigns.id))

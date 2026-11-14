@@ -1134,6 +1134,9 @@ export const purchases = pgTable(
     // much as a reliability one; lib/cinematic/policy caps it.
     attempts: integer("attempts").notNull().default(0),
     lastError: text("last_error"),
+    // new_ad only: renders spent from this order (first + redos, capped by
+    // RENDERS_PER_AD in lib/newAd). Migration 0015.
+    rendersUsed: integer("renders_used").notNull().default(0),
 
     paidAt: timestamp("paid_at", { withTimezone: true }),
     deliveredAt: timestamp("delivered_at", { withTimezone: true }),

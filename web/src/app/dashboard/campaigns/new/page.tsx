@@ -772,8 +772,8 @@ export default function NewCampaignPage() {
             </p>
           ) : newAdPrice ? (
             <p className="mt-5 text-sm text-zinc-400">
-              Your plan charges {newAdPrice} per ad. You pay now, then we write the script and
-              render your videos. Nothing runs until you launch.
+              Making your ad costs {newAdPrice}, including up to two redos. You pay now, then we
+              write the script and render your videos. Nothing runs until you launch.
             </p>
           ) : (
             <p className="mt-5 text-sm text-zinc-400">
