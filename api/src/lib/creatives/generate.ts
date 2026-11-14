@@ -4,6 +4,7 @@ import { assets, campaigns, creatives } from "../../db/schema.js";
 import { generateScript } from "../ai/script/index.js";
 import { enqueueRender } from "../../render/jobs.js";
 import type { AdScript } from "../script/schema.js";
+import { presignDownload } from "../../plugins/r2.js";
 
 // Writing the scripts and queueing the renders for a campaign. Shared by the
 // wizard's generate route and the paid new-ad order (Keep it running), so both
@@ -84,12 +85,21 @@ export async function generateForCampaign(args: {
     ...(portraitIndex >= 0 ? { portraitIndex } : {}),
   };
 
+  // Photos the writer can look at (presigned, short-lived). A presign
+  // failure only means a blind script, never a failed generation.
+  const imageUrls = await Promise.all(
+    orderedKeys.map((k) => (/\.(jpe?g|png|webp|gif)$/i.test(k) ? presignDownload(k) : Promise.resolve(null))),
+  ).catch(() => []);
+  const visibleUrls = imageUrls.length === orderedKeys.length && imageUrls.every(Boolean) ? (imageUrls as string[]) : undefined;
+
   const created = [];
   // The first format's narration and sticker, shared by the others: it is
   // the same spot, so one voiceover serves every format and the renderer
   // pays for it once (render/worker.ts caches it by text). Captions stay
   // per format.
-  let shared: Pick<AdScript, "voiceoverText" | "sticker"> | null = null;
+  // Voice and per-photo motion are shared too: same narrator, and the same
+  // motion line per photo so both formats reuse one clip.
+  let shared: Pick<AdScript, "voiceoverText" | "sticker" | "voice" | "photoMotions"> | null = null;
   for (const aspectRatio of args.aspectRatios) {
     // Scripted per aspect ratio, not once and reused: a 9:16 Shorts
     // caption sits over a vertical crop with far less horizontal room than
@@ -108,12 +118,18 @@ export async function generateForCampaign(args: {
         realty: campaign.realty,
         peopleIndexes,
         portraitIndex: portraitIndex >= 0 ? portraitIndex : null,
+        imageUrls: visibleUrls,
       },
       args.warn,
     );
 
     const finalScript: AdScript = { ...(shared ? { ...script, ...shared } : script), ...marks };
-    shared ??= { voiceoverText: script.voiceoverText, sticker: script.sticker };
+    shared ??= {
+      voiceoverText: script.voiceoverText,
+      sticker: script.sticker,
+      voice: script.voice,
+      photoMotions: script.photoMotions,
+    };
 
     const [creative] = await db
       .insert(creatives)

@@ -23,6 +23,12 @@ The voiceover is read by an expressive voice: about 25 words, starting with one 
 
 Real estate ads follow the US Fair Housing Act. Describe the property and the agent, never the people: do not say or imply who the home or neighbourhood suits or who is welcome (no families, children, singles, couples, seniors, students, religion, race, national origin, sex or disability), and avoid coded words such as "safe", "exclusive" or "private community". For a listing ad, the hook names the street, and if there is an open house the voiceover and a caption say its day and time exactly as given; the sticker badge is the price, the headline the beds and baths, the tagline the open house. For an agent ad, promote the agent and the area they serve; do not describe any particular home.
 
+When the photos are attached, look at them: write captions that match what is really in each one, and put the photos showing people or the work being done in the strongest scenes.
+
+Pick the narrator voice that suits the business and its customers.
+
+For each photo, write one motion sentence for an image-to-video model: the small, natural movement that photo should come alive with, describing what is actually in it. People keep doing what they are doing (the stylist keeps cutting the woman's hair with scissors and comb; the dentist keeps talking and the patient nods and smiles); otherwise soft movement of light, curtains, leaves, steam or water. Always end with "slow gentle push-in." Never add people, objects, text or camera cuts that are not in the photo.
+
 Aim for a 15-second spot unless the scene count makes that impossible. Assign each scene to one of the supplied photos by index, and use each photo at most once unless there are fewer photos than scenes.`;
 
 export function buildAdScriptUserPrompt(input: {
@@ -38,6 +44,7 @@ export function buildAdScriptUserPrompt(input: {
   realty?: Realty | null;
   peopleIndexes?: number[];
   portraitIndex?: number | null;
+  photosAttached?: boolean;
 }): string {
   const addr = input.targetAddress;
   const place = addr ? `${addr.street}, ${addr.city}, ${addr.state}` : null;
@@ -50,7 +57,7 @@ export function buildAdScriptUserPrompt(input: {
       ? `Service area: within ${input.radiusMiles} miles of ZIP ${input.targetZipCodes.join(", ")}`
       : `Service area: within ${input.radiusMiles} miles of ${place ?? "the listing"}`,
     `Call to action: ${input.callToAction}`,
-    `Photos supplied: ${input.assetCount} (use indices 0 to ${input.assetCount - 1})`,
+    `Photos supplied: ${input.assetCount} (use indices 0 to ${input.assetCount - 1})${input.photosAttached ? ", attached above in order" : " (not attached; write photoMotions from the captions you give them)"}`,
     // Format is a real constraint on the writing, not just on the render: a
     // 9:16 Shorts caption sits over a vertical crop with far less horizontal
     // room than the same caption in a 16:9 pre-roll.

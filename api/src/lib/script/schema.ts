@@ -31,6 +31,37 @@ export const stickerSchema = z.object({
   benefits: z.array(z.string().min(1).max(28)).max(2),
 });
 
+// ElevenLabs v3 premade voices (via fal) the script writer may pick from,
+// with how each sounds. The demos used Chris, Laura and Sarah.
+export const AD_VOICES = {
+  Sarah: "woman, warm, confident, professional",
+  Laura: "woman, upbeat, cheerful",
+  Jessica: "young woman, bright, playful",
+  Matilda: "woman, calm, friendly, reassuring",
+  Chris: "man, casual, friendly, down to earth",
+  Liam: "young man, energetic",
+  Brian: "man, deep, steady, trustworthy",
+  Eric: "man, smooth, polished",
+} as const;
+export type AdVoice = keyof typeof AD_VOICES;
+const voiceNames = Object.keys(AD_VOICES) as [AdVoice, ...AdVoice[]];
+
+/** A voice for scripts that didn't choose one (fallback, older scripts). */
+export function defaultVoiceFor(category: string): AdVoice {
+  const c = category.toLowerCase();
+  if (/real ?estate|realt|agent|home|roof|plumb|hvac|electric|auto|mechanic|garage|contract|landscap|lawn|handyman|moving/.test(c)) return "Chris";
+  if (/salon|hair|beauty|nail|spa|barber|lash|brow|fitness|yoga|gym/.test(c)) return "Laura";
+  if (/restaurant|cafe|coffee|bak|food|pizza|bar|grill|dessert|ice cream/.test(c)) return "Jessica";
+  return "Sarah";
+}
+
+// One motion direction per photo (not per scene), so both formats share the
+// same clip for a photo and it is paid for once (render/worker.ts).
+export const photoMotionSchema = z.object({
+  assetIndex: z.number().int().min(0).max(4),
+  motion: z.string().min(1).max(300),
+});
+
 export const adScriptSchema = z.object({
   // The opening line. Carries the whole ad on YouTube, where the viewer can
   // skip after five seconds.
@@ -43,6 +74,12 @@ export const adScriptSchema = z.object({
   // now so regenerating isn't required when narration ships.
   voiceoverText: z.string().min(1).max(600),
   sticker: stickerSchema.optional(),
+  // The narrator (AD_VOICES), chosen by the writer to suit the business.
+  voice: z.enum(voiceNames).optional(),
+  // What moves in each photo, written by a writer that SAW the photos
+  // ("the stylist keeps cutting the woman's hair..."). Optional: the fallback
+  // and older scripts use the generic motion prompt.
+  photoMotions: z.array(photoMotionSchema).max(5).optional(),
   // Set by lib/creatives/generate.ts from the advertiser's choices, never by
   // the model: photos marked as showing people (motion clips go to these
   // first, render/worker.ts) and the agent's own photo (real estate; shown on
@@ -120,8 +157,28 @@ export const AD_SCRIPT_JSON_SCHEMA = {
       required: ["badge", "headline", "tagline", "benefits"],
       additionalProperties: false,
     },
+    voice: {
+      type: "string",
+      enum: voiceNames,
+      description:
+        "The narrator. " + Object.entries(AD_VOICES).map(([n, d]) => `${n}: ${d}`).join("; ") + ".",
+    },
+    photoMotions: {
+      type: "array",
+      description:
+        "One entry per supplied photo: one sentence on the small, natural movement that photo should come alive with, based on what is actually in it.",
+      items: {
+        type: "object",
+        properties: {
+          assetIndex: { type: "integer", description: "0-based photo index." },
+          motion: { type: "string", description: "Under 300 characters." },
+        },
+        required: ["assetIndex", "motion"],
+        additionalProperties: false,
+      },
+    },
   },
-  required: ["hook", "scenes", "callToAction", "endCardText", "voiceoverText", "sticker"],
+  required: ["hook", "scenes", "callToAction", "endCardText", "voiceoverText", "sticker", "voice", "photoMotions"],
   additionalProperties: false,
 } as const;
 
@@ -135,6 +192,21 @@ function fit(s: unknown, max: number, upper: boolean): string | undefined {
   return (space > max / 2 ? cut.slice(0, space) : t.slice(0, max)).trim();
 }
 
+/** A bad voice or motion entry is dropped, never a reason to lose the script. */
+function normalizeExtras(r: Record<string, unknown>): Record<string, unknown> {
+  const voice = typeof r.voice === "string" && r.voice in AD_VOICES ? r.voice : undefined;
+  const photoMotions = (Array.isArray(r.photoMotions) ? r.photoMotions : [])
+    .map((m) => {
+      const o = m as Record<string, unknown>;
+      const motion = typeof o?.motion === "string" ? o.motion.replace(/\s+/g, " ").trim().slice(0, 300) : "";
+      const assetIndex = typeof o?.assetIndex === "number" ? o.assetIndex : -1;
+      return { assetIndex, motion };
+    })
+    .filter((m) => Number.isInteger(m.assetIndex) && m.assetIndex >= 0 && m.assetIndex <= 4 && m.motion)
+    .slice(0, 5);
+  return { voice, photoMotions: photoMotions.length ? photoMotions : undefined };
+}
+
 /**
  * Trims the model's sticker to the template's limits before validation, so
  * one long benefit doesn't throw away an otherwise good script. A sticker
@@ -144,7 +216,7 @@ export function normalizeScriptJson(raw: unknown): unknown {
   if (!raw || typeof raw !== "object") return raw;
   const r = raw as Record<string, unknown>;
   const st = r.sticker as Record<string, unknown> | undefined;
-  if (!st || typeof st !== "object") return raw;
+  if (!st || typeof st !== "object") return { ...r, ...normalizeExtras(r) };
   const sticker = {
     badge: fit(st.badge, 10, true),
     headline: fit(st.headline, 24, true),
@@ -155,5 +227,5 @@ export function normalizeScriptJson(raw: unknown): unknown {
       .slice(0, 2),
   };
   const ok = sticker.badge && sticker.headline && sticker.tagline;
-  return { ...r, sticker: ok ? sticker : undefined };
+  return { ...r, sticker: ok ? sticker : undefined, ...normalizeExtras(r) };
 }

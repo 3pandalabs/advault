@@ -31,7 +31,9 @@ import { startCinematicWorker, stopCinematicWorker } from "./cinematic.js";
 import { enqueueYoutubeUpload } from "./youtubeJobs.js";
 import { startYoutubeUploadWorker, stopYoutubeUploadWorker } from "./youtubeUploads.js";
 import { adScriptSchema, type AdScript } from "../lib/script/schema.js";
-import { motionProvider } from "../lib/ai/motion/index.js";
+import { falMotionPrompt, motionProvider } from "../lib/ai/motion/index.js";
+import { enhancePhotos } from "./enhance.js";
+import { defaultVoiceFor } from "../lib/script/schema.js";
 import { synthesizeVoice, voiceProvider } from "../lib/ai/voice/index.js";
 import {
   creativeThumbnailKey,
@@ -118,11 +120,22 @@ async function generateMotionClips(args: {
 
   await Promise.all(
     picked.map(async ({ i, scene, imagePath, key }) => {
-      // fal clips use one fixed prompt, so a photo's clip is the same for
-      // every format: reuse it from R2 instead of paying twice.
+      // A photo's fal clip depends only on the photo and its motion line
+      // (shared by every format, lib/creatives/generate.ts): reuse it from R2
+      // instead of paying twice.
+      const motionPrompt = args.script.photoMotions?.find(
+        (m) => m.assetIndex === Math.min(scene.assetIndex, args.imagePaths.length - 1),
+      )?.motion;
       const clipKey =
         provider.name === "fal"
-          ? `campaigns/${args.campaignId}/clips/${createHash("sha256").update(`${key}|${process.env.FAL_MOTION_ENDPOINT ?? ""}`).digest("hex").slice(0, 32)}.mp4`
+          ? `campaigns/${args.campaignId}/clips/${createHash("sha256")
+              .update(
+                motionPrompt
+                  ? `${key}|${process.env.FAL_MOTION_ENDPOINT ?? ""}|${falMotionPrompt(motionPrompt)}`
+                  : `${key}|${process.env.FAL_MOTION_ENDPOINT ?? ""}`,
+              )
+              .digest("hex")
+              .slice(0, 32)}.mp4`
           : null;
       const clipPath = join(args.workDir, `clip-${i}.mp4`);
       if (clipKey) {
@@ -147,6 +160,7 @@ async function generateMotionClips(args: {
           // access, and the Luma path needs a URL it can actually fetch.
           imageUrl: await presignDownload(key),
           prompt: scene.caption,
+          motionPrompt,
           durationSeconds: scene.durationSeconds,
           aspectRatio: args.aspectRatio,
         });
@@ -188,8 +202,8 @@ const voiceStats = new Map<string, string>();
 // A paid voiceover is kept in R2 under the campaign, keyed by its text and
 // voice, so the campaign's other format (same narration, see
 // lib/creatives/generate.ts) and any redo reuse it instead of paying again.
-function voiceCacheKey(campaignId: string, text: string): string {
-  const h = createHash("sha256").update(`${process.env.VOICE_PROVIDER ?? ""}|${process.env.FAL_VOICE ?? ""}|${text}`).digest("hex").slice(0, 32);
+function voiceCacheKey(campaignId: string, text: string, voice: string): string {
+  const h = createHash("sha256").update(`${process.env.VOICE_PROVIDER ?? ""}|${voice}|${text}`).digest("hex").slice(0, 32);
   return `campaigns/${campaignId}/voice/${h}.mp3`;
 }
 
@@ -199,11 +213,14 @@ async function synthesizeVoiceover(args: {
   workDir: string;
   creativeId: string;
   campaignId: string;
+  businessCategory: string;
 }): Promise<string | undefined> {
   const provider = voiceProvider();
   if (!provider) return undefined;
   const voicePath = join(args.workDir, "voice.mp3");
-  const cacheKey = voiceCacheKey(args.campaignId, args.script.voiceoverText);
+  // The writer's pick, else one by category; FAL_VOICE pins every ad to one.
+  const voice = process.env.FAL_VOICE ?? args.script.voice ?? defaultVoiceFor(args.businessCategory);
+  const cacheKey = voiceCacheKey(args.campaignId, args.script.voiceoverText, voice);
 
   // Only paid voices are worth caching; edge-tts is free.
   if (provider.name !== "edge-tts") {
@@ -211,7 +228,7 @@ async function synthesizeVoiceover(args: {
       if (await headObject(cacheKey)) {
         await writeFile(voicePath, await getObjectBytes(cacheKey));
         log("voiceover reused", { creativeId: args.creativeId, key: cacheKey });
-        voiceStats.set(args.creativeId, `${provider.name} (reused)`);
+        voiceStats.set(args.creativeId, `${provider.name} ${voice} (reused)`);
         return voicePath;
       }
     } catch (err) {
@@ -224,10 +241,11 @@ async function synthesizeVoiceover(args: {
     const result = await synthesizeVoice({
       text: args.script.voiceoverText,
       currency: args.currencyCode === "INR" ? "INR" : "USD",
+      voice,
     });
     if (result.fellBack) log("paid voice failed; used edge-tts", { creativeId: args.creativeId, error: result.fellBack });
     await writeFile(voicePath, result.audioBytes);
-    voiceStats.set(args.creativeId, result.fellBack ? "edge-tts (fallback)" : result.source);
+    voiceStats.set(args.creativeId, result.fellBack ? "edge-tts (fallback)" : `${result.source} ${voice}`);
     // A fallback (edge-tts) result is not cached, so the next format tries
     // the paid voice again.
     if (provider.name !== "edge-tts" && !result.fellBack) {
@@ -276,6 +294,19 @@ async function processJob(job: RenderJob): Promise<void> {
 
     const aspectRatio = creative.aspectRatio as AspectRatio;
 
+    // The demo "pro photo" pass (render/enhance.ts): brighter, sharper, tidied
+    // photos for both the stills and the motion clips. Off unless
+    // PHOTO_ENHANCE=fal; never the agent's portrait; failures keep originals.
+    const enhanced = await enhancePhotos({
+      campaignId: creative.campaignId,
+      sourceAssetKeys: creative.sourceAssetKeys,
+      imagePaths,
+      skip: script.portraitIndex != null ? [script.portraitIndex] : [],
+      workDir,
+      log: (msg, extra) => log(msg, { creativeId: creative.id, ...(extra as object) }),
+    });
+    imagePaths.splice(0, imagePaths.length, ...enhanced.imagePaths);
+
     // Both optional stages run before ffmpeg is touched, and both degrade to
     // the verified still-image pipeline rather than throwing. Sequential on
     // purpose: with RENDER_CONCURRENCY at 1 these already hold the platform's
@@ -283,7 +314,7 @@ async function processJob(job: RenderJob): Promise<void> {
     // multiplies the cost of a job that may still fail its encode.
     const clipPaths = await generateMotionClips({
       script,
-      sourceAssetKeys: creative.sourceAssetKeys,
+      sourceAssetKeys: enhanced.keys,
       imagePaths,
       aspectRatio,
       workDir,
@@ -297,6 +328,7 @@ async function processJob(job: RenderJob): Promise<void> {
       workDir,
       creativeId: creative.id,
       campaignId: creative.campaignId,
+      businessCategory: creative.businessCategory,
     });
 
     // The template ad (demo look) when enabled; the ffmpeg layout otherwise,
@@ -356,6 +388,10 @@ async function processJob(job: RenderJob): Promise<void> {
         motionErrors: motion?.errors.length ? motion.errors : undefined,
         scenes: script.scenes.length,
         voice: voiceStats.get(creative.id) ?? null,
+        photosEnhanced: enhanced.made + enhanced.reused,
+        photosEnhancedReused: enhanced.reused,
+        enhanceErrors: enhanced.errors.length ? enhanced.errors : undefined,
+        perPhotoMotion: Boolean(script.photoMotions?.length),
         at: new Date().toISOString(),
       },
     });
