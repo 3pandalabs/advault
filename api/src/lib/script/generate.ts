@@ -31,6 +31,13 @@ export type GenerateScriptInput = {
   // Photos the advertiser marked as showing people, and the agent's photo.
   peopleIndexes?: number[];
   portraitIndex?: number | null;
+  /**
+   * Short-lived URLs of the photos, in order, so the writer can SEE them:
+   * captions that match the pictures, and a motion line per photo. Claude
+   * path only. If the call fails with them (e.g. a photo over the size
+   * limit) it is retried once without.
+   */
+  imageUrls?: string[];
 };
 
 // Structured outputs rather than tool use: there is one shape to return and no
@@ -57,8 +64,8 @@ export async function generateScript(
     return fallback();
   }
 
-  try {
-    const response = await getClient().messages.create({
+  const call = (withImages: boolean) =>
+    getClient().messages.create({
       model: scriptEnv.model,
       // Generous relative to the ~200 tokens of JSON this returns, because
       // thinking is on by default on Opus 5 and max_tokens caps thinking plus
@@ -73,8 +80,32 @@ export async function generateScript(
       // Stable across every advertiser, so it caches. Everything specific to
       // this business is in the user turn below.
       system: AD_SCRIPT_SYSTEM_PROMPT,
-      messages: [{ role: "user", content: buildAdScriptUserPrompt(input) }],
+      messages: [
+        {
+          role: "user",
+          content: withImages
+            ? [
+                ...input.imageUrls!.flatMap((url, i) => [
+                  { type: "text" as const, text: `Photo ${i}:` },
+                  { type: "image" as const, source: { type: "url" as const, url } },
+                ]),
+                { type: "text" as const, text: buildAdScriptUserPrompt({ ...input, photosAttached: true }) },
+              ]
+            : buildAdScriptUserPrompt(input),
+        },
+      ],
     });
+
+  try {
+    const hasImages = Boolean(input.imageUrls?.length);
+    let response;
+    try {
+      response = await call(hasImages);
+    } catch (err) {
+      if (!hasImages) throw err;
+      log?.("script generation with photos failed; retrying without them", err);
+      response = await call(false);
+    }
 
     // A safety decline arrives as a normal 200 with an empty content array —
     // reading content[0] without this check throws on exactly the requests

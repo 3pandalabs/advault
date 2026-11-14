@@ -311,9 +311,9 @@ export default function PrivacyPage() {
             <td>The servers the application runs on</td>
           </tr>
           <tr>
-            <td>AI providers for script, video and voice (Anthropic; Kling; ElevenLabs through fal.ai)</td>
+            <td>AI providers for script, photos, video and voice (Anthropic; Meta Muse image editing, Kling and ElevenLabs through fal.ai)</td>
             <td>Your business name, category and offer text; the photos you uploaded for the ad; the ad's narration text</td>
-            <td>To write the script, animate your photos and read the voiceover</td>
+            <td>To write the script (the script writer looks at your photos), touch up the photos (lighting, sharpness, tidying; never the agent portrait), animate them and read the voiceover</td>
           </tr>
           <tr>
             <td>Payment providers</td>

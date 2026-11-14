@@ -30,6 +30,8 @@ export type VoiceRequest = {
   text: string;
   /** Language/market, so the Indian market gets an Indian English voice. */
   currency: "INR" | "USD";
+  /** ElevenLabs voice name (fal provider); FAL_VOICE / Sarah when unset. */
+  voice?: string;
 };
 
 export type VoiceResult = { audioBytes: Buffer; source: "edge-tts" | "elevenlabs" | "fal-elevenlabs" };
@@ -122,7 +124,7 @@ export const falElevenLabs: VoiceProvider = {
     const submit = await fetch(`https://queue.fal.run/${FAL_ENDPOINT}`, {
       method: "POST",
       headers,
-      body: JSON.stringify({ text: req.text, voice: FAL_VOICE, stability: 0.5 }),
+      body: JSON.stringify({ text: req.text, voice: req.voice ?? FAL_VOICE, stability: 0.5 }),
       signal: AbortSignal.timeout(30_000),
     });
     const job = (await submit.json()) as { status_url?: string; response_url?: string };

@@ -495,7 +495,40 @@ export const backfillYouTubeUploads = () =>
 // Two steps: ask the API for a presigned PUT, then upload straight to R2. The
 // file never passes through the API, which is what keeps a 10MB storefront
 // photo from occupying a Fastify worker for the length of a phone's upload.
-export async function uploadAsset(file: File, kind: "photo" | "logo" = "photo"): Promise<Asset> {
+// Phone photos are 3–12 MB at 4000+ px. The ad never needs more than ~2000 px
+// (the video is 1080 wide), and the script writer (Claude, which looks at the
+// photos) refuses images over 5 MB. So photos are re-encoded in the browser
+// to at most 2048 px on the long edge, JPEG 0.88 (EXIF rotation applied).
+// Anything that can't be decoded here is uploaded as it is.
+const MAX_PHOTO_EDGE = 2048;
+async function shrinkPhoto(file: File): Promise<File> {
+  if (!/^image\/(jpeg|png|webp)$/.test(file.type) || typeof createImageBitmap !== "function") return file;
+  try {
+    const bmp = await createImageBitmap(file, { imageOrientation: "from-image" });
+    const scale = Math.min(1, MAX_PHOTO_EDGE / Math.max(bmp.width, bmp.height));
+    if (scale === 1 && file.size <= 2_500_000) {
+      bmp.close();
+      return file;
+    }
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(bmp.width * scale);
+    canvas.height = Math.round(bmp.height * scale);
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return file;
+    ctx.fillStyle = "#fff"; // a transparent PNG would otherwise turn black
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(bmp, 0, 0, canvas.width, canvas.height);
+    bmp.close();
+    const blob = await new Promise<Blob | null>((r) => canvas.toBlob(r, "image/jpeg", 0.88));
+    if (!blob || blob.size >= file.size) return file;
+    return new File([blob], file.name.replace(/\.\w+$/, "") + ".jpg", { type: "image/jpeg" });
+  } catch {
+    return file;
+  }
+}
+
+export async function uploadAsset(original: File, kind: "photo" | "logo" = "photo"): Promise<Asset> {
+  const file = kind === "photo" ? await shrinkPhoto(original) : original;
   const { key, uploadUrl } = await api<{ key: string; uploadUrl: string }>(
     "/assets/presign-upload",
     { method: "POST", body: JSON.stringify({ contentType: file.type, kind }) },

@@ -26,6 +26,11 @@ export type MotionRequest = {
   imageUrl?: string;
   /** What should happen in the shot. Derived from the scene caption. */
   prompt: string;
+  /**
+   * The script writer's motion line for this photo (fal). When set it
+   * replaces the generic FAL_MOTION_PROMPT, with FAL_MOTION_STYLE appended.
+   */
+  motionPrompt?: string;
   durationSeconds: number;
   aspectRatio: "16:9" | "9:16";
 };
@@ -172,6 +177,13 @@ export const luma: MotionProvider = {
 
 export const FAL_MOTION_PROMPT =
   "Small, natural movement: people keep doing what they are doing, hair, cloth, leaves and light move softly; slow gentle push-in. Realistic, steady, natural. No text, no logos, no new objects, faces stay the same.";
+// Appended to a per-photo motion line, as the demos did.
+export const FAL_MOTION_STYLE = " Realistic, steady, natural. No text, no logos, no new objects, faces stay the same.";
+
+/** The prompt a fal clip is made with (also part of the clip cache key). */
+export function falMotionPrompt(motionPrompt?: string): string {
+  return motionPrompt ? motionPrompt.trim() + FAL_MOTION_STYLE : FAL_MOTION_PROMPT;
+}
 const FAL_MOTION_ENDPOINT = process.env.FAL_MOTION_ENDPOINT ?? "kling/v4/flash/image-to-video";
 
 export const falKling: MotionProvider = {
@@ -187,7 +199,7 @@ export const falKling: MotionProvider = {
     const submit = await fetch(`https://queue.fal.run/${FAL_MOTION_ENDPOINT}`, {
       method: "POST",
       headers,
-      body: JSON.stringify({ start_image_url: image, prompt: FAL_MOTION_PROMPT, duration: 5 }),
+      body: JSON.stringify({ start_image_url: image, prompt: falMotionPrompt(req.motionPrompt), duration: 5 }),
       signal: AbortSignal.timeout(60_000),
     });
     const job = (await submit.json().catch(() => ({}))) as { status_url?: string; response_url?: string };
