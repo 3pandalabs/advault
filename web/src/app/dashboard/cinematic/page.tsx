@@ -80,7 +80,7 @@ export default function CinematicPage() {
       }
       await refresh();
     } catch {
-      setError("Could not start the order.");
+      setError("Could not start the order. Nothing was charged; please try again.");
     } finally {
       setBusy(false);
     }
@@ -191,7 +191,7 @@ export default function CinematicPage() {
             onClick={onOrder}
             disabled={busy || !campaignId || description.trim().length < 20}
           >
-            {busy ? "Starting…" : `Make it — ${quote.display.amount}`}
+            {busy ? "Planning your shots… (up to a minute)" : `Make it — ${quote.display.amount}`}
           </Button>
           {campaigns.length === 0 ? (
             <p className="mt-2 text-sm text-zinc-400">

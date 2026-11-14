@@ -21,6 +21,7 @@ import {
 } from "../lib/cinematic/index.js";
 import { isCinematicConfigured } from "../lib/ai/cinematic/index.js";
 import { REAL_PHOTO_CLOSE_SECONDS } from "../lib/cinematic/policy.js";
+import { generateCinematicBrief } from "../lib/cinematic/brief.js";
 
 const WEB_ORIGIN = process.env.WEB_ORIGIN ?? "https://advault.3pandalabs.com";
 
@@ -141,6 +142,30 @@ export async function cinematicRoutes(app: FastifyInstance) {
         const quote = await quoteFor(req.userId!, "cinematic");
         const [user] = await db.select().from(users).where(eq(users.id, req.userId!)).limit(1);
 
+        // The shot plan is written HERE, by the API (which holds the Anthropic
+        // key; the renderer does not), before any money moves: a brief that
+        // can't be written is a refused order, not a refund later. The
+        // renderer uses the stored brief (render/cinematic.ts).
+        let brief;
+        try {
+          brief = await generateCinematicBrief(
+            {
+              businessName: campaign.businessName,
+              businessCategory: campaign.businessCategory,
+              description: body.description,
+              offerDetails: campaign.offerDetails,
+              callToAction: campaign.callToAction,
+              aspectRatio: "9:16",
+              addOn: quote.addOn,
+              realAssetCount: 1,
+            },
+            (msg, extra) => req.log.warn({ extra }, msg),
+          );
+        } catch (err) {
+          req.log.error({ err }, "cinematic brief failed at order time");
+          return reply.code(502).send({ error: "brief_failed" });
+        }
+
         let purchase;
         try {
           purchase = await createPurchase({
@@ -166,7 +191,7 @@ export async function cinematicRoutes(app: FastifyInstance) {
               amountMinor: 0,
               provider: "manual",
               status: "paid",
-              brief: { description: body.description },
+              brief: { description: body.description, brief },
               updatedAt: new Date(),
             })
             .where(eq(purchases.id, purchase.id))
@@ -185,7 +210,7 @@ export async function cinematicRoutes(app: FastifyInstance) {
           .update(purchases)
           .set({
             // Both formats are always made; aspectRatio is accepted and ignored.
-            brief: { description: body.description },
+            brief: { description: body.description, brief },
             updatedAt: new Date(),
           })
           .where(eq(purchases.id, purchase.id));
