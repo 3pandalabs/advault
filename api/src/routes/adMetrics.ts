@@ -1,5 +1,8 @@
 import type { FastifyInstance } from "fastify";
+import { and, gte, lt, ne, sql } from "drizzle-orm";
 import { z } from "zod";
+import { db } from "../db/index.js";
+import { creatives, purchases } from "../db/schema.js";
 import { requireAdminOrAnalyticsToken } from "../auth/adminAccess.js";
 import { requireAuth } from "../auth/plugin.js";
 import { allCampaignMetrics, campaignMetrics } from "../lib/adMetrics/index.js";
@@ -47,6 +50,49 @@ export async function adMetricsRoutes(app: FastifyInstance) {
       const days = clampRangeDays((req.query as { days?: number }).days);
       const since = isoDaysAgo(days - 1);
       return { days, since, note: NOTE, ...(await allCampaignMetrics(since)) };
+    },
+  );
+
+  // Ad production in a date range, for the org admin site's cost per ad
+  // (Cash flow tab). Counts only, no customer data. `until` is exclusive.
+  //   adsMade:   generations: distinct (campaign, minute) of AdVault-made
+  //              creatives (both formats of one ad are made together)
+  //   renders:   AdVault-made creatives (one per format, redos included)
+  //   paidAds:   $10 new_ad orders paid in the range (amount > 0)
+  app.get(
+    "/admin/ad-production",
+    {
+      preHandler: requireAdminOrAnalyticsToken,
+      schema: {
+        querystring: z.object({
+          since: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+          until: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        }),
+      },
+    },
+    async (req) => {
+      const { since, until } = req.query as { since: string; until: string };
+      const from = new Date(`${since}T00:00:00Z`);
+      const to = new Date(`${until}T00:00:00Z`);
+      const [made] = await db
+        .select({
+          renders: sql<number>`count(*)::int`,
+          adsMade: sql<number>`count(distinct (${creatives.campaignId}, date_trunc('minute', ${creatives.createdAt})))::int`,
+        })
+        .from(creatives)
+        .where(and(ne(creatives.kind, "upload"), gte(creatives.createdAt, from), lt(creatives.createdAt, to)));
+      const [paid] = await db
+        .select({ paidAds: sql<number>`count(*)::int` })
+        .from(purchases)
+        .where(
+          and(
+            sql`${purchases.sku} = 'new_ad'`,
+            sql`${purchases.amountMinor} > 0`,
+            gte(purchases.paidAt, from),
+            lt(purchases.paidAt, to),
+          ),
+        );
+      return { since, until, adsMade: made?.adsMade ?? 0, renders: made?.renders ?? 0, paidAds: paid?.paidAds ?? 0 };
     },
   );
 }
