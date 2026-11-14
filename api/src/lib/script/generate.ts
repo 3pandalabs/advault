@@ -1,4 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
+import type { Realty } from "../realty/index.js";
 import { buildFallbackScript } from "./fallback.js";
 import { scriptEnv } from "./env.js";
 import { AD_SCRIPT_SYSTEM_PROMPT, buildAdScriptUserPrompt } from "./prompt.js";
@@ -23,6 +24,10 @@ export type GenerateScriptInput = {
   radiusMiles: number;
   aspectRatio: "16:9" | "9:16";
   assetCount: number;
+  // Real estate only (lib/realty): the listing/office address and the ad type
+  // with the listing facts the advertiser entered.
+  targetAddress?: { street: string; city: string; state: string; postalCode: string } | null;
+  realty?: Realty | null;
 };
 
 // Structured outputs rather than tool use: there is one shape to return and no

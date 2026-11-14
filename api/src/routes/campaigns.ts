@@ -5,6 +5,7 @@ import { requireAuth } from "../auth/plugin.js";
 import { db } from "../db/index.js";
 import { campaigns, creatives } from "../db/schema.js";
 import { loadOwnedCampaign } from "../lib/ownership.js";
+import { realtySchema } from "../lib/realty/index.js";
 import {
   TARGETING_VIOLATION_DETAIL,
   audienceFiltersSchema,
@@ -65,6 +66,8 @@ const campaignInput = z.object({
   targetAddress: targetAddressSchema.nullish(),
   // Optional "Who should see it" filters. Absent/null = everyone.
   audienceFilters: audienceFiltersSchema.nullish(),
+  // Real estate only: listing/open-house ad or agent ad (lib/realty).
+  realty: realtySchema.nullish(),
 });
 
 type CampaignInput = z.infer<typeof campaignInput>;
@@ -104,6 +107,7 @@ export async function campaignRoutes(app: FastifyInstance) {
         ...body,
         targetAddress: body.targetAddress ?? null,
         audienceFilters: targeting.audienceFilters,
+        realty: body.realty ?? null,
         userId: req.userId!,
       })
       .returning();

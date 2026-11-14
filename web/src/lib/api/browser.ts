@@ -127,6 +127,15 @@ export type Asset = {
 
 export type CampaignStatus = "draft" | "rendering" | "ready" | "live" | "paused" | "failed";
 
+/** Real estate only: listing/open-house ad or agent ad (api lib/realty). */
+export type Realty = {
+  adType: "listing" | "agent";
+  price?: string | null;
+  beds?: number | null;
+  baths?: number | null;
+  openHouse?: { date: string; start: string; end: string } | null;
+};
+
 export type Campaign = {
   /** The ad account it was launched into; null until launch. */
   adAccountId: string | null;
@@ -359,6 +368,7 @@ export function createCampaign(input: {
   dailyBudgetCents: number;
   targetAddress?: TargetAddress | null;
   audienceFilters?: AudienceFilters | null;
+  realty?: Realty | null;
 }) {
   return api<Campaign>("/campaigns", { method: "POST", body: JSON.stringify(input) });
 }

@@ -15,6 +15,7 @@ import {
 } from "drizzle-orm/pg-core";
 import type { BillingMode } from "../lib/billing/policy.js";
 import type { AudienceFilters, TargetAddress } from "../lib/audience/policy.js";
+import type { Realty } from "../lib/realty/index.js";
 
 // Enum-ish columns are `text` + a CHECK constraint rather than pgEnum, matching
 // the RentVault and RsvpVault schemas. Adding a value to a pgEnum needs its own
@@ -454,6 +455,9 @@ export const campaigns = pgTable(
     // drawn around, because housing ads may not target ZIP codes (Google
     // policy; lib/audience/policy.ts). For those rows targetZipCodes is empty.
     targetAddress: jsonb("target_address").$type<TargetAddress>(),
+    // Real estate only: listing or agent ad, and the listing facts
+    // (lib/realty, migration 0016). NULL for every other category.
+    realty: jsonb("realty").$type<Realty>(),
     // Optional "Who should see it" filters (age, gender, parental status,
     // household income, language). NULL = everyone, the default. Shape and
     // the housing restrictions: lib/audience/policy.ts.
