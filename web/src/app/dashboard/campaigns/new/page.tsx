@@ -99,9 +99,14 @@ function photoTip(category: string): string {
   return PHOTO_TIPS[category] ?? "A photo of you, your team at work, or a happy customer (with their permission).";
 }
 
-function offerPlaceholder(category: string, isListing: boolean): string {
+/** The category's example offer, or null when there is only the generic hint. */
+function offerExample(category: string, isListing: boolean): string | null {
   if (isHousingCategory(category)) return isListing ? LISTING_EXAMPLE : AGENT_EXAMPLE;
-  return OFFER_EXAMPLES[category] ?? "Your deal or price, how long it lasts, and what makes you the one to call.";
+  return OFFER_EXAMPLES[category] ?? null;
+}
+
+function offerPlaceholder(category: string, isListing: boolean): string {
+  return offerExample(category, isListing) ?? "Your deal or price, how long it lasts, and what makes you the one to call.";
 }
 
 export default function NewCampaignPage() {
@@ -989,9 +994,37 @@ export default function NewCampaignPage() {
                 value={form.offerDetails}
                 onChange={set("offerDetails")}
                 placeholder={offerPlaceholder(category, isListing)}
+                // Tab on the empty box takes the suggested text (like a
+                // code-editor suggestion); the button below does the same on
+                // a phone, which has no Tab key.
+                onKeyDown={(e) => {
+                  const example = offerExample(category, isListing);
+                  if (e.key === "Tab" && !e.shiftKey && example && form.offerDetails.trim() === "") {
+                    e.preventDefault();
+                    setForm((f) => ({ ...f, offerDetails: example }));
+                  }
+                }}
                 className="min-h-24"
               />
-              {form.offerDetails.trim() === "" ? (
+              {form.offerDetails.trim() === "" && offerExample(category, isListing) ? (
+                <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setForm((f) => ({ ...f, offerDetails: offerExample(category, isListing)! }))}
+                  >
+                    Use this example
+                  </Button>
+                  <span className="hidden text-xs text-zinc-500 sm:inline">or press Tab</span>
+                </div>
+              ) : null}
+              {form.offerDetails.trim() !== "" && form.offerDetails === offerExample(category, isListing) ? (
+                <p className="mt-1.5 text-xs text-amber-300/90">
+                  This is our example. Change the prices and details so every word is true for your
+                  business: your ad will say exactly this.
+                </p>
+              ) : form.offerDetails.trim() === "" ? (
                 <p className="mt-1.5 text-xs text-amber-300/90">
                   This is what your ad says. Leave it empty and the ad can only say your name and
                   what you do: no price, no deal, no reason to call you today. A price or discount
