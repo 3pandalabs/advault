@@ -67,6 +67,26 @@ const PRESET_CATEGORIES: readonly string[] = CATEGORIES;
 
 const noopSubscribe = () => () => {};
 
+const OFFER_EXAMPLES: Record<string, string> = {
+  Plumbing: "$49 drain cleaning this month. Same-day service, 7 days a week. Licensed, family-run since 1998.",
+  Electrical: "Free estimates on panel upgrades. EV charger installs from $599. Licensed and insured.",
+  HVAC: "AC tune-up $79 until June 30. 24/7 emergency repairs. Financing available.",
+  Dentistry: "New patient exam, cleaning and X-rays $49. Evening and Saturday appointments. Most insurance accepted.",
+  Restaurant: "Lunch special $12.99, Mon–Fri. Wood-fired pizza, fresh pasta. Free delivery within 3 miles.",
+  Landscaping: "Spring cleanup from $149. Weekly mowing from $35. Free quotes, same week.",
+  "Auto repair": "Oil change $39.99. Free brake check. Most repairs done same day, 12-month warranty.",
+  "Cleaning services": "First home clean 20% off. Eco-friendly products. Insured, background-checked cleaners.",
+};
+const LISTING_EXAMPLE =
+  "New roof 2024, updated kitchen with quartz counters, fenced backyard, two-car garage. Walk to Maple Park.";
+const AGENT_EXAMPLE =
+  "Sold 40+ homes in Austin last year. Free home valuation. Available evenings and weekends.";
+
+function offerPlaceholder(category: string, isListing: boolean): string {
+  if (isHousingCategory(category)) return isListing ? LISTING_EXAMPLE : AGENT_EXAMPLE;
+  return OFFER_EXAMPLES[category] ?? "Your deal or price, how long it lasts, and what makes you the one to call.";
+}
+
 export default function NewCampaignPage() {
   const router = useRouter();
   const [step, setStep] = useState(1);
@@ -777,18 +797,32 @@ export default function NewCampaignPage() {
             </div>
 
             <div>
-              <Label htmlFor="offerDetails">Anything else worth saying? (optional)</Label>
+              <Label htmlFor="offerDetails" className="flex items-center gap-2">
+                Your offer and what makes you different
+                <span className="rounded-full bg-amber-400/15 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-amber-300">
+                  Highly recommended
+                </span>
+              </Label>
               <Textarea
                 id="offerDetails"
                 maxLength={2000}
                 value={form.offerDetails}
                 onChange={set("offerDetails")}
-                placeholder="Family-run since 1998. Same-day emergency callouts."
+                placeholder={offerPlaceholder(category, isListing)}
+                className="min-h-24"
               />
-              <FieldHint>
-                Used to write the script. Only include things that are true — your ad is a public
-                statement about your business.
-              </FieldHint>
+              {form.offerDetails.trim() === "" ? (
+                <p className="mt-1.5 text-xs text-amber-300/90">
+                  This is what your ad says. Leave it empty and the ad can only say your name and
+                  what you do: no price, no deal, no reason to call you today. A price or discount
+                  appears in the ad only if you write it here.
+                </p>
+              ) : (
+                <FieldHint>
+                  Used to write the script. Only include things that are true: your ad is a public
+                  statement about your business.
+                </FieldHint>
+              )}
             </div>
 
             {AUDIENCE_FILTERS_ENABLED ? (
