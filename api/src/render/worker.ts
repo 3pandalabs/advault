@@ -94,84 +94,93 @@ async function generateMotionClips(args: {
   if (!provider || MOTION_MAX_CLIPS <= 0) return clips;
 
   const reused = new Set<number>();
-  // Scenes showing people first: a person moving is what makes the demo ads
-  // feel alive, and the clip budget is capped. Then the rest, in order.
+  const errors: string[] = [];
+  // Which scenes get a clip: people first (a person moving is what makes the
+  // demo ads feel alive), then the rest in order, one clip per distinct photo,
+  // capped by MOTION_MAX_CLIPS. Chosen up front so the clips can be made AT THE
+  // SAME TIME: each fal clip takes ~80 s, so one after another made the first
+  // format wait ~4 minutes for three clips. Same cost either way.
   const people = new Set(args.script.peopleIndexes ?? []);
   const order = [...args.script.scenes.entries()].sort(
     ([, a], [, b]) => Number(people.has(b.assetIndex)) - Number(people.has(a.assetIndex)),
   );
+  const picked: { i: number; scene: (typeof args.script.scenes)[number]; imagePath: string; key: string }[] = [];
+  const seenKeys = new Set<string>();
   for (const [i, scene] of order) {
-    if (clips.size >= MOTION_MAX_CLIPS) break;
-
+    if (picked.length >= MOTION_MAX_CLIPS) break;
     const assetIndex = Math.min(scene.assetIndex, args.imagePaths.length - 1);
     const imagePath = args.imagePaths[assetIndex];
     const key = args.sourceAssetKeys[assetIndex];
-    if (!imagePath || !key) continue;
-
-    // fal clips use one fixed prompt, so a photo's clip is the same for every
-    // format: reuse it from R2 instead of paying twice.
-    const clipKey =
-      provider.name === "fal"
-        ? `campaigns/${args.campaignId}/clips/${createHash("sha256").update(`${key}|${process.env.FAL_MOTION_ENDPOINT ?? ""}`).digest("hex").slice(0, 32)}.mp4`
-        : null;
-    if (clipKey) {
-      try {
-        if (await headObject(clipKey)) {
-          const clipPath = join(args.workDir, `clip-${i}.mp4`);
-          await writeFile(clipPath, await getObjectBytes(clipKey));
-          clips.set(i, clipPath);
-          reused.add(i);
-          log("motion clip reused", { creativeId: args.creativeId, scene: i, key: clipKey });
-          continue;
-        }
-      } catch (err) {
-        log("motion clip cache read failed; generating", { creativeId: args.creativeId, error: String(err) });
-      }
-    }
-
-    try {
-      const result = await provider.generate({
-        imageBytes: await readFile(imagePath),
-        contentType: IMAGE_CONTENT_TYPES[key.split(".").pop() ?? ""] ?? "image/jpeg",
-        // Presigned rather than public: `advault-assets` has no public read
-        // access, and the Luma path needs a URL it can actually fetch. Short
-        // lived by construction — the clip is generated within one render.
-        imageUrl: await presignDownload(key),
-        prompt: scene.caption,
-        durationSeconds: scene.durationSeconds,
-        aspectRatio: args.aspectRatio,
-      });
-
-      const clipPath = join(args.workDir, `clip-${i}.mp4`);
-      await writeFile(clipPath, result.videoBytes);
-      clips.set(i, clipPath);
-      if (clipKey) {
-        await putObject(clipKey, result.videoBytes, "video/mp4").catch((err) =>
-          log("motion clip cache write failed", { creativeId: args.creativeId, error: String(err) }),
-        );
-      }
-      log("motion clip generated", {
-        creativeId: args.creativeId,
-        scene: i,
-        source: result.source,
-        bytes: result.videoBytes.byteLength,
-      });
-    } catch (err) {
-      log("motion generation failed; scene falls back to Ken Burns", {
-        creativeId: args.creativeId,
-        scene: i,
-        provider: provider.name,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
+    if (!imagePath || !key || seenKeys.has(key)) continue;
+    seenKeys.add(key);
+    picked.push({ i, scene, imagePath, key });
   }
 
-  motionStats.set(args.creativeId, { provider: provider.name, reused: reused.size });
+  await Promise.all(
+    picked.map(async ({ i, scene, imagePath, key }) => {
+      // fal clips use one fixed prompt, so a photo's clip is the same for
+      // every format: reuse it from R2 instead of paying twice.
+      const clipKey =
+        provider.name === "fal"
+          ? `campaigns/${args.campaignId}/clips/${createHash("sha256").update(`${key}|${process.env.FAL_MOTION_ENDPOINT ?? ""}`).digest("hex").slice(0, 32)}.mp4`
+          : null;
+      const clipPath = join(args.workDir, `clip-${i}.mp4`);
+      if (clipKey) {
+        try {
+          if (await headObject(clipKey)) {
+            await writeFile(clipPath, await getObjectBytes(clipKey));
+            clips.set(i, clipPath);
+            reused.add(i);
+            log("motion clip reused", { creativeId: args.creativeId, scene: i, key: clipKey });
+            return;
+          }
+        } catch (err) {
+          log("motion clip cache read failed; generating", { creativeId: args.creativeId, error: String(err) });
+        }
+      }
+
+      try {
+        const result = await provider.generate({
+          imageBytes: await readFile(imagePath),
+          contentType: IMAGE_CONTENT_TYPES[key.split(".").pop() ?? ""] ?? "image/jpeg",
+          // Presigned rather than public: `advault-assets` has no public read
+          // access, and the Luma path needs a URL it can actually fetch.
+          imageUrl: await presignDownload(key),
+          prompt: scene.caption,
+          durationSeconds: scene.durationSeconds,
+          aspectRatio: args.aspectRatio,
+        });
+        await writeFile(clipPath, result.videoBytes);
+        clips.set(i, clipPath);
+        if (clipKey) {
+          await putObject(clipKey, result.videoBytes, "video/mp4").catch((err) =>
+            log("motion clip cache write failed", { creativeId: args.creativeId, error: String(err) }),
+          );
+        }
+        log("motion clip generated", {
+          creativeId: args.creativeId,
+          scene: i,
+          source: result.source,
+          bytes: result.videoBytes.byteLength,
+        });
+      } catch (err) {
+        errors.push((err instanceof Error ? err.message : String(err)).slice(0, 300));
+        log("motion generation failed; scene falls back to Ken Burns", {
+          creativeId: args.creativeId,
+          scene: i,
+          provider: provider.name,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }),
+  );
+
+  motionStats.set(args.creativeId, { provider: provider.name, reused: reused.size, tried: picked.length, errors });
   return clips;
 }
 
 // Per-render facts for creatives.render_info (filled by the helpers above).
-const motionStats = new Map<string, { provider: string; reused: number }>();
+const motionStats = new Map<string, { provider: string; reused: number; tried: number; errors: string[] }>();
 const voiceStats = new Map<string, string>();
 
 // Voiceover for the whole spot, or undefined for a silent cut — which is what
@@ -343,6 +352,8 @@ async function processJob(job: RenderJob): Promise<void> {
         motionProvider: motion?.provider ?? null,
         motionClips: clipPaths.size,
         motionReused: motion?.reused ?? 0,
+        motionTried: motion?.tried ?? 0,
+        motionErrors: motion?.errors.length ? motion.errors : undefined,
         scenes: script.scenes.length,
         voice: voiceStats.get(creative.id) ?? null,
         at: new Date().toISOString(),

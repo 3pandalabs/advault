@@ -180,7 +180,10 @@ export const falKling: MotionProvider = {
 
   async generate(req) {
     const headers = { authorization: `Key ${process.env.FAL_KEY}`, "content-type": "application/json" };
-    const image = `data:${req.contentType};base64,${req.imageBytes.toString("base64")}`;
+    // A short-lived link (presigned R2 GET) rather than the bytes inline: a
+    // phone photo is several MB, and as base64 inside the JSON body it can
+    // exceed what the queue accepts. Inline only when no link was given.
+    const image = req.imageUrl ?? `data:${req.contentType};base64,${req.imageBytes.toString("base64")}`;
     const submit = await fetch(`https://queue.fal.run/${FAL_MOTION_ENDPOINT}`, {
       method: "POST",
       headers,
