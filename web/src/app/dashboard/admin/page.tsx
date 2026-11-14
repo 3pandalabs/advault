@@ -47,6 +47,9 @@ export default function AdminMetricsPage() {
           <h1 className="text-2xl font-semibold tracking-tight">Ad performance</h1>
           <p className="mt-1 text-sm text-zinc-400">
             Every launched campaign, all customers.{" "}
+            <Link href="/dashboard/admin/business" className="text-amber-300 hover:underline">
+              Business →
+            </Link>{" "}
             <Link href="/dashboard/admin/reviews" className="text-amber-300 hover:underline">
               Video reviews →
             </Link>
