@@ -381,14 +381,15 @@ export default function PrivacyPage() {
         </li>
       </ul>
 
-      <h2>Your rights</h2>
+      <h2 id="delete-account">Your rights</h2>
       <p>You can ask us at any time to:</p>
       <ul>
         <li>show you a copy of everything we hold about you;</li>
         <li>correct anything that is wrong;</li>
         <li>
           delete your account and its data, subject to the financial records we are
-          required to keep;
+          required to keep. You can also do this yourself at any time, in the app or on
+          the web: Settings → Delete account;
         </li>
         <li>stop sending you anything that is not essential to your service.</li>
       </ul>

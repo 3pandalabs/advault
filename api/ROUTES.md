@@ -25,6 +25,27 @@ is meant to be readable without a login.
 | GET | `/auth/me` | |
 | PATCH | `/auth/me` | Profile fields only — never email or role. |
 | DELETE | `/auth/sessions` | Signs out everywhere. |
+| GET | `/auth/me/deletion` | Preview for the confirmation screen: `{ liveCampaigns, activePlan, walletBalanceMinor, currencyCode }`. |
+| POST | `/auth/me/delete` | `{ password }`. **204**; 403 `wrong_password`; 401 `account_deleted`. See below. |
+
+### Account deletion
+
+Google Play requires it in-app (`lib/accountDeletion.ts`). Nothing blocks it.
+In order: live campaigns are paused at Google (MCC token, best effort; still
+flipped to `paused` locally if Google refuses), then in one transaction the plan
+is cancelled immediately, sessions, YouTube channel rows and brought-your-own
+Google Ads rows (encrypted refresh tokens) are deleted, uploaded photos/logos
+are deleted (R2 objects after commit), and the user row is **anonymised, not
+deleted**: payments, purchases, invoices, campaigns and the wallet ledger
+cascade from it and are the financial records we keep. Email →
+`deleted+<id>@advault.invalid`, password → an unusable hash, name →
+"Deleted user", business name/category/phone → null, `deleted_at` → now.
+Managed Google Ads rows stay (MCC children with our Mercury card). Ops get one
+ntfy alert listing the manual clean-up: freeze the Mercury card, refund any
+wallet balance, pause anything Google refused, remove videos from AdVault's
+YouTube channel. Already-issued access tokens get 401 `account_deleted`
+(`auth/deleted.ts`) and expire within 15 minutes regardless; the address can
+sign up again as a new account.
 
 No password reset — the shared mailer has no verified sender for this app. See
 CLAUDE.md.

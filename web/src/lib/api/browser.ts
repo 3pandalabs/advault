@@ -719,6 +719,22 @@ export function subscribe(planKey: string) {
   }>("/subscription", { method: "POST", body: JSON.stringify({ planKey }) });
 }
 
+export type DeletionPreview = {
+  liveCampaigns: number;
+  activePlan: boolean;
+  walletBalanceMinor: number;
+  currencyCode: string;
+};
+
+export function getDeletionPreview() {
+  return api<DeletionPreview>("/auth/me/deletion");
+}
+
+/** 204 on success; ApiError 403 "wrong_password". */
+export function deleteAccount(password: string) {
+  return api<void>("/auth/me/delete", { method: "POST", body: JSON.stringify({ password }) });
+}
+
 export function cancelSubscription(immediate = false) {
   return api<{ status: string; cancelAtPeriodEnd: boolean; servesUntil: string | null }>(
     "/subscription/cancel",

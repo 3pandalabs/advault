@@ -24,8 +24,21 @@ dashboard and the Coolify wiring at once.
 ## Monorepo layout
 
 `web/` (Next.js on Cloudflare Workers) · `api/` (Fastify on Coolify/Hetzner) ·
-`infra/` (runbooks). Same shape as `3pandalabs/evitevault`. No `app/` — there
-is no mobile client; the advertiser workflow is a desktop-first web app.
+`android/` · `infra/` (runbooks). Same shape as `3pandalabs/evitevault`. No
+React Native `app/`: `android/` (2026-11-13) is a Bubblewrap **Trusted Web
+Activity** wrapping the web app for Google Play (`com.threepanda.advault`;
+build, signing and listing in `infra/play-store/README.md`), so web deploys
+update the Android app instantly. Keep `web/src/app/manifest.ts`,
+`android/twa-manifest.json` + `android/app/build.gradle`, and the fingerprints
+in `web/src/app/.well-known/assetlinks.json/route.ts` in step. Every page must
+work at 360px wide, and phone features go through the browser (file inputs,
+`capture` for the camera), never native code.
+
+**Account deletion** (Settings → Delete account, `POST /auth/me/delete`) is
+required by Play. It anonymises the user row (`deleted_at`,
+`deleted+<id>@advault.invalid`) instead of deleting it, because the financial
+records cascade from it. See `api/ROUTES.md` "Account deletion". A new table
+holding personal data must be handled there too.
 
 Brand assets (`logo/`, `background/`, `footer/`, `attribution/`) are copied
 from `3pandalabs/brand` into `web/src/components/`, not referenced at runtime —

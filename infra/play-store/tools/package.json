@@ -1,0 +1,14 @@
+{
+  "name": "advault-play-store-tools",
+  "private": true,
+  "type": "module",
+  "description": "Renders the AdVault Play Store graphics, PWA icons and listing screenshots. See ../README.md.",
+  "scripts": {
+    "graphics": "node build-graphics.mjs",
+    "screenshots": "node capture-screenshots.mjs",
+    "frame": "node frame-screenshots.mjs"
+  },
+  "dependencies": {
+    "playwright": "1.49.1"
+  }
+}

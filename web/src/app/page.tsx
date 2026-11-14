@@ -87,14 +87,17 @@ const FAQ = [
 export default function LandingPage() {
   return (
     <main>
-      <header className="mx-auto flex w-full max-w-5xl items-center justify-between px-6 py-6">
+      <header className="mx-auto flex w-full max-w-5xl items-center justify-between gap-3 px-4 py-6 sm:px-6">
         <div className="text-lg font-semibold tracking-tight">
           <Link href="/">
             <WordmarkName />
           </Link>
-          <WordmarkTag />
+          {/* At phone width the tag wraps under the name and squeezes the nav. */}
+          <span className="hidden sm:inline">
+            <WordmarkTag />
+          </span>
         </div>
-        <nav className="flex items-center gap-2 text-sm">
+        <nav className="flex shrink-0 items-center gap-1 whitespace-nowrap text-sm sm:gap-2">
           <Link href="#pricing" className="hidden rounded-lg px-3 py-2 text-zinc-300 hover:bg-white/10 sm:inline">
             Pricing
           </Link>
