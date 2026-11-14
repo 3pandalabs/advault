@@ -43,6 +43,12 @@ export type OfferAdProps = {
   /** Real estate: the agent's own photo, shown round on the end card. */
   portrait?: string;
   captions: Caption[];
+  /**
+   * Cinematic add-on: the visuals are generated film, so they play full
+   * screen in both formats (no blur under the hook, no framed reel, no side
+   * panel in landscape).
+   */
+  cinematic?: boolean;
   durationSeconds: number;
   width: number;
   height: number;
@@ -359,7 +365,7 @@ export const OfferAd: React.FC<OfferAdProps> = (p) => {
     <AbsoluteFill style={{ background: "#000" }}>
       {/* 1. Hook: the offer, from frame 0 */}
       <Sequence durationInFrames={f(HOOK_END)}>
-        <MovingPhoto photo={p.photos[0]} seconds={HOOK_END} dir={1} blur={vertical ? 6 : 10} />
+        <MovingPhoto photo={p.photos[0]} seconds={HOOK_END} dir={1} blur={p.cinematic ? 0 : vertical ? 6 : 10} />
         {/* Sticker sits high so the captions below never collide with it. */}
         <AbsoluteFill style={{ alignItems: "center", justifyContent: "flex-start", paddingTop: vertical ? 300 : 50 * u }}>
           <PriceSticker {...p} size={vertical ? 520 : 400 * u} />
@@ -368,9 +374,9 @@ export const OfferAd: React.FC<OfferAdProps> = (p) => {
 
       {/* 2. The business, moving. Landscape frames the photos on the right. */}
       <Sequence from={f(HOOK_END)} durationInFrames={f(photosEnd - HOOK_END)}>
-        {!vertical && <MovingPhoto photo={p.photos[0]} seconds={photosEnd - HOOK_END} dir={-1} blur={24} />}
-        <PhotoReel photos={reel} seconds={photosEnd - HOOK_END} framed={!vertical} />
-        {!vertical && (
+        {!vertical && !p.cinematic && <MovingPhoto photo={p.photos[0]} seconds={photosEnd - HOOK_END} dir={-1} blur={24} />}
+        <PhotoReel photos={reel} seconds={photosEnd - HOOK_END} framed={!vertical && !p.cinematic} />
+        {!vertical && !p.cinematic && (
           <AbsoluteFill style={{ inset: "0 56% 0 4%", justifyContent: "center" }}>
             <div style={{ fontFamily, fontWeight: 900, fontSize: 110 * u * Math.min(1, 6 / p.priceText.length), color: p.accentColor, lineHeight: 1 }}>
               {p.priceText}
@@ -383,10 +389,10 @@ export const OfferAd: React.FC<OfferAdProps> = (p) => {
             </Sequence>
           </AbsoluteFill>
         )}
-        {vertical && p.benefits.length > 0 && (
+        {(vertical || p.cinematic) && p.benefits.length > 0 && (
           <Sequence from={f(2.2)}>
-            <AbsoluteFill style={{ padding: 60, justifyContent: "flex-start", paddingTop: 260 }}>
-              <BenefitChips benefits={p.benefits.slice(0, 2)} fontSize={52} brand={p.brandColor} />
+            <AbsoluteFill style={{ padding: vertical ? 60 : 50 * u, justifyContent: "flex-start", paddingTop: vertical ? 260 : 50 * u }}>
+              <BenefitChips benefits={p.benefits.slice(0, 2)} fontSize={vertical ? 52 : 40 * u} brand={p.brandColor} />
             </AbsoluteFill>
           </Sequence>
         )}

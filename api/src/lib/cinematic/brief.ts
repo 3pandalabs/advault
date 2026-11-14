@@ -10,6 +10,7 @@ import {
   type VisualRejection,
 } from "./policy.js";
 import type { AddOn } from "../pricing/index.js";
+import { normalizeScriptJson } from "../script/schema.js";
 
 let client: Anthropic | undefined;
 function getClient(): Anthropic {
@@ -122,7 +123,14 @@ export async function generateCinematicBrief(
     const text = response.content.find((b) => b.type === "text")?.text;
     if (!text) throw new CinematicBriefError("the model returned no text block", "no_response");
 
-    const parsed = cinematicBriefSchema.safeParse(JSON.parse(text));
+    const raw = JSON.parse(text) as Record<string, unknown>;
+    // Voice and sticker go through the photo-ad normaliser: a bad one is
+    // dropped (template defaults apply), never a reason to fail a paid order.
+    const extras = normalizeScriptJson({ sticker: raw.sticker, voice: raw.voice }) as {
+      sticker?: CinematicBrief["sticker"];
+      voice?: CinematicBrief["voice"];
+    };
+    const parsed = cinematicBriefSchema.safeParse(raw);
     if (!parsed.success) {
       log?.("cinematic brief failed schema validation", parsed.error);
       throw new CinematicBriefError("the model returned an unusable brief", "malformed");
@@ -139,6 +147,8 @@ export async function generateCinematicBrief(
       voiceoverText: parsed.data.voiceoverText,
       closingText: parsed.data.closingText,
       callToAction: parsed.data.callToAction,
+      voice: extras.voice,
+      sticker: extras.sticker,
     };
 
     const rejection = rejectBrief({

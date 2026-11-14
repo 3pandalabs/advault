@@ -102,6 +102,8 @@ export type TemplateInputs = {
   businessName: string;
   businessCategory: string;
   landingUrl: string;
+  /** Cinematic add-on: full-screen film, up to 30 s. */
+  cinematic?: boolean;
 };
 
 /** Renders the template ad; returns the MP4 path, or null to fall back. */
@@ -129,7 +131,9 @@ export async function renderTemplate(input: TemplateInputs, log: (msg: string, e
   const spoken = input.voicePath ? await audioSeconds(input.voicePath) : null;
   const sceneSeconds = script.scenes.reduce((a, s) => a + s.durationSeconds, 0);
   // Room for the voice plus the 4.2 s end card; within YouTube-friendly bounds.
-  const durationSeconds = Math.min(20, Math.max(12, Math.ceil((spoken ?? sceneSeconds - 2) + 5)));
+  const durationSeconds = input.cinematic
+    ? Math.min(30, Math.max(15, Math.ceil(Math.max(spoken ?? 0, sceneSeconds - 2) + 4.5)))
+    : Math.min(20, Math.max(12, Math.ceil((spoken ?? sceneSeconds - 2) + 5)));
   const captions = timeCaptions(
     script.scenes.map((s) => s.caption),
     spoken ?? durationSeconds - 4.5,
@@ -154,6 +158,7 @@ export async function renderTemplate(input: TemplateInputs, log: (msg: string, e
         ? basename(input.imagePaths[script.portraitIndex])
         : undefined,
     captions,
+    cinematic: input.cinematic ?? false,
     durationSeconds,
     width,
     height,

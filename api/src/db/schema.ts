@@ -675,8 +675,8 @@ export const creatives = pgTable(
   (t) => [
     index("idx_creatives_campaign").on(t.campaignId),
     check("creatives_aspect_check", sql`${t.aspectRatio} in ('16:9','9:16')`),
-    check("creatives_motion_source_check", sql`${t.motionSource} in ('none','kling','luma')`),
-    check("creatives_voice_source_check", sql`${t.voiceSource} in ('none','edge-tts','elevenlabs')`),
+    check("creatives_motion_source_check", sql`${t.motionSource} in ('none','kling','luma','fal','veo')`),
+    check("creatives_voice_source_check", sql`${t.voiceSource} in ('none','edge-tts','elevenlabs','fal')`),
     check("creatives_kind_check", sql`${t.kind} in ('standard','cinematic','upload')`),
     check(
       "creatives_review_status_check",
