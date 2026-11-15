@@ -187,8 +187,9 @@ export const klingText: CinematicProvider = {
 
 // --- Google Gemini Omni Flash, through fal ----------------------------------
 //
-// The model behind the home-page demo clips. $0.027 per second at 720p
-// (2026-11-14), so a 15-second ad is about 40 cents per format. 3-15 s per
+// The model behind the home-page demo clips. $0.0819 per second at 720p on
+// fal (its $0.0273/s is 360p), so a 15-second ad is about $1.23 per format;
+// Google direct is cheaper (~$0.0695/s) and is tried first. 3-15 s per
 // clip; we bill exactly what we ask for.
 
 const FAL_T2V_ENDPOINT = process.env.FAL_T2V_ENDPOINT ?? "google/gemini-omni-flash/v1.2/text-to-video";

@@ -11,9 +11,10 @@ describe("vertex omni switch", () => {
     delete process.env.OMNI_PROVIDERS;
   });
 
-  it("is off by default (fal only)", () => {
-    process.env.GOOGLE_SA_KEY_B64 = key;
+  it("leads by default once a key is present", () => {
     expect(vertexOmniFirst()).toBe(false);
+    process.env.GOOGLE_SA_KEY_B64 = key;
+    expect(vertexOmniFirst()).toBe(true);
   });
 
   it("goes first only when listed first AND a key is present", () => {
