@@ -61,6 +61,8 @@ export type WebsiteFields = {
   serviceArea?: string;
   hours?: string;
   email?: string;
+  services?: string;
+  tagline?: string;
 };
 
 export type Photo = { bytes: Buffer; contentType: string };
@@ -69,7 +71,14 @@ export type SitevaultResult =
   | { ok: true; siteUrl: string; editUrl: string; slug: string }
   | { ok: false; status: number; errors: Record<string, string> };
 
-export async function createSitevaultSite(fields: WebsiteFields, photos: Photo[]): Promise<SitevaultResult> {
+/** The finished ad, shown on the site. MP4 only, under SiteVault's 40 MB limit. */
+export type Video = { bytes: Buffer };
+
+export async function createSitevaultSite(
+  fields: WebsiteFields,
+  photos: Photo[],
+  video: Video | null = null,
+): Promise<SitevaultResult> {
   const token = process.env.SITEVAULT_INTERNAL_TOKEN;
   if (!token) return { ok: false, status: 503, errors: { form: "website_builder_not_configured" } };
   const form = new FormData();
@@ -78,11 +87,12 @@ export async function createSitevaultSite(fields: WebsiteFields, photos: Photo[]
     const ext = p.contentType === "image/png" ? "png" : p.contentType === "image/webp" ? "webp" : "jpg";
     form.append("photos", new Blob([new Uint8Array(p.bytes)], { type: p.contentType }), `photo-${i + 1}.${ext}`);
   });
+  if (video) form.append("video", new Blob([new Uint8Array(video.bytes)], { type: "video/mp4" }), "ad.mp4");
   const res = await fetch(`${SITEVAULT_URL}/api/internal/sites`, {
     method: "POST",
     headers: { authorization: `Bearer ${token}`, accept: "application/json" },
     body: form,
-    signal: AbortSignal.timeout(60_000),
+    signal: AbortSignal.timeout(120_000),
   });
   const body = (await res.json().catch(() => ({}))) as {
     ok?: boolean;
@@ -96,4 +106,46 @@ export async function createSitevaultSite(fields: WebsiteFields, photos: Photo[]
     return { ok: true, siteUrl: body.siteUrl, editUrl: body.editUrl, slug: body.slug };
   }
   return { ok: false, status: res.status, errors: body.errors ?? { form: body.error ?? `sitevault_${res.status}` } };
+}
+
+// ---------------------------------------------------------------------------
+// Filling the site from the ad. The offer sticker is the ad's own summary of
+// the advertiser's offer ("SPRING CLEANUP" / "$149" / "MOWING FROM $35
+// WEEKLY"), written from their offer text under the no-invented-claims rule,
+// so it is safe to reuse as the site's services list and tagline.
+
+const KEEP_UPPER_STOP = new Set(["THE", "AND", "FOR", "OFF", "OUR", "ALL", "NEW", "ONE", "TWO", "YOU", "ANY", "PER", "NOW", "DAY", "GET", "TOP", "BIG"]);
+
+/** "SPRING CLEANUP" -> "Spring cleanup"; short acronyms (EV, HVAC-ish 2-3 letters) stay. */
+export function sentenceCase(text: string): string {
+  const words = text.trim().split(/\s+/).map((w) => {
+    const letters = w.replace(/[^A-Za-z]/g, "");
+    const acronym = letters.length >= 2 && letters.length <= 3 && letters === letters.toUpperCase() && !KEEP_UPPER_STOP.has(letters);
+    return acronym ? w : w.toLowerCase();
+  });
+  const joined = words.join(" ");
+  return joined.charAt(0).toUpperCase() + joined.slice(1);
+}
+
+export type StickerLike = { badge: string; headline: string; tagline: string; benefits: string[] };
+
+const PRICEY = /[$%€£₹]|\d|\bfree\b/i;
+const NOT_A_SERVICE = /\b(within|miles?|licensed|insured|zip|quotes?|same[- ]day|same week|guarantee)\b|\b\d{5}\b/i;
+
+/** Services lines for SiteVault ("Name - price" or "Name"), from the ad's sticker. */
+export function servicesFromSticker(sticker: StickerLike | null | undefined): string {
+  if (!sticker) return "";
+  const lines: string[] = [];
+  if (sticker.headline) {
+    lines.push(PRICEY.test(sticker.badge) ? `${sentenceCase(sticker.headline)} - ${sentenceCase(sticker.badge)}` : sentenceCase(sticker.headline));
+  }
+  for (const b of sticker.benefits ?? []) {
+    if (PRICEY.test(b) && !NOT_A_SERVICE.test(b)) lines.push(sentenceCase(b));
+  }
+  return [...new Set(lines)].join("\n");
+}
+
+/** The sticker's tagline ("FREE QUOTES, SAME WEEK") as the site's one-liner. */
+export function taglineFromSticker(sticker: StickerLike | null | undefined): string {
+  return sticker?.tagline ? sentenceCase(sticker.tagline).slice(0, 120) : "";
 }
