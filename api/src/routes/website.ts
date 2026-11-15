@@ -10,8 +10,10 @@ import {
   createSitevaultSite,
   offerBanner,
   sitevaultCategory,
+  resolveSitevaultSite,
   servicesFromSticker,
   sitevaultConfigured,
+  slugFromSiteUrl,
   taglineFromSticker,
   type Photo,
   type StickerLike,
@@ -37,6 +39,8 @@ const websiteInput = z.object({
   phone: z.string().trim().min(7).max(24),
   city: z.string().trim().min(2).max(60),
   hours: z.string().trim().max(400).optional(),
+  // The address they chose (<slug>.3pandasite.com); SiteVault validates it.
+  slug: z.string().trim().max(80).optional(),
   // The advertiser confirms they run the business: their site is public.
   attest: z.literal(true),
 });
@@ -122,6 +126,7 @@ export async function websiteRoutes(app: FastifyInstance) {
           hours: body.hours,
           services: servicesFromSticker(sticker),
           tagline: taglineFromSticker(sticker),
+          slug: body.slug || undefined,
         },
         await campaignPhotos(campaign.id),
         video,
@@ -161,6 +166,23 @@ export async function websiteRoutes(app: FastifyInstance) {
           editUrl = decryptToken(campaign.sitevaultEditEnc);
         } catch {
           editUrl = null;
+        }
+      }
+      // Follow a rename made on SiteVault's edit page (or the move from the
+      // old /s/ links to 3pandasite.com), so the ad's link never lands on a
+      // redirect. Only before launch: a live campaign's link is Google's.
+      const slug = slugFromSiteUrl(campaign.landingUrl);
+      const locked = campaign.status === "live" || Boolean(campaign.googleCampaignResourceName);
+      if (slug && !locked) {
+        const current = await resolveSitevaultSite(slug);
+        if (current && current !== campaign.landingUrl) {
+          const [updated] = await db
+            .update(campaigns)
+            .set({ landingUrl: current, updatedAt: new Date() })
+            .where(eq(campaigns.id, campaign.id))
+            .returning();
+          req.log.info({ campaignId, from: campaign.landingUrl, to: current }, "website link followed sitevault rename");
+          return { siteUrl: current, editUrl, campaign: updated };
         }
       }
       return { siteUrl: campaign.landingUrl, editUrl };

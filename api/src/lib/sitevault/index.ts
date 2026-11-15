@@ -63,6 +63,8 @@ export type WebsiteFields = {
   email?: string;
   services?: string;
   tagline?: string;
+  /** The address the owner chose (<slug>.3pandasite.com); SiteVault picks one when absent. */
+  slug?: string;
 };
 
 export type Photo = { bytes: Buffer; contentType: string };
@@ -148,4 +150,43 @@ export function servicesFromSticker(sticker: StickerLike | null | undefined): st
 /** The sticker's tagline ("FREE QUOTES, SAME WEEK") as the site's one-liner. */
 export function taglineFromSticker(sticker: StickerLike | null | undefined): string {
   return sticker?.tagline ? sentenceCase(sticker.tagline).slice(0, 120) : "";
+}
+
+// ---------------------------------------------------------------------------
+// Addresses. A SiteVault site lives at <slug>.3pandasite.com and its owner can
+// rename it on SiteVault's edit page (the old address then redirects). AdVault
+// follows the rename so the ad's link never lands on a redirect.
+
+export const SITEVAULT_SITES_DOMAIN = process.env.SITEVAULT_SITES_DOMAIN ?? "3pandasite.com";
+
+/** The SiteVault slug in a site link, or null when the link isn't a SiteVault site. */
+export function slugFromSiteUrl(url: string | null | undefined): string | null {
+  if (!url) return null;
+  try {
+    const u = new URL(url);
+    const suffix = `.${SITEVAULT_SITES_DOMAIN}`;
+    if (u.hostname.endsWith(suffix)) return u.hostname.slice(0, -suffix.length) || null;
+    const m = u.pathname.match(/^\/s\/([a-z0-9-]+)\/?$/);
+    if (`${u.protocol}//${u.host}` === SITEVAULT_URL && m) return m[1] ?? null;
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+/** The site's current link (after any rename), or null if it can't be resolved. */
+export async function resolveSitevaultSite(slug: string): Promise<string | null> {
+  const token = process.env.SITEVAULT_INTERNAL_TOKEN;
+  if (!token) return null;
+  try {
+    const res = await fetch(`${SITEVAULT_URL}/api/internal/resolve?slug=${encodeURIComponent(slug)}`, {
+      headers: { authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!res.ok) return null;
+    const body = (await res.json()) as { siteUrl?: string };
+    return body.siteUrl ?? null;
+  } catch {
+    return null;
+  }
 }

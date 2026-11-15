@@ -423,7 +423,7 @@ export function updateCampaign(
 /** One-click SiteVault website for a campaign with no website. */
 export function createWebsite(
   campaignId: string,
-  input: { phone: string; city: string; hours?: string; attest: true },
+  input: { phone: string; city: string; hours?: string; slug?: string; attest: true },
 ) {
   return api<{ campaign: Campaign; siteUrl: string; editUrl: string }>(`/campaigns/${campaignId}/website`, {
     method: "POST",
@@ -433,7 +433,8 @@ export function createWebsite(
 
 /** The site link and its private SiteVault edit link (owner only). */
 export function getWebsite(campaignId: string) {
-  return api<{ siteUrl: string | null; editUrl: string | null }>(`/campaigns/${campaignId}/website`);
+  // `campaign` is present when the site was renamed and the link was updated.
+  return api<{ siteUrl: string | null; editUrl: string | null; campaign?: Campaign }>(`/campaigns/${campaignId}/website`);
 }
 
 export function generateCreatives(
