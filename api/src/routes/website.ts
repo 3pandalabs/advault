@@ -24,6 +24,14 @@ import { getObjectBytes, headObject } from "../plugins/r2.js";
 import { proPhotoKey } from "../render/enhance.js";
 import { isHousingCategory } from "../lib/audience/policy.js";
 import { latestSiteOffer } from "../lib/siteOffer/index.js";
+import {
+  feeDisplay,
+  isPaidStatus,
+  latestWebsitePurchase,
+  publishPaidWebsiteSoon,
+  startWebsiteCheckout,
+  websiteFeeFor,
+} from "../lib/websiteFee/index.js";
 
 // "Make me a website" (2026-11-15). A business with no website can still make
 // ads (PR #76) but needs a link to launch; this builds a one-page SiteVault
@@ -117,9 +125,20 @@ async function accountSite(userId: string, exceptCampaignId: string) {
     .orderBy(desc(campaigns.updatedAt))
     .limit(1);
   if (!row?.landingUrl || !row.sitevaultEditEnc || !slugFromSiteUrl(row.landingUrl)) return null;
+  // (A made-but-unpaid site elsewhere is caught by accountPendingSite.)
   // Its current address (it may have been renamed since).
   const current = (await resolveSitevaultSite(slugFromSiteUrl(row.landingUrl)!)) ?? row.landingUrl;
   return { siteUrl: current, sitevaultEditEnc: row.sitevaultEditEnc };
+}
+
+/** Another campaign of the account has a made-but-unpaid site (the $10 fee). */
+async function accountPendingSite(userId: string, exceptCampaignId: string): Promise<string | null> {
+  const [row] = await db
+    .select({ url: campaigns.sitevaultPendingUrl })
+    .from(campaigns)
+    .where(and(eq(campaigns.userId, userId), ne(campaigns.id, exceptCampaignId), isNotNull(campaigns.sitevaultPendingUrl)))
+    .limit(1);
+  return row?.url ?? null;
 }
 
 export async function websiteRoutes(app: FastifyInstance) {
@@ -159,11 +178,16 @@ export async function websiteRoutes(app: FastifyInstance) {
         return reply.code(409).send({ error: "campaign_is_live" });
       }
       if (campaign.landingUrl) return reply.code(409).send({ error: "website_exists" });
+      if (campaign.sitevaultPendingUrl) return reply.code(409).send({ error: "website_payment_pending" });
       if (!sitevaultConfigured()) return reply.code(503).send({ error: "website_builder_not_configured" });
       const existing = await accountSite(req.userId!, campaign.id);
       if (existing) {
         return reply.code(409).send({ error: "website_exists_for_account", detail: existing.siteUrl });
       }
+      const pendingElsewhere = await accountPendingSite(req.userId!, campaign.id);
+      if (pendingElsewhere) return reply.code(409).send({ error: "website_exists_for_account", detail: pendingElsewhere });
+      // $10 website fee (null for admins / at_cost: made and published at once, as before).
+      const fee = await websiteFeeFor(req.userId!);
 
       const housing = isHousingCategory(campaign.businessCategory);
       const { video, sticker } = await campaignAd(campaign.id);
@@ -179,6 +203,7 @@ export async function websiteRoutes(app: FastifyInstance) {
           services: servicesFromSticker(sticker),
           tagline: taglineFromSticker(sticker),
           slug: body.slug || undefined,
+          awaitingPayment: fee ? "1" : undefined,
         },
         await campaignPhotos(campaign.id),
         video,
@@ -194,6 +219,29 @@ export async function websiteRoutes(app: FastifyInstance) {
           });
       }
 
+      if (fee) {
+        // Made, unpublished: it becomes the link once the $10 is paid (lib/websiteFee).
+        const [updated] = await db
+          .update(campaigns)
+          .set({ sitevaultPendingUrl: result.siteUrl, sitevaultEditEnc: encryptToken(result.editUrl), updatedAt: new Date() })
+          .where(eq(campaigns.id, campaign.id))
+          .returning();
+        req.log.info({ campaignId, slug: result.slug }, "sitevault site created, awaiting the website fee");
+        let checkout = null;
+        try {
+          checkout = (await startWebsiteCheckout({ userId: req.userId!, campaignId: campaign.id, slug: result.slug, fee })).checkout;
+        } catch (err) {
+          // The site is kept; the card's "Pay and publish" retries the checkout.
+          req.log.error({ err, campaignId }, "website checkout failed");
+        }
+        return reply.code(201).send({
+          campaign: updated,
+          siteUrl: null,
+          editUrl: result.editUrl,
+          pendingSite: { siteUrl: result.siteUrl, paid: false, display: feeDisplay(fee) },
+          checkout,
+        });
+      }
       const [updated] = await db
         .update(campaigns)
         .set({ landingUrl: result.siteUrl, sitevaultEditEnc: encryptToken(result.editUrl), updatedAt: new Date() })
@@ -201,6 +249,28 @@ export async function websiteRoutes(app: FastifyInstance) {
         .returning();
       req.log.info({ campaignId, slug: result.slug }, "sitevault site created");
       return reply.code(201).send({ campaign: updated, siteUrl: result.siteUrl, editUrl: result.editUrl });
+    },
+  );
+
+  // Pay (again) for a made-but-unpaid site: a new checkout, e.g. after an abandoned one.
+  app.post(
+    "/campaigns/:campaignId/website/checkout",
+    { schema: { params: z.object({ campaignId: z.string().uuid() }) } },
+    async (req, reply) => {
+      const { campaignId } = req.params as { campaignId: string };
+      const campaign = await loadOwnedCampaign(campaignId, req.userId!, reply);
+      if (!campaign) return;
+      const slug = slugFromSiteUrl(campaign.sitevaultPendingUrl);
+      if (!campaign.sitevaultPendingUrl || !slug) return reply.code(409).send({ error: "no_pending_website" });
+      const last = await latestWebsitePurchase(campaign.id);
+      if (last && isPaidStatus(last.status)) {
+        publishPaidWebsiteSoon(last.id);
+        return reply.code(409).send({ error: "website_already_paid" });
+      }
+      const fee = await websiteFeeFor(req.userId!);
+      if (!fee) return reply.code(409).send({ error: "website_fee_not_applicable" });
+      const { checkout } = await startWebsiteCheckout({ userId: req.userId!, campaignId: campaign.id, slug, fee });
+      return reply.code(201).send({ checkout });
     },
   );
 
@@ -219,6 +289,18 @@ export async function websiteRoutes(app: FastifyInstance) {
         } catch {
           editUrl = null;
         }
+      }
+      // Made but unpaid ($10 website fee): the card offers "Pay and publish".
+      if (campaign.sitevaultPendingUrl && !campaign.landingUrl) {
+        const last = await latestWebsitePurchase(campaign.id);
+        const paid = Boolean(last && isPaidStatus(last.status));
+        if (paid && last) publishPaidWebsiteSoon(last.id); // nudge a stuck publish along
+        const fee = await websiteFeeFor(req.userId!);
+        return {
+          siteUrl: null,
+          editUrl,
+          pendingSite: { siteUrl: campaign.sitevaultPendingUrl, paid, display: fee ? feeDisplay(fee) : null },
+        };
       }
       // Follow a rename made on SiteVault's edit page (or the move from the
       // old /s/ links to 3pandasite.com), so the ad's link never lands on a
@@ -242,6 +324,9 @@ export async function websiteRoutes(app: FastifyInstance) {
       if (!campaign.landingUrl && !locked) {
         const existing = await accountSite(req.userId!, campaign.id);
         if (existing) return { siteUrl: null, editUrl, accountSite: { siteUrl: existing.siteUrl } };
+        // What "Make me a website" costs (null = free: admins, at_cost).
+        const fee = await websiteFeeFor(req.userId!);
+        return { siteUrl: null, editUrl, websiteFee: fee ? feeDisplay(fee) : null };
       }
       // Offer combo: did the latest paid website offer reach the site?
       return { siteUrl: campaign.landingUrl, editUrl, siteOffer: await latestSiteOffer(campaign.id) };

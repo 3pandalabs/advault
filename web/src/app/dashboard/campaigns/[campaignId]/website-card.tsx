@@ -1,7 +1,16 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ApiError, createWebsite, getWebsite, updateCampaign, linkExistingWebsite, type Campaign } from "@/lib/api/browser";
+import {
+  ApiError,
+  createWebsite,
+  getWebsite,
+  updateCampaign,
+  linkExistingWebsite,
+  websiteCheckout,
+  type Campaign,
+  type PendingSite,
+} from "@/lib/api/browser";
 import { Card, CardDescription, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -32,6 +41,7 @@ async function checkAddress(params: { slug?: string; name: string; city: string 
 const MAKE_ERRORS: Record<string, string> = {
   website_exists: "This campaign already has a website.",
   website_exists_for_account: "Your business already has a website. Use it for this campaign instead.",
+  website_payment_pending: "Your website is built and waiting for payment. Use Pay and publish below.",
   campaign_is_live: "This campaign is live, so its website can't be changed here.",
   website_builder_not_configured: "The website builder isn't switched on yet. Please paste a link instead.",
   website_builder_failed: "We couldn't build the website just now. Please try again in a minute.",
@@ -72,6 +82,9 @@ export function WebsiteCard({
   const fetchedWebsite = useRef(false);
   const [accountSite, setAccountSite] = useState<string | null>(null);
   const [siteOffer, setSiteOffer] = useState<SiteOfferState | null>(null);
+  // $10 website fee: the made-but-unpaid site, and the price ("$10"; null = free).
+  const [pendingSite, setPendingSite] = useState<PendingSite | null>(null);
+  const [websiteFee, setWebsiteFee] = useState<string | null | undefined>(undefined);
   const isSiteVault = siteVaultSlug(campaign.landingUrl) !== null;
 
   // Offer combo: did the latest website offer reach the site? Re-checked a
@@ -106,10 +119,44 @@ export function WebsiteCard({
       .then((w) => {
         setEditUrl(w.editUrl);
         setAccountSite(w.accountSite?.siteUrl ?? null);
+        setPendingSite(w.pendingSite ?? null);
+        setWebsiteFee(w.websiteFee);
         if (w.campaign) onSaved(w.campaign);
       })
       .catch(() => {});
   }, [campaign.id, campaign.sitevaultEditEnc, campaign.landingUrl, editUrl, onSaved]);
+
+  // Paid, waiting for SiteVault to publish (seconds): re-check until the link appears.
+  useEffect(() => {
+    if (!pendingSite?.paid) return;
+    let tries = 0;
+    const timer = setInterval(() => {
+      getWebsite(campaign.id)
+        .then((w) => {
+          if (w.pendingSite) setPendingSite(w.pendingSite);
+          else {
+            setPendingSite(null);
+            clearInterval(timer);
+            window.location.reload(); // pick up the new link on the campaign
+          }
+        })
+        .catch(() => {});
+      if (++tries > 12) clearInterval(timer);
+    }, 5000);
+    return () => clearInterval(timer);
+  }, [campaign.id, pendingSite?.paid]);
+
+  async function payForWebsite() {
+    setBusy(true);
+    setError(null);
+    try {
+      const { checkout } = await websiteCheckout(campaign.id);
+      if (checkout.redirectUrl) window.location.assign(checkout.redirectUrl);
+    } catch (err) {
+      setError(err instanceof ApiError && err.code === "website_already_paid" ? "Payment received. Publishing your website…" : "Could not start the payment. Please try again.");
+      setBusy(false);
+    }
+  }
 
   // Address: suggested from the business name (and town) until they type
   // their own, then checked as they type.
@@ -175,6 +222,11 @@ export function WebsiteCard({
       setEditUrl(res.editUrl);
       onSaved(res.campaign);
       setMode("view");
+      if (res.pendingSite) {
+        setPendingSite(res.pendingSite);
+        // Straight to the $10 checkout; the card offers "Pay and publish" if this fails.
+        if (res.checkout?.redirectUrl) window.location.assign(res.checkout.redirectUrl);
+      }
     } catch (err) {
       setError(
         err instanceof ApiError
@@ -229,7 +281,36 @@ export function WebsiteCard({
         </p>
       )}
 
-      {!locked && !campaign.landingUrl && mode === "view" && accountSite && (
+      {!campaign.landingUrl && mode === "view" && pendingSite && (
+        <div className="mt-4 space-y-2">
+          <p className="text-sm text-zinc-300">
+            Your website is built:{" "}
+            <span className="break-all text-zinc-100">{pendingSite.siteUrl}</span>
+          </p>
+          {pendingSite.paid ? (
+            <p className="text-sm text-emerald-300">Payment received. Publishing your website…</p>
+          ) : (
+            <>
+              <p className="text-sm text-zinc-300">
+                Publish it for {pendingSite.display ?? "$10"}, with the first year of Pro (visitor stats) included. After
+                that it&apos;s $49 a year on SiteVault.
+              </p>
+              <Button onClick={payForWebsite} disabled={busy}>
+                {busy ? "Opening payment…" : `Pay ${pendingSite.display ?? "$10"} and publish`}
+              </Button>
+            </>
+          )}
+          {editUrl && (
+            <p className="text-sm text-zinc-400">
+              <a href={editUrl} target="_blank" rel="noreferrer" className="text-amber-300 underline">
+                Preview and edit your website
+              </a>
+            </p>
+          )}
+        </div>
+      )}
+
+      {!locked && !campaign.landingUrl && mode === "view" && !pendingSite && accountSite && (
         <div className="mt-4 space-y-2">
           <p className="text-sm text-zinc-300">
             Your business already has a website:{" "}
@@ -248,9 +329,11 @@ export function WebsiteCard({
         </div>
       )}
 
-      {!locked && !campaign.landingUrl && mode === "view" && !accountSite && (
+      {!locked && !campaign.landingUrl && mode === "view" && !accountSite && !pendingSite && (
         <div className="mt-4 flex flex-col gap-2 sm:flex-row">
-          <Button onClick={() => setMode("make")}>Make me a website, free</Button>
+          <Button onClick={() => setMode("make")}>
+            {websiteFee ? `Make me a website, ${websiteFee}` : "Make me a website"}
+          </Button>
           <Button variant="outline" onClick={() => setMode("link")}>
             I have a website
           </Button>
@@ -282,7 +365,9 @@ export function WebsiteCard({
         <div className="mt-4 space-y-3">
           <p className="text-sm text-zinc-300">
             We&apos;ll build a one-page website from this campaign: your business name, your offer
-            and your ad photos, with call and text buttons. We just need two things:
+            and your ad photos, with call and text buttons.
+            {websiteFee ? ` It's ${websiteFee}, with the first year of Pro (visitor stats) included; after that, $49 a year on SiteVault.` : ""}{" "}
+            We just need two things:
           </p>
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="text-sm">
@@ -375,7 +460,7 @@ export function WebsiteCard({
           </label>
           <div className="flex gap-2">
             <Button onClick={make} disabled={busy || !makeValid}>
-              {busy ? "Building your website…" : "Create my website"}
+              {busy ? "Building your website…" : websiteFee ? `Create my website and pay ${websiteFee}` : "Create my website"}
             </Button>
             <Button variant="ghost" onClick={() => setMode("view")} disabled={busy}>
               Cancel

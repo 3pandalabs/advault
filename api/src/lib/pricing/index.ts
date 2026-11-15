@@ -262,7 +262,9 @@ export function estimateReach(adBudgetMinor: number, currency: Currency): ReachE
 // `cinematic_pack` (2026-11-14): three cinematic ads paid up front. It is never
 // produced itself; it grants credits that later cinematic orders spend
 // (lib/cinematic: packCreditsLeft). US only.
-export const ADD_ON_SKUS = ["cinematic", "new_ad", "cinematic_pack"] as const;
+// `website` (2026-11-15): the $10 SiteVault website from "Make me a website",
+// first year of Pro included (lib/websiteFee). US only.
+export const ADD_ON_SKUS = ["cinematic", "new_ad", "cinematic_pack", "website"] as const;
 export type AddOnSku = (typeof ADD_ON_SKUS)[number];
 
 export type AddOn = {
@@ -334,6 +336,16 @@ export const ADD_ONS: Record<string, AddOn> = {
     generatedSeconds: 0, // the standard photo pipeline; nothing text-to-video
     label: "US — New ad",
     blurb: "A new ad from your photos, for the Keep it running plan.",
+  },
+  "us-website": {
+    key: "us-website",
+    sku: "website",
+    currency: "USD",
+    priceMinor: 1_000, // $10, first year of SiteVault Pro included (then $49/yr on SiteVault)
+    firstPurchasePriceMinor: 1_000,
+    generatedSeconds: 0,
+    label: "US — Your website",
+    blurb: "A one-page SiteVault website for your business, first year of Pro included.",
   },
 };
 

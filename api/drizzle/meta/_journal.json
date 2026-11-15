@@ -169,6 +169,13 @@
       "when": 1795500200000,
       "tag": "0023_site_offer_combo",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1795500300000,
+      "tag": "0024_website_fee",
+      "breakpoints": true
     }
   ]
 }
