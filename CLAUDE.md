@@ -467,6 +467,16 @@ one, so never register the per-purpose URLs separately. Setup:
 
 ## The cinematic add-on is TEXT-to-video, and that is the whole point
 
+**Now called the "video bundle", and SALES ARE PAUSED (2026-11-15).** People-facing
+name only; routes, SKUs (`cinematic`, `cinematic_pack`), tables and `lib/cinematic`
+keep "cinematic". Don't confuse it with the cinematic OPENER shot every $10 ad now
+starts with (`render/cinematic.ts`, always on). Anil paused it because the opener
+gives every ad the "wow" shot and real photos are what build trust. Off unless the
+API env `VIDEO_BUNDLE_SALES=on`: `/add-ons` returns nothing, packs return 410,
+new orders return 410 unless the user still has unspent pack credits, and the
+dashboard menu item is removed (page still works by URL). Delivery, refunds and the
+purchase webhook are untouched. Recheck later before re-enabling or deleting it.
+
 Everything the subscription produces, a shop owner could plausibly make on
 their own phone — copy, captions, a slow zoom, even an image-to-video clip.
 CapCut and Kling's consumer app do all of it free. We measured the ceiling: a

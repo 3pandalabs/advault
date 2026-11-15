@@ -117,7 +117,7 @@ export default function CinematicPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold">Cinematic ad</h1>
+        <h1 className="text-2xl font-semibold">Video bundle</h1>
         <p className="mt-1 text-sm text-zinc-400">
           A filmed-looking ad built from a description, closing on your own photo. Bought once,
           not part of your monthly plan.
@@ -133,10 +133,10 @@ export default function CinematicPage() {
       */}
       {unavailable ? (
         <Card>
-          <CardTitle>Not available right now</CardTitle>
+          <CardTitle>Not on sale right now</CardTitle>
           <CardDescription>
-            We can&apos;t make cinematic ads at the moment. Nothing has been charged, and your
-            monthly videos are unaffected.
+            The video bundle isn&apos;t on sale at the moment. Every new ad already opens with a
+            cinematic shot. Nothing has been charged, and your past orders are listed below.
           </CardDescription>
         </Card>
       ) : null}

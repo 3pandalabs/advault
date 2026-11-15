@@ -257,6 +257,8 @@ export function estimateReach(adBudgetMinor: number, currency: Currency): ReachE
 // `new_ad` (2026-11-11; $10 from 2026-11-12) is the $10 ad for Keep it running subscribers: that
 // plan bundles no creatives, so every ad it runs, the first included, is one of
 // these. Same price first and repeat; it is not an intro offer.
+// VIDEO BUNDLE = the `cinematic` + `cinematic_pack` SKUs (renamed for people
+// 2026-11-15; identifiers unchanged). SALES PAUSED, see routes/cinematic.ts.
 // `cinematic_pack` (2026-11-14): three cinematic ads paid up front. It is never
 // produced itself; it grants credits that later cinematic orders spend
 // (lib/cinematic: packCreditsLeft). US only.
@@ -299,7 +301,7 @@ export const ADD_ONS: Record<string, AddOn> = {
     priceMinor: 299_900, // ₹2,999
     firstPurchasePriceMinor: 99_900, // ₹999
     generatedSeconds: 15,
-    label: "India — Cinematic Ad",
+    label: "India — Video bundle ad",
     blurb: "A filmed-looking ad built from a description, closing on your own photo.",
   },
   "us-cinematic": {
@@ -309,7 +311,7 @@ export const ADD_ONS: Record<string, AddOn> = {
     priceMinor: 3_900, // $39 (was $99 until 2026-11-14)
     firstPurchasePriceMinor: 2_900, // $29
     generatedSeconds: 15,
-    label: "US — Cinematic Ad",
+    label: "US — Video bundle ad",
     blurb: "A filmed-looking ad built from a description, closing on your own photo.",
   },
   "us-cinematic_pack": {
@@ -320,7 +322,7 @@ export const ADD_ONS: Record<string, AddOn> = {
     firstPurchasePriceMinor: 9_900, // same price first time
     generatedSeconds: 0, // the pack films nothing; each credit's order does
     credits: 3,
-    label: "US — Cinematic 3-pack",
+    label: "US — Video bundle 3-pack",
     blurb: "Three cinematic ads, paid up front.",
   },
   "us-new_ad": {

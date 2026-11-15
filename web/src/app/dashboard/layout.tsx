@@ -72,12 +72,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             >
               This month
             </Link>
-            <Link
-              href="/dashboard/cinematic"
-              className="rounded-lg px-3 py-2 text-zinc-300 hover:bg-white/10"
-            >
-              Cinematic
-            </Link>
+            {/* "Video bundle" (/dashboard/cinematic) is hidden: sales paused
+                2026-11-15, see api/src/routes/cinematic.ts. The page still
+                works by URL for anyone with past orders or pack credits. */}
             <Link
               href="/dashboard/subscription"
               className="rounded-lg px-3 py-2 text-zinc-300 hover:bg-white/10"
