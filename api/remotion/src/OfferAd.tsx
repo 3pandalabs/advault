@@ -49,12 +49,19 @@ export type OfferAdProps = {
    * panel in landscape).
    */
   cinematic?: boolean;
+  /**
+   * Mixed ad (2026-11-14): a generated cinematic opening shot. It replaces the
+   * blurred first photo under the hook, plays sharp, and the hook runs a
+   * little longer; every real photo then goes to the reel.
+   */
+  opener?: string;
   durationSeconds: number;
   width: number;
   height: number;
 };
 
 const HOOK_END = 2.6;
+const OPENER_HOOK_END = 4;
 const END_CARD_SECONDS = 4.2;
 
 // A photo that keeps moving: slow zoom plus a drift, direction varies per shot.
@@ -357,15 +364,22 @@ export const OfferAd: React.FC<OfferAdProps> = (p) => {
   const vertical = height > width;
   const f = (s: number) => Math.round(s * fps);
   const u = vertical ? width / 1080 : height / 1080;
-  const photosEnd = Math.max(HOOK_END + 5, p.durationSeconds - END_CARD_SECONDS);
-  // The hook uses the first photo; the reel the rest (or all, if only one or two).
-  const reel = p.photos.length > 2 ? p.photos.slice(1) : p.photos;
+  const hookEnd = p.opener ? OPENER_HOOK_END : HOOK_END;
+  const photosEnd = Math.max(hookEnd + 5, p.durationSeconds - END_CARD_SECONDS);
+  // The hook uses the first photo (or the opener); the reel the rest (or all,
+  // if only one or two, or if the opener took the hook).
+  const reel = p.opener || p.photos.length <= 2 ? p.photos : p.photos.slice(1);
 
   return (
     <AbsoluteFill style={{ background: "#000" }}>
       {/* 1. Hook: the offer, from frame 0 */}
-      <Sequence durationInFrames={f(HOOK_END)}>
-        <MovingPhoto photo={p.photos[0]} seconds={HOOK_END} dir={1} blur={p.cinematic ? 0 : vertical ? 6 : 10} />
+      <Sequence durationInFrames={f(hookEnd)}>
+        <MovingPhoto
+          photo={p.opener ?? p.photos[0]}
+          seconds={hookEnd}
+          dir={1}
+          blur={p.cinematic || p.opener ? 0 : vertical ? 6 : 10}
+        />
         {/* Sticker sits high so the captions below never collide with it. */}
         <AbsoluteFill style={{ alignItems: "center", justifyContent: "flex-start", paddingTop: vertical ? 300 : 50 * u }}>
           <PriceSticker {...p} size={vertical ? 520 : 400 * u} />
@@ -373,9 +387,9 @@ export const OfferAd: React.FC<OfferAdProps> = (p) => {
       </Sequence>
 
       {/* 2. The business, moving. Landscape frames the photos on the right. */}
-      <Sequence from={f(HOOK_END)} durationInFrames={f(photosEnd - HOOK_END)}>
-        {!vertical && !p.cinematic && <MovingPhoto photo={p.photos[0]} seconds={photosEnd - HOOK_END} dir={-1} blur={24} />}
-        <PhotoReel photos={reel} seconds={photosEnd - HOOK_END} framed={!vertical && !p.cinematic} />
+      <Sequence from={f(hookEnd)} durationInFrames={f(photosEnd - hookEnd)}>
+        {!vertical && !p.cinematic && <MovingPhoto photo={p.photos[0]} seconds={photosEnd - hookEnd} dir={-1} blur={24} />}
+        <PhotoReel photos={reel} seconds={photosEnd - hookEnd} framed={!vertical && !p.cinematic} />
         {!vertical && !p.cinematic && (
           <AbsoluteFill style={{ inset: "0 56% 0 4%", justifyContent: "center" }}>
             <div style={{ fontFamily, fontWeight: 900, fontSize: 110 * u * Math.min(1, 6 / p.priceText.length), color: p.accentColor, lineHeight: 1 }}>

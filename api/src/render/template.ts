@@ -104,6 +104,8 @@ export type TemplateInputs = {
   landingUrl: string;
   /** Cinematic add-on: full-screen film, up to 30 s. */
   cinematic?: boolean;
+  /** Mixed ad: a cinematic opening shot under the offer sticker. */
+  openerPath?: string;
 };
 
 /** Renders the template ad; returns the MP4 path, or null to fall back. */
@@ -133,7 +135,8 @@ export async function renderTemplate(input: TemplateInputs, log: (msg: string, e
   // Room for the voice plus the 4.2 s end card; within YouTube-friendly bounds.
   const durationSeconds = input.cinematic
     ? Math.min(30, Math.max(15, Math.ceil(Math.max(spoken ?? 0, sceneSeconds - 2) + 4.5)))
-    : Math.min(20, Math.max(12, Math.ceil((spoken ?? sceneSeconds - 2) + 5)));
+    : // An opener takes ~1.4 s more of hook, so the reel keeps its time.
+      Math.min(input.openerPath ? 22 : 20, Math.max(12, Math.ceil((spoken ?? sceneSeconds - 2) + 5 + (input.openerPath ? 1.5 : 0))));
   const captions = timeCaptions(
     script.scenes.map((s) => s.caption),
     spoken ?? durationSeconds - 4.5,
@@ -159,6 +162,7 @@ export async function renderTemplate(input: TemplateInputs, log: (msg: string, e
         : undefined,
     captions,
     cinematic: input.cinematic ?? false,
+    opener: input.openerPath ? basename(input.openerPath) : undefined,
     durationSeconds,
     width,
     height,

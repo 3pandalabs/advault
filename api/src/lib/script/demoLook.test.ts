@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { adScriptSchema, defaultVoiceFor, normalizeScriptJson } from "./schema.js";
+import { adScriptSchema, cleanOpener, defaultVoiceFor, normalizeScriptJson } from "./schema.js";
 
 const base = {
   hook: "Bright Smile Dental, on Park Avenue",
@@ -43,5 +43,31 @@ describe("demo-look script fields", () => {
     expect(defaultVoiceFor("Hair salon")).toBe("Laura");
     expect(defaultVoiceFor("Bakery")).toBe("Jessica");
     expect(defaultVoiceFor("Dentistry")).toBe("Sarah");
+  });
+});
+
+describe("mixed ad opener prompt (2026-11-14)", () => {
+  it("keeps a mood-only opener", () => {
+    const p = "Warm morning light across empty styling chairs, steam curling from a cup, slow push-in, shallow depth of field.";
+    expect(cleanOpener(p)).toBe(p);
+  });
+
+  it("drops an opener that would film a claim or text", () => {
+    expect(cleanOpener("A chalkboard by the door reading fresh cuts today, warm light")).toBeUndefined();
+    expect(cleanOpener("Golden light over the counter, 20% off everything")).toBeUndefined();
+  });
+
+  it("drops empty or too-short openers", () => {
+    expect(cleanOpener(null)).toBeUndefined();
+    expect(cleanOpener("dusk")).toBeUndefined();
+  });
+
+  it("an unsafe opener never costs the script", () => {
+    const out = normalizeScriptJson({ voice: "Sarah", openerPrompt: "A poster with our prices, warm light everywhere" }) as {
+      openerPrompt?: string;
+      voice?: string;
+    };
+    expect(out.openerPrompt).toBeUndefined();
+    expect(out.voice).toBe("Sarah");
   });
 });

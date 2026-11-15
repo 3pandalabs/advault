@@ -99,7 +99,8 @@ export async function generateForCampaign(args: {
   // per format.
   // Voice and per-photo motion are shared too: same narrator, and the same
   // motion line per photo so both formats reuse one clip.
-  let shared: Pick<AdScript, "voiceoverText" | "sticker" | "voice" | "photoMotions"> | null = null;
+  // The opener prompt too: one opening shot per ad (filmed per format).
+  let shared: Pick<AdScript, "voiceoverText" | "sticker" | "voice" | "photoMotions" | "openerPrompt"> | null = null;
   for (const aspectRatio of args.aspectRatios) {
     // Scripted per aspect ratio, not once and reused: a 9:16 Shorts
     // caption sits over a vertical crop with far less horizontal room than
@@ -129,6 +130,7 @@ export async function generateForCampaign(args: {
       sticker: script.sticker,
       voice: script.voice,
       photoMotions: script.photoMotions,
+      openerPrompt: script.openerPrompt,
     };
 
     const [creative] = await db

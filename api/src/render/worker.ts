@@ -33,7 +33,8 @@ import { startCinematicWorker, stopCinematicWorker } from "./cinematic.js";
 import { enqueueYoutubeUpload } from "./youtubeJobs.js";
 import { startYoutubeUploadWorker, stopYoutubeUploadWorker } from "./youtubeUploads.js";
 import { adScriptSchema, type AdScript } from "../lib/script/schema.js";
-import { falMotionPrompt, motionProvider } from "../lib/ai/motion/index.js";
+import { falMotionPrompt, motionIsPerFormat, motionProvider } from "../lib/ai/motion/index.js";
+import { falOmni } from "../lib/ai/cinematic/index.js";
 import { enhancePhotos } from "./enhance.js";
 import { defaultVoiceFor } from "../lib/script/schema.js";
 import { synthesizeVoice, voiceProvider } from "../lib/ai/voice/index.js";
@@ -132,9 +133,11 @@ async function generateMotionClips(args: {
         provider.name === "fal"
           ? `campaigns/${args.campaignId}/clips/${createHash("sha256")
               .update(
-                motionPrompt
+                (motionPrompt
                   ? `${key}|${process.env.FAL_MOTION_ENDPOINT ?? ""}|${falMotionPrompt(motionPrompt)}`
-                  : `${key}|${process.env.FAL_MOTION_ENDPOINT ?? ""}`,
+                  : `${key}|${process.env.FAL_MOTION_ENDPOINT ?? ""}`) +
+                  // Omni clips are made for one shape; Kling's fit both.
+                  (motionIsPerFormat() ? `|${args.aspectRatio}` : ""),
               )
               .digest("hex")
               .slice(0, 32)}.mp4`
@@ -194,6 +197,48 @@ async function generateMotionClips(args: {
 
   motionStats.set(args.creativeId, { provider: provider.name, reused: reused.size, tried: picked.length, errors });
   return clips;
+}
+
+// The mixed ad's cinematic opening shot (AD_OPENER=fal): one 5 s Omni
+// text-to-video clip per format from the script's openerPrompt, cached in R2
+// by prompt and shape so a redo with the same script pays nothing. Like
+// motion it is polish: any failure means no opener, never a failed ad.
+const AD_OPENER = process.env.AD_OPENER === "fal";
+const OPENER_SECONDS = 5;
+async function generateOpener(args: {
+  script: AdScript;
+  aspectRatio: AspectRatio;
+  workDir: string;
+  creativeId: string;
+  campaignId: string;
+}): Promise<{ path: string; reused: boolean } | null> {
+  const prompt = args.script.openerPrompt;
+  if (!AD_OPENER || !prompt || !falOmni.isConfigured()) return null;
+  const key = `campaigns/${args.campaignId}/opener/${createHash("sha256")
+    .update(`${prompt}|${args.aspectRatio}|omni`)
+    .digest("hex")
+    .slice(0, 32)}.mp4`;
+  const path = join(args.workDir, "opener.mp4");
+  try {
+    if (await headObject(key)) {
+      await writeFile(path, await getObjectBytes(key));
+      return { path, reused: true };
+    }
+  } catch (err) {
+    log("opener cache read failed; generating", { creativeId: args.creativeId, error: String(err) });
+  }
+  try {
+    const result = await falOmni.generate({ prompt, seconds: OPENER_SECONDS, aspectRatio: args.aspectRatio });
+    await writeFile(path, result.videoBytes);
+    await putObject(key, result.videoBytes, "video/mp4").catch((err) =>
+      log("opener cache write failed", { creativeId: args.creativeId, error: String(err) }),
+    );
+    return { path, reused: false };
+  } catch (err) {
+    noteFalFailure("opener", err instanceof Error ? err.message : String(err));
+    log("opener generation failed; ad starts on the photos", { creativeId: args.creativeId, error: String(err) });
+    return null;
+  }
 }
 
 // Per-render facts for creatives.render_info (filled by the helpers above).
@@ -327,6 +372,10 @@ async function processJob(job: RenderJob): Promise<void> {
       creativeId: creative.id,
       campaignId: creative.campaignId,
     });
+    // Template only: the ffmpeg fallback layout has no opener slot.
+    const opener = TEMPLATE_ENABLED
+      ? await generateOpener({ script, aspectRatio, workDir, creativeId: creative.id, campaignId: creative.campaignId })
+      : null;
 
     const voicePath = await synthesizeVoiceover({
       script,
@@ -348,6 +397,7 @@ async function processJob(job: RenderJob): Promise<void> {
             imagePaths,
             clipPaths,
             voicePath,
+            openerPath: opener?.path,
             businessName: creative.businessName,
             businessCategory: creative.businessCategory,
             landingUrl: creative.landingUrl,
@@ -398,6 +448,7 @@ async function processJob(job: RenderJob): Promise<void> {
         photosEnhancedReused: enhanced.reused,
         enhanceErrors: enhanced.errors.length ? enhanced.errors : undefined,
         perPhotoMotion: Boolean(script.photoMotions?.length),
+        opener: opener ? (opener.reused ? "reused" : "made") : null,
         at: new Date().toISOString(),
       },
     });
