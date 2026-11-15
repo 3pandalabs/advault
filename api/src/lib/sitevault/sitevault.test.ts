@@ -21,3 +21,26 @@ describe("offerBanner", () => {
     expect(offerBanner("a".repeat(200)).length).toBe(160);
   });
 });
+
+describe("from the ad's sticker", async () => {
+  const { servicesFromSticker, taglineFromSticker, sentenceCase } = await import("./index.js");
+  const sticker = {
+    badge: "$149",
+    headline: "SPRING CLEANUP",
+    tagline: "FREE QUOTES, SAME WEEK",
+    benefits: ["MOWING FROM $35 WEEKLY", "WITHIN 10 MILES OF 07094"],
+  };
+  it("builds services: headline + price, priced benefits, never the area line", () => {
+    expect(servicesFromSticker(sticker)).toBe("Spring cleanup - $149\nMowing from $35 weekly");
+  });
+  it("uses the tagline as the one-liner", () => {
+    expect(taglineFromSticker(sticker)).toBe("Free quotes, same week");
+  });
+  it("keeps short acronyms", () => {
+    expect(sentenceCase("EV CHARGERS FROM $599")).toBe("EV chargers from $599");
+    expect(sentenceCase("PANEL UPGRADE ESTIMATE")).toBe("Panel upgrade estimate");
+  });
+  it("is empty without a sticker", () => {
+    expect(servicesFromSticker(null)).toBe("");
+  });
+});

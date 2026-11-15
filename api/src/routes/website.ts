@@ -1,4 +1,4 @@
-import { and, eq, ne } from "drizzle-orm";
+import { and, desc, eq, ne } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { requireAuth } from "../auth/plugin.js";
@@ -10,9 +10,14 @@ import {
   createSitevaultSite,
   offerBanner,
   sitevaultCategory,
+  servicesFromSticker,
   sitevaultConfigured,
+  taglineFromSticker,
   type Photo,
+  type StickerLike,
+  type Video,
 } from "../lib/sitevault/index.js";
+import { stickerSchema } from "../lib/script/schema.js";
 import { getObjectBytes, headObject } from "../plugins/r2.js";
 import { proPhotoKey } from "../render/enhance.js";
 import { isHousingCategory } from "../lib/audience/policy.js";
@@ -56,6 +61,37 @@ async function campaignPhotos(campaignId: string): Promise<Photo[]> {
   return photos;
 }
 
+const MAX_VIDEO_BYTES = 40 * 1024 * 1024;
+
+/**
+ * The finished ad to show on the site, and its offer sticker. Widescreen
+ * first (it sits in a page column); the vertical one when that is all there is.
+ */
+async function campaignAd(campaignId: string): Promise<{ video: Video | null; sticker: StickerLike | null }> {
+  const rows = await db
+    .select({
+      aspectRatio: creatives.aspectRatio,
+      videoKey: creatives.videoKey,
+      sizeBytes: creatives.sizeBytes,
+      script: creatives.script,
+    })
+    .from(creatives)
+    .where(
+      and(eq(creatives.campaignId, campaignId), ne(creatives.kind, "upload"), eq(creatives.renderStatus, "ready")),
+    )
+    .orderBy(desc(creatives.createdAt));
+  const ad = rows.find((r) => r.aspectRatio === "16:9" && r.videoKey) ?? rows.find((r) => r.videoKey) ?? null;
+  const parsed = stickerSchema.safeParse((rows[0]?.script as { sticker?: unknown } | null)?.sticker);
+  const sticker = parsed.success ? parsed.data : null;
+  if (!ad?.videoKey || (ad.sizeBytes ?? 0) > MAX_VIDEO_BYTES) return { video: null, sticker };
+  try {
+    const bytes = await getObjectBytes(ad.videoKey);
+    return { video: bytes.length <= MAX_VIDEO_BYTES ? { bytes } : null, sticker };
+  } catch {
+    return { video: null, sticker };
+  }
+}
+
 export async function websiteRoutes(app: FastifyInstance) {
   app.addHook("onRequest", requireAuth);
 
@@ -74,6 +110,7 @@ export async function websiteRoutes(app: FastifyInstance) {
       if (!sitevaultConfigured()) return reply.code(503).send({ error: "website_builder_not_configured" });
 
       const housing = isHousingCategory(campaign.businessCategory);
+      const { video, sticker } = await campaignAd(campaign.id);
       const result = await createSitevaultSite(
         {
           businessName: campaign.businessName,
@@ -83,8 +120,11 @@ export async function websiteRoutes(app: FastifyInstance) {
           offer: offerBanner(campaign.offerDetails),
           serviceArea: housing ? undefined : `Within ${campaign.radiusMiles} miles of ${body.city}`,
           hours: body.hours,
+          services: servicesFromSticker(sticker),
+          tagline: taglineFromSticker(sticker),
         },
         await campaignPhotos(campaign.id),
+        video,
       );
       if (!result.ok) {
         req.log.warn({ campaignId, status: result.status, errors: result.errors }, "sitevault create failed");
