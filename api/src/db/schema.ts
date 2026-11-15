@@ -442,7 +442,9 @@ export const campaigns = pgTable(
     businessCategory: text("business_category").notNull(),
     // What the ad asks the viewer to do, and where it sends them.
     callToAction: text("call_to_action").notNull().default("Call now"),
-    landingUrl: text("landing_url").notNull(),
+    // Optional since 2026-11-15 (0021): ads can be made without a website;
+    // launch requires one (landing_url_required).
+    landingUrl: text("landing_url"),
     // Free-text context fed to the script generator ("family-run since 1998,
     // same-day emergency callouts"). Not shown to viewers directly.
     offerDetails: text("offer_details"),

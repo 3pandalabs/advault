@@ -28,6 +28,7 @@ import { SquareLogo } from "./square-logo";
 import { VideoUpload } from "./video-upload";
 import { PerformanceCard } from "./performance-card";
 import { AudienceCard } from "./audience-card";
+import { WebsiteCard } from "./website-card";
 import { RenderProgress } from "./render-progress";
 import { AUDIENCE_FILTERS_ENABLED } from "@/lib/audience";
 import { Badge, Card, CardDescription, CardTitle } from "@/components/ui/card";
@@ -48,6 +49,8 @@ const LAUNCH_ERRORS: Record<string, string> = {
     "Your Google Ads connection expired. Reconnect it in Settings and try again.",
   no_ready_creatives: "Wait for at least one video to finish rendering first.",
   already_launched: "This campaign has already been sent to Google Ads.",
+  landing_url_required:
+    "Google needs a website link before your ad can go live. Add one under “Your website” below.",
   no_resolvable_zip_codes: "Google did not recognise any of those ZIP codes.",
   // US housing-ads policy, re-checked at launch (lib/audience/policy.ts).
   housing_demographics_not_allowed:
@@ -673,6 +676,11 @@ export default function CampaignDetailPage({
           </>
         )}
       </Card>
+
+      <WebsiteCard
+        campaign={campaign}
+        onSaved={(c) => setCampaign((prev) => (prev ? { ...prev, ...c } : prev))}
+      />
 
       {/* Parked for MVP2; still shown for a campaign that already has filters. */}
       {(AUDIENCE_FILTERS_ENABLED || campaign.audienceFilters) && (
