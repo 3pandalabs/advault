@@ -1,4 +1,5 @@
 import "dotenv/config";
+import { vertexOmniFirst, vertexOmniGenerate } from "../google/omni.js";
 
 // TEXT-to-video. The sibling ../motion module is IMAGE-to-video, and the
 // difference is the entire product argument for the cinematic add-on.
@@ -23,7 +24,7 @@ export type CinematicRequest = {
 
 export type CinematicResult = {
   videoBytes: Buffer;
-  source: "veo" | "kling" | "fal";
+  source: "veo" | "kling" | "fal" | "vertex";
   /** What the vendor actually billed for, which may be rounded up from `seconds`. */
   billedSeconds: number;
 };
@@ -194,10 +195,22 @@ const FAL_T2V_ENDPOINT = process.env.FAL_T2V_ENDPOINT ?? "google/gemini-omni-fla
 
 export const falOmni: CinematicProvider = {
   name: "fal",
-  isConfigured: () => Boolean(process.env.FAL_KEY),
+  isConfigured: () => Boolean(process.env.FAL_KEY) || vertexOmniFirst(),
 
   async generate(req) {
     const seconds = Math.min(15, Math.max(3, Math.round(req.seconds)));
+    // Same Omni model straight from Google while its credits pay for it
+    // (OMNI_PROVIDERS=vertex,fal, lib/ai/google/omni.ts); any Google error
+    // falls through to fal below.
+    if (vertexOmniFirst()) {
+      try {
+        const videoBytes = await vertexOmniGenerate({ prompt: req.prompt, seconds, aspectRatio: req.aspectRatio });
+        return { videoBytes, source: "vertex", billedSeconds: seconds };
+      } catch (err) {
+        console.warn(JSON.stringify({ msg: "vertex omni failed; using fal", error: String(err).slice(0, 300) }));
+        if (!process.env.FAL_KEY) throw err;
+      }
+    }
     const headers = { authorization: `Key ${process.env.FAL_KEY}`, "content-type": "application/json" };
     const submit = await fetch(`https://queue.fal.run/${FAL_T2V_ENDPOINT}`, {
       method: "POST",

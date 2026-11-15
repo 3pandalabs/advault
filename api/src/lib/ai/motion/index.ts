@@ -1,4 +1,5 @@
 import "dotenv/config";
+import { vertexOmniFirst, vertexOmniGenerate } from "../google/omni.js";
 
 // Image-to-video motion clips. Turns a still storefront photo into a few
 // seconds of moving footage, which is what makes a generated ad stop looking
@@ -35,7 +36,7 @@ export type MotionRequest = {
   aspectRatio: "16:9" | "9:16";
 };
 
-export type MotionResult = { videoBytes: Buffer; source: "kling" | "luma" | "fal-kling" | "fal-omni" };
+export type MotionResult = { videoBytes: Buffer; source: "kling" | "luma" | "fal-kling" | "fal-omni" | "vertex-omni" };
 
 export interface MotionProvider {
   readonly name: "kling" | "luma" | "fal";
@@ -198,9 +199,25 @@ export function motionIsPerFormat(): boolean {
 
 export const falKling: MotionProvider = {
   name: "fal",
-  isConfigured: () => Boolean(process.env.FAL_KEY),
+  isConfigured: () => Boolean(process.env.FAL_KEY) || (motionIsPerFormat() && vertexOmniFirst()),
 
   async generate(req) {
+    // Omni straight from Google first while its credits pay for it
+    // (lib/ai/google/omni.ts); any Google error falls through to fal.
+    if (motionIsPerFormat() && vertexOmniFirst()) {
+      try {
+        const videoBytes = await vertexOmniGenerate({
+          prompt: falMotionPrompt(req.motionPrompt),
+          seconds: 5,
+          aspectRatio: req.aspectRatio,
+          image: { bytes: req.imageBytes, mimeType: req.contentType },
+        });
+        return { videoBytes, source: "vertex-omni" };
+      } catch (err) {
+        console.warn(JSON.stringify({ msg: "vertex omni motion failed; using fal", error: String(err).slice(0, 300) }));
+        if (!process.env.FAL_KEY) throw err;
+      }
+    }
     const headers = { authorization: `Key ${process.env.FAL_KEY}`, "content-type": "application/json" };
     // A short-lived link (presigned R2 GET) rather than the bytes inline: a
     // phone photo is several MB, and as base64 inside the JSON body it can
