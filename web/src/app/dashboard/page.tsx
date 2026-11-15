@@ -1,7 +1,9 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { siteVaultSlug } from "@/lib/sitevault";
 import { listCampaigns, type Campaign, type CampaignStatus } from "@/lib/api/browser";
 import { Badge, Card, CardDescription, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -28,10 +30,28 @@ const STATUS_LABEL: Record<CampaignStatus, string> = {
 export default function CampaignsPage() {
   const [campaigns, setCampaigns] = useState<Campaign[] | null>(null);
   const [error, setError] = useState(false);
+  const router = useRouter();
 
   useEffect(() => {
-    listCampaigns().then(setCampaigns).catch(() => setError(true));
-  }, []);
+    listCampaigns()
+      .then((list) => {
+        // Offer combo deep link from SiteVault's edit page
+        // (/dashboard?siteOffer=<slug>): the campaign using that site goes
+        // straight to its buy-a-new-ad step with the website box ticked. No
+        // match (or a renamed site we haven't followed yet) = the dashboard.
+        const slug = new URLSearchParams(window.location.search).get("siteOffer");
+        // Several campaigns can share the account's one site: prefer one that
+        // isn't live, since a live campaign can't buy a new version.
+        const matches = slug ? list.filter((c) => siteVaultSlug(c.landingUrl) === slug) : [];
+        const match = matches.find((c) => c.status !== "live") ?? matches[0];
+        if (match) {
+          router.replace(`/dashboard/campaigns/${match.id}?siteOffer=1`);
+          return;
+        }
+        setCampaigns(list);
+      })
+      .catch(() => setError(true));
+  }, [router]);
 
   if (error) {
     return <p className="text-sm text-red-300">Could not load your campaigns. Please reload.</p>;

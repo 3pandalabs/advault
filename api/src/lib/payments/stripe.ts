@@ -13,6 +13,27 @@ const API = "https://api.stripe.com/v1";
 // replaying a captured webhook later. Five minutes is Stripe's own default.
 const TOLERANCE_SECONDS = 300;
 
+/**
+ * Checkout line items as Stripe form fields. One line for the whole amount,
+ * or the caller's breakdown (new ad + "Offer on your website") when it sums
+ * to the amount; a breakdown that doesn't is ignored rather than trusted.
+ */
+export function stripeLineItems(req: CheckoutRequest): Record<string, string> {
+  const fallbackName = req.purpose === "topup" ? "AdVault ad balance top-up" : "AdVault campaign fee";
+  const lines =
+    req.lineItems && req.lineItems.length > 0 && req.lineItems.reduce((n, l) => n + l.amountMinor, 0) === req.amountMinor
+      ? req.lineItems
+      : [{ amountMinor: req.amountMinor, name: fallbackName }];
+  const out: Record<string, string> = {};
+  lines.forEach((l, i) => {
+    out[`line_items[${i}][quantity]`] = "1";
+    out[`line_items[${i}][price_data][currency]`] = req.currency.toLowerCase();
+    out[`line_items[${i}][price_data][unit_amount]`] = String(l.amountMinor);
+    out[`line_items[${i}][price_data][product_data][name]`] = l.name;
+  });
+  return out;
+}
+
 export const stripe: PaymentProvider = {
   name: "stripe",
 
@@ -27,11 +48,7 @@ export const stripe: PaymentProvider = {
       success_url: `${req.returnUrl}?status=success`,
       cancel_url: `${req.returnUrl}?status=cancelled`,
       customer_email: req.userEmail,
-      "line_items[0][quantity]": "1",
-      "line_items[0][price_data][currency]": req.currency.toLowerCase(),
-      "line_items[0][price_data][unit_amount]": String(req.amountMinor),
-      "line_items[0][price_data][product_data][name]":
-        req.purpose === "topup" ? "AdVault ad balance top-up" : "AdVault campaign fee",
+      ...stripeLineItems(req),
       // Round-trips to the webhook. Same reasoning as Razorpay's notes: this is
       // the only reliable link back to our payments row.
       "metadata[payment_id]": req.paymentId,

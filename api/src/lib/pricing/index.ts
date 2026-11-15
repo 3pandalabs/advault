@@ -338,6 +338,19 @@ export const ADD_ONS: Record<string, AddOn> = {
 };
 
 // ---------------------------------------------------------------------------
+// Offer combo (2026-11-15): "Also put this offer on my website". A $10 new ad
+// plus the same offer on the business's SiteVault site is $12: this add-on is
+// the $2, a second line item on the new ad's checkout. It is never charged
+// when the site has a SiteVault credit to spend (the customer pays $10), when
+// SiteVault billing is off, or for admins / at_cost accounts. US only, like
+// new_ad. Rules: lib/siteOffer/policy.ts.
+// ---------------------------------------------------------------------------
+
+export const SITE_OFFER_ADDON: Partial<Record<Currency, { priceMinor: number; label: string }>> = {
+  USD: { priceMinor: 200, label: "Offer on your website" }, // $2
+};
+
+// ---------------------------------------------------------------------------
 // Launch offer (2026-11-12): the first ad is free for the first 30 Keep it
 // running customers. Counted from free ads actually claimed, never from
 // orders opened, so an abandoned order cannot use up a place. Two people

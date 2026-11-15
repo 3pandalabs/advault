@@ -17,6 +17,7 @@ import { creativeRoutes } from "./routes/creatives.js";
 import { uploadRoutes } from "./routes/uploads.js";
 import { videoReviewRoutes } from "./routes/videoReviews.js";
 import { newAdRoutes } from "./routes/newAds.js";
+import { startSiteOfferSweep } from "./lib/siteOffer/index.js";
 import { launchRoutes } from "./routes/launch.js";
 import { metricsRoutes } from "./routes/metrics.js";
 import { subscriptionRoutes } from "./routes/subscriptions.js";
@@ -67,6 +68,10 @@ app.get("/health", async () => ({ ok: true }));
 // endpoints are excluded so dashboard polling and container health checks don't
 // register as app traffic.
 startCpuSampler();
+// Offer combo: retries website offers SiteVault hasn't accepted yet. In the
+// API, not the renderer, because only advault-api holds SITEVAULT_INTERNAL_TOKEN;
+// a second replica would only repeat pushes SiteVault dedupes by purchase id.
+startSiteOfferSweep();
 app.addHook("onResponse", async (req) => {
   if (req.url !== "/metrics" && req.url !== "/health") recordRequest();
 });

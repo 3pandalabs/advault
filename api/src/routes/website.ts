@@ -23,6 +23,7 @@ import { stickerSchema } from "../lib/script/schema.js";
 import { getObjectBytes, headObject } from "../plugins/r2.js";
 import { proPhotoKey } from "../render/enhance.js";
 import { isHousingCategory } from "../lib/audience/policy.js";
+import { latestSiteOffer } from "../lib/siteOffer/index.js";
 
 // "Make me a website" (2026-11-15). A business with no website can still make
 // ads (PR #76) but needs a link to launch; this builds a one-page SiteVault
@@ -233,7 +234,7 @@ export async function websiteRoutes(app: FastifyInstance) {
             .where(eq(campaigns.id, campaign.id))
             .returning();
           req.log.info({ campaignId, from: campaign.landingUrl, to: current }, "website link followed sitevault rename");
-          return { siteUrl: current, editUrl, campaign: updated };
+          return { siteUrl: current, editUrl, campaign: updated, siteOffer: await latestSiteOffer(campaign.id) };
         }
       }
       // No website yet, but the account already has one: offer that instead
@@ -242,7 +243,8 @@ export async function websiteRoutes(app: FastifyInstance) {
         const existing = await accountSite(req.userId!, campaign.id);
         if (existing) return { siteUrl: null, editUrl, accountSite: { siteUrl: existing.siteUrl } };
       }
-      return { siteUrl: campaign.landingUrl, editUrl };
+      // Offer combo: did the latest paid website offer reach the site?
+      return { siteUrl: campaign.landingUrl, editUrl, siteOffer: await latestSiteOffer(campaign.id) };
     },
   );
 }

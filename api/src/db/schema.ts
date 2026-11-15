@@ -1149,6 +1149,17 @@ export const purchases = pgTable(
     // RENDERS_PER_AD in lib/newAd). Migration 0015.
     rendersUsed: integer("renders_used").notNull().default(0),
 
+    // Offer combo (migration 0023, lib/siteOffer): the same offer also goes on
+    // the business's SiteVault site. Mode 'paid' (+$2 line item), 'credit' (1
+    // SiteVault credit), 'free' (SiteVault billing off, or admin/at_cost);
+    // NULL = no website offer. Pushed after payment, retried by a sweep.
+    siteOfferMode: text("site_offer_mode"),
+    siteOfferText: text("site_offer_text"),
+    siteOfferSlug: text("site_offer_slug"),
+    siteOfferPushedAt: timestamp("site_offer_pushed_at", { withTimezone: true }),
+    siteOfferError: text("site_offer_error"),
+    siteOfferAttempts: integer("site_offer_attempts").notNull().default(0),
+
     paidAt: timestamp("paid_at", { withTimezone: true }),
     deliveredAt: timestamp("delivered_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -1165,7 +1176,11 @@ export const purchases = pgTable(
     // forever and are never producible again.
     index("idx_purchases_producible").on(t.createdAt).where(sql`status = 'paid'`),
     check("purchases_currency_check", sql`${t.currencyCode} in ('INR','USD')`),
-    check("purchases_sku_check", sql`${t.sku} in ('cinematic','new_ad','cinematic_pack')`),
+    check("purchases_sku_check", sql`${t.sku} in ('cinematic','new_ad','cinematic_pack','site_offer')`),
+    check(
+      "purchases_site_offer_mode_check",
+      sql`${t.siteOfferMode} is null or ${t.siteOfferMode} in ('paid','credit','free')`,
+    ),
     check(
       "purchases_provider_check",
       sql`${t.provider} in ('razorpay','stripe','paddle','manual','pack')`,

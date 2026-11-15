@@ -14,6 +14,7 @@ import {
   type Currency,
 } from "../lib/pricing/index.js";
 import { providerByName, providerFor } from "../lib/payments/index.js";
+import { pushSiteOfferSoon } from "../lib/siteOffer/index.js";
 import {
   createPurchase,
   markPurchasePaid,
@@ -438,6 +439,10 @@ export async function cinematicRoutes(app: FastifyInstance) {
         purchaseId: purchase.id,
         externalRef: `${provider.name}:${event.providerRef}`,
       });
+      // Offer combo: put the offer on the SiteVault site AFTER the payment is
+      // recorded, without awaiting it. A SiteVault failure must never fail or
+      // delay the purchase; lib/siteOffer records it and its sweep retries.
+      if (!result.alreadyApplied && purchase.siteOfferMode) pushSiteOfferSoon(purchase.id);
       return reply.code(200).send({ ok: true, alreadyApplied: result.alreadyApplied });
     },
   );

@@ -5,6 +5,7 @@ import { ApiError, createWebsite, getWebsite, updateCampaign, linkExistingWebsit
 import { Card, CardDescription, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { siteVaultSlug } from "@/lib/sitevault";
 
 // "Your website" on the campaign page. A website is OPTIONAL to make ads
 // (since 2026-11-15) but Google needs a link to launch (landing_url_required).
@@ -36,7 +37,25 @@ const MAKE_ERRORS: Record<string, string> = {
   website_builder_failed: "We couldn't build the website just now. Please try again in a minute.",
 };
 
-export function WebsiteCard({ campaign, onSaved }: { campaign: Campaign; onSaved: (c: Campaign) => void }) {
+type SiteOfferState = { outcome: "updated" | "pending" | "retrying" | "failed"; offer: string | null };
+
+const SITE_OFFER_TEXT: Record<SiteOfferState["outcome"], string> = {
+  updated: "updated",
+  pending: "pending",
+  retrying: "couldn't update — we'll retry",
+  failed: "couldn't update. You can change it on your website's edit page",
+};
+
+export function WebsiteCard({
+  campaign,
+  onSaved,
+  siteOfferRev = 0,
+}: {
+  campaign: Campaign;
+  onSaved: (c: Campaign) => void;
+  /** Bumped by the campaign page after a website offer is bought or pushed. */
+  siteOfferRev?: number;
+}) {
   const locked = campaign.status === "live" || Boolean(campaign.googleCampaignResourceName);
   const [mode, setMode] = useState<"view" | "link" | "make">("view");
   const [draft, setDraft] = useState(campaign.landingUrl ?? "");
@@ -52,6 +71,30 @@ export function WebsiteCard({ campaign, onSaved }: { campaign: Campaign; onSaved
   const [address, setAddress] = useState<AddressCheck | null>(null);
   const fetchedWebsite = useRef(false);
   const [accountSite, setAccountSite] = useState<string | null>(null);
+  const [siteOffer, setSiteOffer] = useState<SiteOfferState | null>(null);
+  const isSiteVault = siteVaultSlug(campaign.landingUrl) !== null;
+
+  // Offer combo: did the latest website offer reach the site? Re-checked a
+  // few times while SiteVault hasn't confirmed it yet (the push follows payment).
+  useEffect(() => {
+    if (!isSiteVault) return;
+    let cancelled = false;
+    let tries = 0;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const load = () =>
+      getWebsite(campaign.id)
+        .then((w) => {
+          if (cancelled) return;
+          setSiteOffer(w.siteOffer ?? null);
+          if (w.siteOffer?.outcome === "pending" && tries++ < 6) timer = setTimeout(load, 5000);
+        })
+        .catch(() => {});
+    void load();
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [campaign.id, isSiteVault, siteOfferRev]);
 
   // The SiteVault edit link is stored encrypted; fetch it only when there is
   // one. The same call follows a rename made on SiteVault (link updated).
@@ -176,6 +219,13 @@ export function WebsiteCard({ campaign, onSaved }: { campaign: Campaign; onSaved
             Edit your website
           </a>{" "}
           to add services, prices, hours or more photos.
+        </p>
+      )}
+
+      {siteOffer && campaign.landingUrl && mode === "view" && (
+        <p className={`mt-3 text-sm ${siteOffer.outcome === "updated" ? "text-emerald-300" : siteOffer.outcome === "pending" ? "text-zinc-300" : "text-amber-300"}`}>
+          Offer on your website: {SITE_OFFER_TEXT[siteOffer.outcome]}
+          {siteOffer.offer ? <span className="block break-words text-zinc-400">“{siteOffer.offer}”</span> : null}
         </p>
       )}
 
