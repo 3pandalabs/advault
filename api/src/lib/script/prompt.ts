@@ -29,6 +29,8 @@ Pick the narrator voice that suits the business and its customers.
 
 For each photo, write one motion sentence for an image-to-video model: the small, natural movement that photo should come alive with, describing what is actually in it. People keep doing what they are doing (the stylist keeps cutting the woman's hair with scissors and comb; the dentist keeps talking and the patient nods and smiles); otherwise soft movement of light, curtains, leaves, steam or water. Always end with "slow gentle push-in." Never add people, objects, text or camera cuts that are not in the photo.
 
+Also write openerPrompt: one text-to-video prompt for a 5-second cinematic opening shot that plays before the real photos and sets the mood of this business (a plumber: water running clear over polished copper at dawn; a salon: warm morning light across empty styling chairs). Describe light, texture, materials and camera movement only. NEVER people or faces, NEVER text, signs, labels, logos, numbers or prices, and never a specific product the business may not sell: it is generated footage, not evidence. For real estate, the mood of a neighbourhood at golden hour, never a specific home and never who lives there.
+
 Aim for a 15-second spot unless the scene count makes that impossible. Assign each scene to one of the supplied photos by index, and use each photo at most once unless there are fewer photos than scenes.`;
 
 export function buildAdScriptUserPrompt(input: {

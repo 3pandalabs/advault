@@ -35,7 +35,7 @@ export type MotionRequest = {
   aspectRatio: "16:9" | "9:16";
 };
 
-export type MotionResult = { videoBytes: Buffer; source: "kling" | "luma" | "fal-kling" };
+export type MotionResult = { videoBytes: Buffer; source: "kling" | "luma" | "fal-kling" | "fal-omni" };
 
 export interface MotionProvider {
   readonly name: "kling" | "luma" | "fal";
@@ -186,6 +186,16 @@ export function falMotionPrompt(motionPrompt?: string): string {
 }
 const FAL_MOTION_ENDPOINT = process.env.FAL_MOTION_ENDPOINT ?? "kling/v4/flash/image-to-video";
 
+/**
+ * Gemini Omni (2026-11-14, FAL_MOTION_ENDPOINT=google/gemini-omni-flash/...):
+ * ~70% cheaper per second than Kling and judged as good on the demo ads. It
+ * only makes 9:16 or 16:9 clips (it reframes the photo), so unlike Kling a
+ * clip belongs to ONE format and the worker caches it per format.
+ */
+export function motionIsPerFormat(): boolean {
+  return /gemini-omni/.test(FAL_MOTION_ENDPOINT);
+}
+
 export const falKling: MotionProvider = {
   name: "fal",
   isConfigured: () => Boolean(process.env.FAL_KEY),
@@ -199,7 +209,17 @@ export const falKling: MotionProvider = {
     const submit = await fetch(`https://queue.fal.run/${FAL_MOTION_ENDPOINT}`, {
       method: "POST",
       headers,
-      body: JSON.stringify({ start_image_url: image, prompt: falMotionPrompt(req.motionPrompt), duration: 5 }),
+      body: JSON.stringify(
+        motionIsPerFormat()
+          ? {
+              image_url: image,
+              prompt: falMotionPrompt(req.motionPrompt),
+              aspect_ratio: req.aspectRatio,
+              duration: 5,
+              resolution: "720p",
+            }
+          : { start_image_url: image, prompt: falMotionPrompt(req.motionPrompt), duration: 5 },
+      ),
       signal: AbortSignal.timeout(60_000),
     });
     const job = (await submit.json().catch(() => ({}))) as { status_url?: string; response_url?: string };
@@ -215,7 +235,7 @@ export const falKling: MotionProvider = {
     if (!out.video?.url) throw new Error("fal motion returned no video");
     const dl = await fetch(out.video.url);
     if (!dl.ok) throw new Error(`fal motion download failed: ${dl.status}`);
-    return { videoBytes: Buffer.from(await dl.arrayBuffer()), source: "fal-kling" };
+    return { videoBytes: Buffer.from(await dl.arrayBuffer()), source: motionIsPerFormat() ? "fal-omni" : "fal-kling" };
   },
 };
 

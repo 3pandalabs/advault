@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { rejectVisualPrompt } from "../cinematic/policy.js";
 
 // The generated ad script. Written whole by the generator, read whole by the
 // renderer, stored as jsonb on `creatives.script`.
@@ -80,6 +81,11 @@ export const adScriptSchema = z.object({
   // ("the stylist keeps cutting the woman's hair..."). Optional: the fallback
   // and older scripts use the generic motion prompt.
   photoMotions: z.array(photoMotionSchema).max(5).optional(),
+  // The mixed ad's opening shot (2026-11-14): one text-to-video prompt for a
+  // mood-only cinematic opener, filmed before the real photos. Mood only, so
+  // it passes the same rejectVisualPrompt() check as the cinematic add-on;
+  // one that fails is dropped (no opener), never a lost script.
+  openerPrompt: z.string().min(20).max(400).optional(),
   // Set by lib/creatives/generate.ts from the advertiser's choices, never by
   // the model: photos marked as showing people (motion clips go to these
   // first, render/worker.ts) and the agent's own photo (real estate; shown on
@@ -177,8 +183,13 @@ export const AD_SCRIPT_JSON_SCHEMA = {
         additionalProperties: false,
       },
     },
+    openerPrompt: {
+      type: ["string", "null"],
+      description:
+        "One text-to-video prompt (under 350 characters) for a 5-second cinematic opening shot that sets the mood for this business: light, texture, materials, movement. No people, no text, signs, numbers or logos, no specific products. Null if nothing fitting comes to mind.",
+    },
   },
-  required: ["hook", "scenes", "callToAction", "endCardText", "voiceoverText", "sticker", "voice", "photoMotions"],
+  required: ["hook", "scenes", "callToAction", "endCardText", "voiceoverText", "sticker", "voice", "photoMotions", "openerPrompt"],
   additionalProperties: false,
 } as const;
 
@@ -204,7 +215,19 @@ function normalizeExtras(r: Record<string, unknown>): Record<string, unknown> {
     })
     .filter((m) => Number.isInteger(m.assetIndex) && m.assetIndex >= 0 && m.assetIndex <= 4 && m.motion)
     .slice(0, 5);
-  return { voice, photoMotions: photoMotions.length ? photoMotions : undefined };
+  return { voice, photoMotions: photoMotions.length ? photoMotions : undefined, openerPrompt: cleanOpener(r.openerPrompt) };
+}
+
+/**
+ * The opener prompt, or undefined. Generated footage carries mood only, so a
+ * prompt with text, numbers or a claim in it is dropped rather than filmed
+ * (same rule as the cinematic add-on, lib/cinematic/policy.ts).
+ */
+export function cleanOpener(v: unknown): string | undefined {
+  if (typeof v !== "string") return undefined;
+  const t = v.replace(/\s+/g, " ").trim().slice(0, 400);
+  if (t.length < 20) return undefined;
+  return rejectVisualPrompt(t) ? undefined : t;
 }
 
 /**
