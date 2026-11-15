@@ -147,6 +147,8 @@ export type Campaign = {
   businessCategory: string;
   callToAction: string;
   landingUrl: string | null;
+  /** Set when AdVault made the website with SiteVault (ciphertext; use getWebsite). */
+  sitevaultEditEnc?: string | null;
   offerDetails: string | null;
   targetZipCodes: string[];
   radiusMiles: number;
@@ -416,6 +418,22 @@ export function updateCampaign(
   }>,
 ) {
   return api<Campaign>(`/campaigns/${campaignId}`, { method: "PATCH", body: JSON.stringify(input) });
+}
+
+/** One-click SiteVault website for a campaign with no website. */
+export function createWebsite(
+  campaignId: string,
+  input: { phone: string; city: string; hours?: string; attest: true },
+) {
+  return api<{ campaign: Campaign; siteUrl: string; editUrl: string }>(`/campaigns/${campaignId}/website`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+/** The site link and its private SiteVault edit link (owner only). */
+export function getWebsite(campaignId: string) {
+  return api<{ siteUrl: string | null; editUrl: string | null }>(`/campaigns/${campaignId}/website`);
 }
 
 export function generateCreatives(

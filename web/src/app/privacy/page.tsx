@@ -36,7 +36,7 @@ export default function PrivacyPage() {
   return (
     <LegalPage
       title="Privacy Policy"
-      effective="12 November 2026"
+      effective="15 November 2026"
       summary="We collect what we need to make your ad and run your campaign, and nothing else. We do not sell your data, we do not track you around the internet, and this site sets no cookies at all."
     >
       <h2>Who we are</h2>
@@ -303,6 +303,17 @@ export default function PrivacyPage() {
             <td>
               When AdVault pays Google for your ads, each customer gets their own card so
               spending is capped and accounted for separately
+            </td>
+          </tr>
+          <tr>
+            <td>SiteVault (our own website builder, also by 3PandaLabs, hosted on Cloudflare)</td>
+            <td>
+              Your business name, category, offer, the phone, town and hours you give us, and your
+              ad photos
+            </td>
+            <td>
+              Only if you press &ldquo;Make me a website&rdquo;: to build and publish your public
+              website. You can change or remove it with its edit link
             </td>
           </tr>
           <tr>

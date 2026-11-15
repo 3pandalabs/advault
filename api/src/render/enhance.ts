@@ -27,6 +27,12 @@ const TIMEOUT_MS = 150_000;
 
 const run = promisify(execFile);
 
+/** R2 key of the polished copy of a campaign photo (it may not exist yet). */
+export function proPhotoKey(campaignId: string, sourceKey: string): string {
+  const hash = createHash("sha256").update(`${sourceKey}|${ENDPOINT}|${PROMPT_VERSION}`).digest("hex").slice(0, 32);
+  return `campaigns/${campaignId}/pro/${hash}.jpg`;
+}
+
 export function enhanceEnabled(): boolean {
   return process.env.PHOTO_ENHANCE === "fal" && Boolean(process.env.FAL_KEY);
 }
@@ -118,10 +124,7 @@ export async function enhancePhotos(args: {
   await Promise.all(
     args.sourceAssetKeys.map(async (key, i) => {
       if (args.skip.includes(i) || !IMAGE_EXT.test(key)) return;
-      const proKey = `campaigns/${args.campaignId}/pro/${createHash("sha256")
-        .update(`${key}|${ENDPOINT}|${PROMPT_VERSION}`)
-        .digest("hex")
-        .slice(0, 32)}.jpg`;
+      const proKey = proPhotoKey(args.campaignId, key);
       const proPath = join(args.workDir, `pro-${i}.jpg`);
       try {
         if (await headObject(proKey)) {
