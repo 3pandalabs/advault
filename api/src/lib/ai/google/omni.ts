@@ -3,13 +3,13 @@ import { createSign } from "node:crypto";
 // Gemini Omni straight from Google (Vertex AI, now "Gemini Enterprise Agent
 // Platform"), 2026-11-15. The SAME model AdVault already buys through fal
 // (google/gemini-omni-flash/v1.2), so the footage looks the same; the reason
-// to call Google directly is credits: the Cloud free trial and, if approved,
-// Google for Startups credits pay for it. At list price Google is the
-// DEARER route (~$0.07/s at 720p vs fal's ~$0.027/s), so the order is a
-// setting, not a constant:
+// to call Google directly is price AND credits. At 720p (what every caller
+// asks for) Google lists ~$0.0695/s against fal's $0.0819/s (fal's $0.0273/s
+// is its 360p price, misread here until 2026-11-15), and the Cloud free trial
+// or Google for Startups credits can pay Google. So Google leads by default:
 //
-//   OMNI_PROVIDERS=vertex,fal   Google first (while credits last), fal backup
-//   OMNI_PROVIDERS=fal          fal only (the default)
+//   OMNI_PROVIDERS=vertex,fal   Google first, fal backup (the default)
+//   OMNI_PROVIDERS=fal          fal only (e.g. while Google is down or capped)
 //
 // Callers (motion clips, the mixed-ad opener, cinematic shots) try Google
 // first when it leads the list and fall back to fal on ANY error, so an
@@ -45,7 +45,7 @@ export function vertexOmniConfigured(): boolean {
 
 /** True when Google should be tried before fal for Omni footage. */
 export function vertexOmniFirst(): boolean {
-  const order = (process.env.OMNI_PROVIDERS ?? "fal").split(",").map((s) => s.trim());
+  const order = (process.env.OMNI_PROVIDERS ?? "vertex,fal").split(",").map((s) => s.trim());
   return order[0] === "vertex" && vertexOmniConfigured();
 }
 
