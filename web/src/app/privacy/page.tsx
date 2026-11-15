@@ -313,7 +313,9 @@ export default function PrivacyPage() {
             </td>
             <td>
               Only if you press &ldquo;Make me a website&rdquo;: to build and publish your public
-              website. You can change or remove it with its edit link
+              website. You can change or remove it with its edit link. If you tick &ldquo;Also
+              put this offer on my website&rdquo; when buying an ad, we send only your offer
+              text to that website, after payment
             </td>
           </tr>
           <tr>

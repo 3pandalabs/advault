@@ -10,6 +10,7 @@ import {
   getMe,
   getNewAdStatus,
   orderNewAd,
+  pushFreeSiteOffer,
   redoAd,
   type NewAdStatus,
   isAwaitingPlatformSetup,
@@ -29,6 +30,7 @@ import { VideoUpload } from "./video-upload";
 import { PerformanceCard } from "./performance-card";
 import { AudienceCard } from "./audience-card";
 import { WebsiteCard } from "./website-card";
+import { SiteOfferOption, payLabel } from "./site-offer-option";
 import { RenderProgress } from "./render-progress";
 import { AUDIENCE_FILTERS_ENABLED } from "@/lib/audience";
 import { Badge, Card, CardDescription, CardTitle } from "@/components/ui/card";
@@ -138,6 +140,18 @@ export default function CampaignDetailPage({
   const [newAd, setNewAd] = useState<NewAdStatus | null>(null);
   const [redoConfirm, setRedoConfirm] = useState(false);
   const generatingRef = useRef(false);
+  // Offer combo: "Also put this offer on my website" on a new-ad purchase.
+  // Pre-ticked when SiteVault's edit page sent them here (?siteOffer=1).
+  const [siteOfferTicked, setSiteOfferTicked] = useState(false);
+  const [siteOfferDeepLink, setSiteOfferDeepLink] = useState(false);
+  const [siteOfferRev, setSiteOfferRev] = useState(0);
+  const orderSiteOffer = Boolean(siteOfferTicked && newAd?.siteOffer);
+  const orderFailed = (err: unknown, fallback: string) => {
+    if (err instanceof ApiError && err.code === "site_offer_unavailable") {
+      setError("We couldn't reach your website just now. Untick “Also put this offer on my website” or try again in a minute.");
+      getNewAdStatus(campaignId).then(setNewAd).catch(() => undefined);
+    } else setError(fallback);
+  };
 
   const refresh = useCallback(
     () => getCampaign(campaignId).then(setCampaign).catch(() => setError("Could not load this campaign.")),
@@ -148,7 +162,15 @@ export default function CampaignDetailPage({
     refresh();
     listAdAccounts().then(setAdAccounts).catch(() => undefined);
     getMe().then((me) => setIsAdmin(me.role === "admin")).catch(() => undefined);
-    getNewAdStatus(campaignId).then(setNewAd).catch(() => undefined);
+    getNewAdStatus(campaignId)
+      .then((s) => {
+        setNewAd(s);
+        if (new URLSearchParams(window.location.search).get("siteOffer") === "1") {
+          setSiteOfferTicked(true);
+          setSiteOfferDeepLink(true);
+        }
+      })
+      .catch(() => undefined);
   }, [refresh, campaignId]);
 
   // After checkout the payment webhook marks the order paid; until then, poll.
@@ -338,17 +360,26 @@ export default function CampaignDetailPage({
                   disabled={busy}
                   onClick={() => {
                     setBusy(true);
-                    orderNewAd(campaign.id)
+                    setError(null);
+                    orderNewAd(campaign.id, orderSiteOffer ? { siteOffer: true } : undefined)
                       .then(({ checkout }) => {
                         if (checkout.redirectUrl) window.location.href = checkout.redirectUrl;
-                        else return getNewAdStatus(campaignId).then(setNewAd);
+                        else {
+                          setSiteOfferRev((n) => n + 1);
+                          return getNewAdStatus(campaignId).then(setNewAd);
+                        }
                       })
-                      .catch(() => setError("Could not start the payment. Please try again."))
+                      .catch((err) => orderFailed(err, "Could not start the payment. Please try again."))
                       .finally(() => setBusy(false));
                   }}
                 >
-                  {newAd.freeLaunchOffer ? "Make my free ad" : `Pay ${newAd.display} and make my ad`}
+                  {newAd.freeLaunchOffer ? "Make my free ad" : `Pay ${payLabel(newAd, orderSiteOffer)} and make my ad`}
                 </Button>
+              )}
+              {newAd.order && (
+                <div className="w-full">
+                  <SiteOfferOption status={newAd} checked={siteOfferTicked} onChange={setSiteOfferTicked} disabled={busy} />
+                </div>
               )}
             </div>
           )}
@@ -387,17 +418,17 @@ export default function CampaignDetailPage({
                       setError(null);
                       const go = canRedo
                         ? redoAd(campaign.id).then(() => Promise.all([refresh(), getNewAdStatus(campaignId).then(setNewAd)]))
-                        : orderNewAd(campaign.id).then(({ checkout }) => {
+                        : orderNewAd(campaign.id, orderSiteOffer ? { siteOffer: true } : undefined).then(({ checkout }) => {
                             if (checkout.redirectUrl) window.location.href = checkout.redirectUrl;
                           });
-                      go.catch(() => setError("Could not start a new version. Please try again."))
+                      go.catch((err) => orderFailed(err, "Could not start a new version. Please try again."))
                         .finally(() => {
                           setBusy(false);
                           setRedoConfirm(false);
                         });
                     }}
                   >
-                    {canRedo ? "Yes, replace it" : `Pay ${newAd.display}`}
+                    {canRedo ? "Yes, replace it" : `Pay ${payLabel(newAd, orderSiteOffer)}`}
                   </Button>
                 </div>
               ) : (
@@ -406,6 +437,14 @@ export default function CampaignDetailPage({
                 </Button>
               )}
             </div>
+            {metered && !canRedo && (
+              <SiteOfferOption status={newAd} checked={siteOfferTicked} onChange={setSiteOfferTicked} disabled={busy} />
+            )}
+            {metered && canRedo && siteOfferDeepLink && newAd.siteOffer && (
+              <p className="mt-3 text-sm text-zinc-400">
+                To put this offer on your website with a new ad, use this ad&rsquo;s free redos first; the option appears when you buy a new version.
+              </p>
+            )}
           </Card>
         );
       })()}
@@ -677,9 +716,38 @@ export default function CampaignDetailPage({
         )}
       </Card>
 
+      {newAd && !newAd.required && newAd.siteOffer && (
+        <Card className="mb-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="min-w-0">
+              <CardTitle>Offer on your website</CardTitle>
+              <CardDescription className="break-words">
+                Put “{newAd.siteOffer.offer}” on your SiteVault website. Free for your account.
+              </CardDescription>
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={busy}
+              onClick={() => {
+                setBusy(true);
+                setError(null);
+                pushFreeSiteOffer(campaign.id)
+                  .then(() => setSiteOfferRev((n) => n + 1))
+                  .catch((err) => orderFailed(err, "Could not update your website. Please try again."))
+                  .finally(() => setBusy(false));
+              }}
+            >
+              Put it on my website
+            </Button>
+          </div>
+        </Card>
+      )}
+
       <WebsiteCard
         campaign={campaign}
         onSaved={(c) => setCampaign((prev) => (prev ? { ...prev, ...c } : prev))}
+        siteOfferRev={siteOfferRev}
       />
 
       {/* Parked for MVP2; still shown for a campaign that already has filters. */}

@@ -440,6 +440,8 @@ export function getWebsite(campaignId: string) {
     campaign?: Campaign;
     /** The account already has a SiteVault site (one per business): offer to reuse it. */
     accountSite?: { siteUrl: string };
+    /** Offer combo: the latest paid website offer and whether it reached the site. */
+    siteOffer?: { outcome: "updated" | "pending" | "retrying" | "failed"; offer: string | null } | null;
   }>(`/campaigns/${campaignId}/website`);
 }
 
@@ -473,7 +475,20 @@ export type NewAdStatus = {
   /** Redos left on the made ad; null when not metered (admin). */
   redosLeft: number | null;
   order: { id: string; status: string; amountMinor: number; currency: string } | null;
+  /**
+   * Offer combo: "Also put this offer on my website", when the campaign's
+   * link is a SiteVault site with an offer and SiteVault answered. null = hide.
+   */
+  siteOffer: {
+    offered: "paid" | "credit" | "free";
+    offer: string;
+    credits: number | null;
+    addonDisplay: string | null;
+  } | null;
 };
+/** Admins / at_cost: put the campaign's offer on its SiteVault site, free. */
+export const pushFreeSiteOffer = (campaignId: string) =>
+  api<{ purchaseId: string; pushed: boolean }>(`/campaigns/${campaignId}/site-offer`, { method: "POST" });
 /** "Make it again": a new version from the same photos, replacing the current one. */
 export const redoAd = (campaignId: string) =>
   api<{ creatives: Creative[] }>(`/campaigns/${campaignId}/creatives/redo`, { method: "POST" });
@@ -483,10 +498,12 @@ export const getNewAdStatus = (campaignId: string) => api<NewAdStatus>(`/campaig
 export const orderNewAd = (
   campaignId: string,
   input?: {
-    assetIds: string[];
-    aspectRatios: ("16:9" | "9:16")[];
+    assetIds?: string[];
+    aspectRatios?: ("16:9" | "9:16")[];
     peopleAssetIds?: string[];
     portraitAssetId?: string | null;
+    /** Offer combo: also put the campaign's offer on its SiteVault site. */
+    siteOffer?: boolean;
   },
 ) =>
   api<{ purchaseId: string; checkout: { provider: string; redirectUrl: string | null } }>(

@@ -106,7 +106,10 @@ export default function TermsPage() {
             <td>
               One ad kept running in a campaign we run for you, with no monthly offer.
               Each ad we make is a one-off $10 charge, paid before we make it, including
-              the first. It includes the first version and up to two redos; a version that
+              the first. If your ad links to a SiteVault website, you can also put the same
+              offer on that website for $2 more ($12 in all), or for $10 in all when the
+              website has a SiteVault offer credit to use; this is charged with the ad.
+              Each ad includes the first version and up to two redos; a version that
               fails to render is redone at no charge. A video you upload yourself has no
               charge; it runs after we review it.
               We may show it as one monthly total with your ad budget (for example $49 =

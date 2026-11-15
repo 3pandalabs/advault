@@ -6,7 +6,8 @@ import { db } from "../db/index.js";
 import { assets, creatives, purchases, users } from "../db/schema.js";
 import { deleteObject } from "../plugins/r2.js";
 import { loadOwnedCampaign } from "../lib/ownership.js";
-import { formatMinor } from "../lib/pricing/index.js";
+import { SITE_OFFER_ADDON, formatMinor } from "../lib/pricing/index.js";
+import { pushSiteOffer, quoteCampaignSiteOffer, recordSiteOffer } from "../lib/siteOffer/index.js";
 import { providerFor } from "../lib/payments/index.js";
 import { createPurchase, markDelivered, markPurchasePaid } from "../lib/cinematic/index.js";
 import { generateForCampaign } from "../lib/creatives/generate.js";
@@ -37,7 +38,7 @@ export async function newAdRoutes(app: FastifyInstance) {
       const { campaignId } = req.params as { campaignId: string };
       const campaign = await loadOwnedCampaign(campaignId, req.userId!, reply);
       if (!campaign) return;
-      return newAdStatus(req.userId!, campaign.id);
+      return newAdStatus(req.userId!, campaign);
     },
   );
 
@@ -59,21 +60,31 @@ export async function newAdRoutes(app: FastifyInstance) {
     {
       schema: {
         params: z.object({ campaignId: z.string().uuid() }),
-        // Optional: omitted means "same photos and formats as my last order
-        // for this campaign", for retrying an abandoned checkout.
+        // Photos optional: omitted means "same photos and formats as my last
+        // order for this campaign", for retrying an abandoned checkout.
+        // siteOffer: "Also put this offer on my website" (offer combo).
         body: z
           .object({
-            assetIds: z.array(z.string().uuid()).min(1).max(5),
+            assetIds: z.array(z.string().uuid()).min(1).max(5).optional(),
             peopleAssetIds: z.array(z.string().uuid()).max(5).optional(),
             portraitAssetId: z.string().uuid().nullish(),
             aspectRatios: z.array(z.enum(["16:9", "9:16"])).min(1).max(2).default(["16:9", "9:16"]),
+            siteOffer: z.boolean().optional(),
           })
           .optional(),
       },
     },
     async (req, reply) => {
       const { campaignId } = req.params as { campaignId: string };
-      let brief = req.body as NewAdBrief | undefined;
+      const input = req.body as (Partial<NewAdBrief> & { siteOffer?: boolean }) | undefined;
+      let brief: NewAdBrief | undefined = input?.assetIds
+        ? {
+            assetIds: input.assetIds,
+            aspectRatios: input.aspectRatios ?? ["16:9", "9:16"],
+            peopleAssetIds: input.peopleAssetIds,
+            portraitAssetId: input.portraitAssetId,
+          }
+        : undefined;
       const campaign = await loadOwnedCampaign(campaignId, req.userId!, reply);
       if (!campaign) return;
       if (campaign.status === "live") return reply.code(409).send({ error: "campaign_is_live" });
@@ -103,23 +114,36 @@ export async function newAdRoutes(app: FastifyInstance) {
       }
 
       const quote = await quoteNewAd(req.userId!);
+      // Offer combo, decided now from SiteVault's live answer. Unreachable
+      // SiteVault (or a paused site, no offer text…) refuses the option
+      // rather than guessing a price; the customer can untick and retry.
+      const site = input?.siteOffer
+        ? await quoteCampaignSiteOffer({ campaign, exempt: false, currency: quote.currency, ticked: true })
+        : null;
+      if (site && (!site.available || !site.mode || !site.slug)) {
+        return reply.code(409).send({ error: "site_offer_unavailable" });
+      }
+      const addonMinor = site?.addonMinor ?? 0;
+      const totalMinor = quote.amountMinor + addonMinor;
       // A free ad (launch offer) skips checkout: there is nothing to charge.
       // It is marked paid at once, which writes no ledger rows for $0.
-      const provider = quote.amountMinor === 0 ? null : providerFor(quote.currency);
+      const provider = totalMinor === 0 ? null : providerFor(quote.currency);
       const purchase = await createPurchase({
         userId: req.userId!,
         campaignId: campaign.id,
         addOnKey: quote.addOn.key,
-        amountMinor: quote.amountMinor,
+        amountMinor: totalMinor,
         provider: provider?.name ?? "manual",
       });
       await db
         .update(purchases)
         .set({ brief: chosen, updatedAt: new Date() })
         .where(eq(purchases.id, purchase.id));
+      if (site?.mode && site.slug) await recordSiteOffer(purchase.id, site.mode, site.offer, site.slug);
 
       if (!provider) {
         await markPurchasePaid({ purchaseId: purchase.id, externalRef: `launch-offer:${purchase.id}` });
+        if (site?.mode) await pushSiteOffer(purchase.id);
         return reply.code(201).send({
           purchaseId: purchase.id,
           freeLaunchOffer: true,
@@ -130,9 +154,16 @@ export async function newAdRoutes(app: FastifyInstance) {
       const [user] = await db.select({ email: users.email }).from(users).where(eq(users.id, req.userId!)).limit(1);
       const session = await provider.createCheckout({
         paymentId: purchase.id,
-        amountMinor: quote.amountMinor,
+        amountMinor: totalMinor,
         currency: quote.currency,
         purpose: "add_on",
+        lineItems:
+          addonMinor > 0
+            ? [
+                { amountMinor: quote.amountMinor, name: "AdVault new ad" },
+                { amountMinor: addonMinor, name: SITE_OFFER_ADDON[quote.currency]?.label ?? "Offer on your website" },
+              ]
+            : undefined,
         userEmail: user?.email ?? "",
         returnUrl: `${WEB_ORIGIN}/dashboard/campaigns/${campaign.id}`,
       });
@@ -145,6 +176,46 @@ export async function newAdRoutes(app: FastifyInstance) {
         purchaseId: purchase.id,
         checkout: { provider: provider.name, redirectUrl: session.redirectUrl, clientPayload: session.clientPayload },
       });
+    },
+  );
+
+  // Offer combo for admins and at_cost accounts: they never buy a new ad, so
+  // the website offer is pushed free on request, recorded as its own $0
+  // 'site_offer' purchase row so the campaign page and the retry sweep treat
+  // it like a paid one.
+  app.post(
+    "/campaigns/:campaignId/site-offer",
+    { schema: { params: z.object({ campaignId: z.string().uuid() }) } },
+    async (req, reply) => {
+      const { campaignId } = req.params as { campaignId: string };
+      const campaign = await loadOwnedCampaign(campaignId, req.userId!, reply);
+      if (!campaign) return;
+      if (await paysPerAd(req.userId!)) return reply.code(402).send({ error: "buy_with_new_ad" });
+      const quote = await quoteNewAd(req.userId!);
+      const site = await quoteCampaignSiteOffer({ campaign, exempt: true, currency: quote.currency, ticked: true });
+      if (!site.available || !site.mode || !site.slug) return reply.code(409).send({ error: "site_offer_unavailable" });
+      const [row] = await db
+        .insert(purchases)
+        .values({
+          userId: req.userId!,
+          campaignId: campaign.id,
+          addOnKey: "site_offer",
+          sku: "site_offer",
+          currencyCode: quote.currency,
+          amountMinor: 0,
+          provider: "manual",
+          // 'delivered', not 'paid': nothing is produced, and /metrics counts
+          // 'paid' purchases as awaiting production.
+          status: "delivered",
+          paidAt: new Date(),
+          deliveredAt: new Date(),
+          siteOfferMode: site.mode,
+          siteOfferText: site.offer,
+          siteOfferSlug: site.slug,
+        })
+        .returning({ id: purchases.id });
+      const result = await pushSiteOffer(row!.id);
+      return reply.code(201).send({ purchaseId: row!.id, pushed: result === "pushed" });
     },
   );
 
@@ -207,7 +278,8 @@ export async function newAdRoutes(app: FastifyInstance) {
   );
 }
 
-async function newAdStatus(userId: string, campaignId: string) {
+async function newAdStatus(userId: string, campaign: { id: string; landingUrl: string | null; offerDetails: string | null }) {
+  const campaignId = campaign.id;
   const required = await paysPerAd(userId);
   const [order] = await db
     .select({ id: purchases.id, status: purchases.status, amountMinor: purchases.amountMinor, currency: purchases.currencyCode })
@@ -225,7 +297,24 @@ async function newAdStatus(userId: string, campaignId: string) {
         .orderBy(desc(purchases.createdAt))
         .limit(1)
     : [];
+  // Offer combo: the "Also put this offer on my website" box, when SiteVault
+  // answers. Exempt users get it free (POST /campaigns/:id/site-offer).
+  const site = await quoteCampaignSiteOffer({
+    campaign,
+    exempt: !required,
+    currency: quote?.currency ?? (await quoteNewAd(userId)).currency,
+    ticked: false,
+  });
+  const addon = quote ? SITE_OFFER_ADDON[quote.currency] : undefined;
   return {
+    siteOffer: site.available
+      ? {
+          offered: site.offered,
+          offer: site.offer,
+          credits: site.credits,
+          addonDisplay: addon && quote ? formatMinor(addon.priceMinor, quote.currency) : null,
+        }
+      : null,
     required,
     redosLeft: required ? (made ? Math.max(0, RENDERS_PER_AD - made.used) : 0) : null,
     display: quote ? formatMinor(quote.amountMinor, quote.currency) : null,

@@ -27,6 +27,12 @@ export type CheckoutRequest = {
   purpose: PaymentPurpose;
   userEmail: string;
   returnUrl: string;
+  /**
+   * Optional breakdown of amountMinor into named lines (the new ad + "Offer on
+   * your website"). Must sum to amountMinor. Stripe shows each line; other
+   * providers charge the total.
+   */
+  lineItems?: { amountMinor: number; name: string }[];
 };
 
 export type CheckoutSession = {
