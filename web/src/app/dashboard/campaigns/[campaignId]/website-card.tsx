@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ApiError, createWebsite, getWebsite, updateCampaign, type Campaign } from "@/lib/api/browser";
 import { Card, CardDescription, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -12,6 +12,21 @@ import { Input } from "@/components/ui/input";
 // AdVault builds a one-page SiteVault site from the campaign (name, category,
 // offer, the ad's polished photos) plus phone and town, and uses it as the
 // ad's link (POST /campaigns/:id/website). Editable until launch.
+
+// SiteVault's public address check (CORS open): availability + suggestions.
+const SITEVAULT_URL = "https://sitevault.3pandalabs.com";
+const SITES_DOMAIN = "3pandasite.com";
+type AddressCheck = { address: string; available: boolean; problem: string | null; suggestions: string[] };
+
+async function checkAddress(params: { slug?: string; name: string; city: string }): Promise<AddressCheck | null> {
+  const q = new URLSearchParams({ slug: params.slug ?? "", name: params.name, city: params.city });
+  try {
+    const res = await fetch(`${SITEVAULT_URL}/api/address?${q}`);
+    return res.ok ? ((await res.json()) as AddressCheck) : null;
+  } catch {
+    return null;
+  }
+}
 
 const MAKE_ERRORS: Record<string, string> = {
   website_exists: "This campaign already has a website.",
@@ -31,17 +46,41 @@ export function WebsiteCard({ campaign, onSaved }: { campaign: Campaign; onSaved
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [editUrl, setEditUrl] = useState<string | null>(null);
+  const [slug, setSlug] = useState("");
+  const [slugTouched, setSlugTouched] = useState(false);
+  const [address, setAddress] = useState<AddressCheck | null>(null);
+  const fetchedWebsite = useRef(false);
 
-  // The SiteVault edit link is stored encrypted; fetch it only when there is one.
+  // The SiteVault edit link is stored encrypted; fetch it only when there is
+  // one. The same call follows a rename made on SiteVault (link updated).
   useEffect(() => {
-    if (!campaign.sitevaultEditEnc || editUrl) return;
+    if (!campaign.sitevaultEditEnc || editUrl || fetchedWebsite.current) return;
+    fetchedWebsite.current = true;
     getWebsite(campaign.id)
-      .then((w) => setEditUrl(w.editUrl))
+      .then((w) => {
+        setEditUrl(w.editUrl);
+        if (w.campaign) onSaved(w.campaign);
+      })
       .catch(() => {});
-  }, [campaign.id, campaign.sitevaultEditEnc, editUrl]);
+  }, [campaign.id, campaign.sitevaultEditEnc, editUrl, onSaved]);
+
+  // Address: suggested from the business name (and town) until they type
+  // their own, then checked as they type.
+  useEffect(() => {
+    if (mode !== "make") return;
+    const t = setTimeout(() => {
+      checkAddress({ slug: slugTouched ? slug : "", name: campaign.businessName, city }).then((res) => {
+        if (!res) return;
+        setAddress(res);
+        if (!slugTouched && res.address) setSlug(res.address);
+      });
+    }, 350);
+    return () => clearTimeout(t);
+  }, [mode, slug, slugTouched, city, campaign.businessName]);
 
   const linkValid = draft.trim() === "" || /^https?:\/\/\S+\.\S+/i.test(draft.trim());
-  const makeValid = phone.replace(/\D/g, "").length >= 7 && city.trim().length >= 2 && attest;
+  const makeValid =
+    phone.replace(/\D/g, "").length >= 7 && city.trim().length >= 2 && attest && (address?.available ?? true);
 
   async function saveLink() {
     setBusy(true);
@@ -68,6 +107,7 @@ export function WebsiteCard({ campaign, onSaved }: { campaign: Campaign; onSaved
         phone: phone.trim(),
         city: city.trim(),
         hours: hours.trim() || undefined,
+        slug: slug.trim() || undefined,
         attest: true,
       });
       setEditUrl(res.editUrl);
@@ -172,6 +212,53 @@ export function WebsiteCard({ campaign, onSaved }: { campaign: Campaign; onSaved
               <span className="mb-1 block text-zinc-300">Town or city</span>
               <Input placeholder="Secaucus, NJ" value={city} onChange={(e) => setCity(e.target.value)} disabled={busy} />
             </label>
+          </div>
+          <div className="text-sm">
+            <label htmlFor="site-address" className="mb-1 block text-zinc-300">
+              Your web address
+            </label>
+            <div className="flex items-center overflow-hidden rounded-lg border border-white/15 bg-white/5 focus-within:ring-2 focus-within:ring-amber-400">
+              <span className="pl-3 text-zinc-500">https://</span>
+              <input
+                id="site-address"
+                className="min-w-0 flex-1 bg-transparent px-0.5 py-2 text-zinc-100 outline-none"
+                autoCapitalize="none"
+                autoComplete="off"
+                spellCheck={false}
+                maxLength={40}
+                value={slug}
+                onChange={(e) => {
+                  setSlugTouched(true);
+                  setSlug(e.target.value.toLowerCase());
+                }}
+                disabled={busy}
+              />
+              <span className="pr-3 text-zinc-500">.{SITES_DOMAIN}</span>
+            </div>
+            <p className="mt-1 text-xs" aria-live="polite">
+              {address &&
+                (address.available ? (
+                  <span className="text-emerald-300">✓ {address.address}.{SITES_DOMAIN} is available</span>
+                ) : (
+                  <span className="text-red-300">
+                    {address.problem}
+                    {address.suggestions.length > 0 && " Try: "}
+                    {address.suggestions.map((s) => (
+                      <button
+                        key={s}
+                        type="button"
+                        className="mr-1 rounded-full border border-white/15 px-2 py-0.5 text-zinc-200 hover:bg-white/10"
+                        onClick={() => {
+                          setSlugTouched(true);
+                          setSlug(s);
+                        }}
+                      >
+                        {s}
+                      </button>
+                    ))}
+                  </span>
+                ))}
+            </p>
           </div>
           <label className="block text-sm">
             <span className="mb-1 block text-zinc-300">Opening hours (optional)</span>

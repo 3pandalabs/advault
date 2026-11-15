@@ -44,3 +44,15 @@ describe("from the ad's sticker", async () => {
     expect(servicesFromSticker(null)).toBe("");
   });
 });
+
+describe("slugFromSiteUrl", async () => {
+  const { slugFromSiteUrl } = await import("./index.js");
+  it("reads the slug from new and old SiteVault links", () => {
+    expect(slugFromSiteUrl("https://ekmoliya.3pandasite.com/")).toBe("ekmoliya");
+    expect(slugFromSiteUrl("https://sitevault.3pandalabs.com/s/ekmoliya-secaucus-nj")).toBe("ekmoliya-secaucus-nj");
+  });
+  it("ignores other websites", () => {
+    expect(slugFromSiteUrl("https://mikesplumbing.com")).toBeNull();
+    expect(slugFromSiteUrl(null)).toBeNull();
+  });
+});
