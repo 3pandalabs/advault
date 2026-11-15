@@ -155,6 +155,13 @@
       "when": 1795500000000,
       "tag": "0021_landing_url_optional",
       "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1795500100000,
+      "tag": "0022_sitevault_edit",
+      "breakpoints": true
     }
   ]
 }

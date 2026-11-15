@@ -445,6 +445,8 @@ export const campaigns = pgTable(
     // Optional since 2026-11-15 (0021): ads can be made without a website;
     // launch requires one (landing_url_required).
     landingUrl: text("landing_url"),
+    // Encrypted SiteVault edit link when AdVault made the website (0022).
+    sitevaultEditEnc: text("sitevault_edit_enc"),
     // Free-text context fed to the script generator ("family-run since 1998,
     // same-day emergency callouts"). Not shown to viewers directly.
     offerDetails: text("offer_details"),
