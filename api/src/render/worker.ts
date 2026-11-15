@@ -448,7 +448,9 @@ async function processJob(job: RenderJob): Promise<void> {
         photosEnhancedReused: enhanced.reused,
         enhanceErrors: enhanced.errors.length ? enhanced.errors : undefined,
         perPhotoMotion: Boolean(script.photoMotions?.length),
-        opener: opener ? (opener.reused ? "reused" : "made") : null,
+        // Why there is no opener, when there is none: the script had no usable
+        // prompt (none written, or dropped by the safety filter) vs generation failed.
+        opener: opener ? (opener.reused ? "reused" : "made") : !AD_OPENER ? null : script.openerPrompt ? "failed" : "no-prompt",
         at: new Date().toISOString(),
       },
     });

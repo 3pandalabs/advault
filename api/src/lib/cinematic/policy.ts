@@ -127,6 +127,17 @@ const CAMERA_SPEC_PATTERN = /\b\d+(?:\.\d+)?\s?(?:mm|fps|k)\b|\bf\/\d+(?:\.\d+)?
 const ON_SCREEN_TEXT_PATTERN =
   /\b(text|caption|subtitle|title card|signage|sign reading|banner|poster|logo|watermark|writing|written|letters|words|chalkboard|blackboard|whiteboard|menu board|price ?board|price ?tag|price ?list|receipt|label)\b/i;
 
+/**
+ * "no text", "without logos or signage", "never any writing, letters or
+ * numbers": a negator followed by a list of forbidden things.
+ */
+const FORBIDDEN_WORD =
+  "(?:on-screen |visible |readable |any )?(?:text|captions?|subtitles?|signs?|signage|banners?|posters?|logos?|watermarks?|writing|letters|words|labels?|numbers?|prices?|price tags?|people|faces|brands?|badges?)";
+const NEGATED_PATTERN = new RegExp(
+  String.raw`\b(?:no|without|never|avoid|free of)\s+${FORBIDDEN_WORD}(?:\s*(?:,|or|and|nor|/)\s*(?:no\s+)?${FORBIDDEN_WORD})*`,
+  "gi",
+);
+
 export type VisualRejection = { reason: "claim" | "on_screen_text"; match: string };
 
 /**
@@ -137,9 +148,13 @@ export type VisualRejection = { reason: "claim" | "on_screen_text"; match: strin
  * silently rewriting its output would hide that.
  */
 export function rejectVisualPrompt(prompt: string): VisualRejection | null {
-  const onScreen = prompt.match(ON_SCREEN_TEXT_PATTERN);
+  // "No text, no signs or logos" is the model OBEYING the rule, not breaking
+  // it: negated mentions are removed before the check. Until 2026-11-15 they
+  // were rejected, which silently dropped most mixed-ad openers.
+  const asked = prompt.replace(NEGATED_PATTERN, " ");
+  const onScreen = asked.match(ON_SCREEN_TEXT_PATTERN);
   if (onScreen) return { reason: "on_screen_text", match: onScreen[0] };
-  const claim = prompt.replace(CAMERA_SPEC_PATTERN, " ").match(CLAIM_PATTERN);
+  const claim = asked.replace(CAMERA_SPEC_PATTERN, " ").match(CLAIM_PATTERN);
   if (claim) return { reason: "claim", match: claim[0] };
   return null;
 }
