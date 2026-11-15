@@ -425,10 +425,25 @@ export function createWebsite(
   campaignId: string,
   input: { phone: string; city: string; hours?: string; slug?: string; attest: true },
 ) {
-  return api<{ campaign: Campaign; siteUrl: string; editUrl: string }>(`/campaigns/${campaignId}/website`, {
+  // With the $10 website fee: siteUrl null, pendingSite + a checkout to send them to.
+  return api<{
+    campaign: Campaign;
+    siteUrl: string | null;
+    editUrl: string;
+    pendingSite?: PendingSite;
+    checkout?: { redirectUrl: string | null } | null;
+  }>(`/campaigns/${campaignId}/website`, {
     method: "POST",
     body: JSON.stringify(input),
   });
+}
+
+/** A made but unpaid SiteVault site ($10 website fee). paid = waiting for SiteVault to publish it. */
+export type PendingSite = { siteUrl: string; paid: boolean; display: string | null };
+
+/** A new checkout for the campaign's unpaid website. */
+export function websiteCheckout(campaignId: string) {
+  return api<{ checkout: { redirectUrl: string | null } }>(`/campaigns/${campaignId}/website/checkout`, { method: "POST" });
 }
 
 /** The site link and its private SiteVault edit link (owner only). */
@@ -440,6 +455,10 @@ export function getWebsite(campaignId: string) {
     campaign?: Campaign;
     /** The account already has a SiteVault site (one per business): offer to reuse it. */
     accountSite?: { siteUrl: string };
+    /** Made but not paid for yet ($10 website fee). */
+    pendingSite?: PendingSite;
+    /** What "Make me a website" costs; null = free. Present only while there is no website. */
+    websiteFee?: string | null;
     /** Offer combo: the latest paid website offer and whether it reached the site. */
     siteOffer?: { outcome: "updated" | "pending" | "retrying" | "failed"; offer: string | null } | null;
   }>(`/campaigns/${campaignId}/website`);

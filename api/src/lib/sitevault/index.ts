@@ -65,6 +65,8 @@ export type WebsiteFields = {
   tagline?: string;
   /** The address the owner chose (<slug>.3pandasite.com); SiteVault picks one when absent. */
   slug?: string;
+  /** "1": we charge the $10 website fee first; the site waits unpublished until markSitevaultPaid. */
+  awaitingPayment?: string;
 };
 
 export type Photo = { bytes: Buffer; contentType: string };
@@ -108,6 +110,25 @@ export async function createSitevaultSite(
     return { ok: true, siteUrl: body.siteUrl, editUrl: body.editUrl, slug: body.slug };
   }
   return { ok: false, status: res.status, errors: body.errors ?? { form: body.error ?? `sitevault_${res.status}` } };
+}
+
+/** The $10 website fee landed: SiteVault publishes the site with a year of Pro. Idempotent on ref. */
+export async function markSitevaultPaid(slug: string, ref: string): Promise<{ ok: true; siteUrl: string } | { ok: false; error: string }> {
+  const token = process.env.SITEVAULT_INTERNAL_TOKEN;
+  if (!token) return { ok: false, error: "sitevault_not_configured" };
+  try {
+    const res = await fetch(`${SITEVAULT_URL}/api/internal/sites/${encodeURIComponent(slug)}/paid`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({ ref }),
+      signal: AbortSignal.timeout(10_000),
+    });
+    const body = (await res.json().catch(() => ({}))) as { ok?: boolean; siteUrl?: string; error?: string };
+    if (res.ok && body.ok && body.siteUrl) return { ok: true, siteUrl: body.siteUrl };
+    return { ok: false, error: `sitevault_${res.status}${body.error ? `:${body.error}` : ""}` };
+  } catch (err) {
+    return { ok: false, error: `sitevault_unreachable: ${String(err)}` };
+  }
 }
 
 // ---------------------------------------------------------------------------

@@ -447,6 +447,9 @@ export const campaigns = pgTable(
     landingUrl: text("landing_url"),
     // Encrypted SiteVault edit link when AdVault made the website (0022).
     sitevaultEditEnc: text("sitevault_edit_enc"),
+    // A made but unpaid SiteVault site (0024, $10 website fee). It becomes
+    // landing_url once the fee is paid and SiteVault has published it.
+    sitevaultPendingUrl: text("sitevault_pending_url"),
     // Free-text context fed to the script generator ("family-run since 1998,
     // same-day emergency callouts"). Not shown to viewers directly.
     offerDetails: text("offer_details"),
@@ -1159,6 +1162,13 @@ export const purchases = pgTable(
     siteOfferPushedAt: timestamp("site_offer_pushed_at", { withTimezone: true }),
     siteOfferError: text("site_offer_error"),
     siteOfferAttempts: integer("site_offer_attempts").notNull().default(0),
+
+    // $10 website fee (migration 0024, lib/websiteFee): the SiteVault site this
+    // 'website' purchase pays for, and whether SiteVault has published it.
+    websiteSlug: text("website_slug"),
+    websitePublishedAt: timestamp("website_published_at", { withTimezone: true }),
+    websiteError: text("website_error"),
+    websiteAttempts: integer("website_attempts").notNull().default(0),
 
     paidAt: timestamp("paid_at", { withTimezone: true }),
     deliveredAt: timestamp("delivered_at", { withTimezone: true }),

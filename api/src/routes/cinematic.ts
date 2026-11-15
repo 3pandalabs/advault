@@ -15,6 +15,7 @@ import {
 } from "../lib/pricing/index.js";
 import { providerByName, providerFor } from "../lib/payments/index.js";
 import { pushSiteOfferSoon } from "../lib/siteOffer/index.js";
+import { publishPaidWebsiteSoon } from "../lib/websiteFee/index.js";
 import {
   createPurchase,
   markPurchasePaid,
@@ -443,6 +444,8 @@ export async function cinematicRoutes(app: FastifyInstance) {
       // recorded, without awaiting it. A SiteVault failure must never fail or
       // delay the purchase; lib/siteOffer records it and its sweep retries.
       if (!result.alreadyApplied && purchase.siteOfferMode) pushSiteOfferSoon(purchase.id);
+      // $10 website fee: publish the SiteVault site the same way (lib/websiteFee).
+      if (!result.alreadyApplied && purchase.sku === "website") publishPaidWebsiteSoon(purchase.id);
       return reply.code(200).send({ ok: true, alreadyApplied: result.alreadyApplied });
     },
   );

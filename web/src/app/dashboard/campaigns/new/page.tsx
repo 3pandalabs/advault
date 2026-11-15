@@ -973,8 +973,7 @@ export default function NewCampaignPage() {
               <FieldHint>
                 No website? Leave it blank, you can still make your ad. Google needs a link
                 before the ad goes live: on your campaign page, press{" "}
-                <span className="text-zinc-200">Make me a website</span> and we&apos;ll build a
-                free one from your ad, with{" "}
+                <span className="text-zinc-200">Make me a website</span> and we&apos;ll build one from your ad for $10 (first year of Pro included), with{" "}
                 <a
                   href="https://sitevault.3pandalabs.com"
                   target="_blank"
