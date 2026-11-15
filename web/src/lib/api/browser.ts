@@ -434,7 +434,18 @@ export function createWebsite(
 /** The site link and its private SiteVault edit link (owner only). */
 export function getWebsite(campaignId: string) {
   // `campaign` is present when the site was renamed and the link was updated.
-  return api<{ siteUrl: string | null; editUrl: string | null; campaign?: Campaign }>(`/campaigns/${campaignId}/website`);
+  return api<{
+    siteUrl: string | null;
+    editUrl: string | null;
+    campaign?: Campaign;
+    /** The account already has a SiteVault site (one per business): offer to reuse it. */
+    accountSite?: { siteUrl: string };
+  }>(`/campaigns/${campaignId}/website`);
+}
+
+/** Use the account's existing SiteVault website for this campaign. */
+export function linkExistingWebsite(campaignId: string) {
+  return api<{ campaign: Campaign; siteUrl: string }>(`/campaigns/${campaignId}/website/use-existing`, { method: "POST" });
 }
 
 export function generateCreatives(

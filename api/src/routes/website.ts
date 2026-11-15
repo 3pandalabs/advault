@@ -1,4 +1,4 @@
-import { and, desc, eq, ne } from "drizzle-orm";
+import { and, desc, eq, isNotNull, ne } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { requireAuth } from "../auth/plugin.js";
@@ -96,8 +96,55 @@ async function campaignAd(campaignId: string): Promise<{ video: Video | null; st
   }
 }
 
+// One SiteVault website per AdVault account (one account = one business).
+// A second campaign reuses the account's site instead of making another;
+// SiteVault separately refuses a second live site for the same phone.
+
+/** The account's existing SiteVault site (from any other campaign), or null. */
+async function accountSite(userId: string, exceptCampaignId: string) {
+  const [row] = await db
+    .select({ landingUrl: campaigns.landingUrl, sitevaultEditEnc: campaigns.sitevaultEditEnc })
+    .from(campaigns)
+    .where(
+      and(
+        eq(campaigns.userId, userId),
+        ne(campaigns.id, exceptCampaignId),
+        isNotNull(campaigns.sitevaultEditEnc),
+        isNotNull(campaigns.landingUrl),
+      ),
+    )
+    .orderBy(desc(campaigns.updatedAt))
+    .limit(1);
+  if (!row?.landingUrl || !row.sitevaultEditEnc || !slugFromSiteUrl(row.landingUrl)) return null;
+  // Its current address (it may have been renamed since).
+  const current = (await resolveSitevaultSite(slugFromSiteUrl(row.landingUrl)!)) ?? row.landingUrl;
+  return { siteUrl: current, sitevaultEditEnc: row.sitevaultEditEnc };
+}
+
 export async function websiteRoutes(app: FastifyInstance) {
   app.addHook("onRequest", requireAuth);
+
+  // Use the account's existing website for this campaign (one click).
+  app.post(
+    "/campaigns/:campaignId/website/use-existing",
+    { schema: { params: z.object({ campaignId: z.string().uuid() }) } },
+    async (req, reply) => {
+      const { campaignId } = req.params as { campaignId: string };
+      const campaign = await loadOwnedCampaign(campaignId, req.userId!, reply);
+      if (!campaign) return;
+      if (campaign.status === "live" || campaign.googleCampaignResourceName) {
+        return reply.code(409).send({ error: "campaign_is_live" });
+      }
+      const existing = await accountSite(req.userId!, campaign.id);
+      if (!existing) return reply.code(404).send({ error: "no_account_website" });
+      const [updated] = await db
+        .update(campaigns)
+        .set({ landingUrl: existing.siteUrl, sitevaultEditEnc: existing.sitevaultEditEnc, updatedAt: new Date() })
+        .where(eq(campaigns.id, campaign.id))
+        .returning();
+      return { campaign: updated, siteUrl: existing.siteUrl };
+    },
+  );
 
   app.post(
     "/campaigns/:campaignId/website",
@@ -112,6 +159,10 @@ export async function websiteRoutes(app: FastifyInstance) {
       }
       if (campaign.landingUrl) return reply.code(409).send({ error: "website_exists" });
       if (!sitevaultConfigured()) return reply.code(503).send({ error: "website_builder_not_configured" });
+      const existing = await accountSite(req.userId!, campaign.id);
+      if (existing) {
+        return reply.code(409).send({ error: "website_exists_for_account", detail: existing.siteUrl });
+      }
 
       const housing = isHousingCategory(campaign.businessCategory);
       const { video, sticker } = await campaignAd(campaign.id);
@@ -184,6 +235,12 @@ export async function websiteRoutes(app: FastifyInstance) {
           req.log.info({ campaignId, from: campaign.landingUrl, to: current }, "website link followed sitevault rename");
           return { siteUrl: current, editUrl, campaign: updated };
         }
+      }
+      // No website yet, but the account already has one: offer that instead
+      // of making a second site for the same business.
+      if (!campaign.landingUrl && !locked) {
+        const existing = await accountSite(req.userId!, campaign.id);
+        if (existing) return { siteUrl: null, editUrl, accountSite: { siteUrl: existing.siteUrl } };
       }
       return { siteUrl: campaign.landingUrl, editUrl };
     },

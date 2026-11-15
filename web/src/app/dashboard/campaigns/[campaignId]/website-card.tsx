@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ApiError, createWebsite, getWebsite, updateCampaign, type Campaign } from "@/lib/api/browser";
+import { ApiError, createWebsite, getWebsite, updateCampaign, linkExistingWebsite, type Campaign } from "@/lib/api/browser";
 import { Card, CardDescription, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -30,6 +30,7 @@ async function checkAddress(params: { slug?: string; name: string; city: string 
 
 const MAKE_ERRORS: Record<string, string> = {
   website_exists: "This campaign already has a website.",
+  website_exists_for_account: "Your business already has a website. Use it for this campaign instead.",
   campaign_is_live: "This campaign is live, so its website can't be changed here.",
   website_builder_not_configured: "The website builder isn't switched on yet. Please paste a link instead.",
   website_builder_failed: "We couldn't build the website just now. Please try again in a minute.",
@@ -50,19 +51,22 @@ export function WebsiteCard({ campaign, onSaved }: { campaign: Campaign; onSaved
   const [slugTouched, setSlugTouched] = useState(false);
   const [address, setAddress] = useState<AddressCheck | null>(null);
   const fetchedWebsite = useRef(false);
+  const [accountSite, setAccountSite] = useState<string | null>(null);
 
   // The SiteVault edit link is stored encrypted; fetch it only when there is
   // one. The same call follows a rename made on SiteVault (link updated).
   useEffect(() => {
-    if (!campaign.sitevaultEditEnc || editUrl || fetchedWebsite.current) return;
+    // Also when there is no website yet: the account may already have one.
+    if ((!campaign.sitevaultEditEnc && campaign.landingUrl) || editUrl || fetchedWebsite.current) return;
     fetchedWebsite.current = true;
     getWebsite(campaign.id)
       .then((w) => {
         setEditUrl(w.editUrl);
+        setAccountSite(w.accountSite?.siteUrl ?? null);
         if (w.campaign) onSaved(w.campaign);
       })
       .catch(() => {});
-  }, [campaign.id, campaign.sitevaultEditEnc, editUrl, onSaved]);
+  }, [campaign.id, campaign.sitevaultEditEnc, campaign.landingUrl, editUrl, onSaved]);
 
   // Address: suggested from the business name (and town) until they type
   // their own, then checked as they type.
@@ -94,6 +98,21 @@ export function WebsiteCard({ campaign, onSaved }: { campaign: Campaign; onSaved
           ? MAKE_ERRORS.campaign_is_live!
           : "Could not save. Check the link starts with https:// and try again.",
       );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function linkExisting() {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await linkExistingWebsite(campaign.id);
+      fetchedWebsite.current = false;
+      setAccountSite(null);
+      onSaved(res.campaign);
+    } catch (err) {
+      setError(err instanceof ApiError ? (MAKE_ERRORS[err.code] ?? "Could not use your website. Please try again.") : "Could not use your website. Please try again.");
     } finally {
       setBusy(false);
     }
@@ -160,7 +179,26 @@ export function WebsiteCard({ campaign, onSaved }: { campaign: Campaign; onSaved
         </p>
       )}
 
-      {!locked && !campaign.landingUrl && mode === "view" && (
+      {!locked && !campaign.landingUrl && mode === "view" && accountSite && (
+        <div className="mt-4 space-y-2">
+          <p className="text-sm text-zinc-300">
+            Your business already has a website:{" "}
+            <a href={accountSite} target="_blank" rel="noreferrer" className="break-all text-amber-300 underline">
+              {accountSite}
+            </a>
+          </p>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <Button onClick={linkExisting} disabled={busy}>
+              {busy ? "Saving…" : "Use my website"}
+            </Button>
+            <Button variant="outline" onClick={() => setMode("link")} disabled={busy}>
+              Use a different website
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {!locked && !campaign.landingUrl && mode === "view" && !accountSite && (
         <div className="mt-4 flex flex-col gap-2 sm:flex-row">
           <Button onClick={() => setMode("make")}>Make me a website, free</Button>
           <Button variant="outline" onClick={() => setMode("link")}>
