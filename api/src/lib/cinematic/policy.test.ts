@@ -175,3 +175,21 @@ describe("refunds and retries", () => {
     expect(shouldRetryProduction(3)).toBe(false);
   });
 });
+
+describe("negated mentions (2026-11-15)", () => {
+  it("accepts a prompt that says what NOT to show", () => {
+    for (const prompt of [
+      "Dew on a freshly mown lawn at sunrise, slow dolly. No text, no signs or logos.",
+      "Warm light across empty salon chairs, without people or faces, no on-screen text",
+      "Copper pipes glinting, never any writing, letters or numbers",
+    ]) {
+      expect(rejectVisualPrompt(prompt)).toBeNull();
+    }
+  });
+
+  it("still rejects text that is actually asked for", () => {
+    expect(rejectVisualPrompt("A sign reading Grand Opening above the door, no logos")).not.toBeNull();
+    expect(rejectVisualPrompt("No people. A chalkboard menu by the window")).not.toBeNull();
+    expect(rejectVisualPrompt("No logos, a banner showing 20% off")).not.toBeNull();
+  });
+});
