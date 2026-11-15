@@ -49,14 +49,17 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   return (
     <div>
       <header className="border-b border-white/10">
-        <div className="mx-auto flex w-full max-w-5xl items-center justify-between px-6 py-4">
-          <div className="text-lg font-semibold tracking-tight">
+        {/* Phones (the Android app is this page at ~360px): wordmark on its own
+            row, links wrap below it. One unwrapped row was ~680px wide and hid
+            Settings and Sign out off-screen. */}
+        <div className="mx-auto flex w-full max-w-5xl flex-col gap-2 px-6 py-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="whitespace-nowrap text-lg font-semibold tracking-tight">
             <Link href="/dashboard">
               <WordmarkName />
             </Link>
             <WordmarkTag />
           </div>
-          <nav className="flex items-center gap-1 text-sm">
+          <nav className="-mx-3 flex flex-wrap items-center gap-1 text-sm lg:mx-0">
             <Link
               href="/dashboard"
               className="rounded-lg px-3 py-2 text-zinc-300 hover:bg-white/10"

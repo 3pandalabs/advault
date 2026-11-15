@@ -140,7 +140,9 @@ export default function PrivacyPage() {
         AdVault asks for three Google permissions. Each is requested only when you choose
         to connect the matching account, and each is used only for the purpose listed.
       </p>
-      <table>
+      {/* Scrolls on its own on a 360px phone instead of widening the page. */}
+      <div className="overflow-x-auto">
+        <table>
         <thead>
           <tr>
             <th>Permission</th>
@@ -181,7 +183,8 @@ export default function PrivacyPage() {
             </td>
           </tr>
         </tbody>
-      </table>
+        </table>
+      </div>
       <p>
         <strong>Storage:</strong> the identifiers above and an encrypted refresh token per
         connection, on our servers in Germany. <strong>Sharing:</strong> Google user data
@@ -275,7 +278,9 @@ export default function PrivacyPage() {
         for its part of the job, and none of them may use your data for their own
         purposes.
       </p>
-      <table>
+      {/* Scrolls on its own on a 360px phone instead of widening the page. */}
+      <div className="overflow-x-auto">
+        <table>
         <thead>
           <tr>
             <th>Who</th>
@@ -326,7 +331,8 @@ export default function PrivacyPage() {
             <td>Only if you turn on monthly offer prompts</td>
           </tr>
         </tbody>
-      </table>
+        </table>
+      </div>
       <p>
         We choose providers whose terms do not permit training AI models on customer
         content, and we do not consent to such training on your behalf. We may change a

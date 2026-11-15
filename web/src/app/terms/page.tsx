@@ -75,7 +75,9 @@ export default function TermsPage() {
 
       <h2>4. Plans and fees</h2>
       <p>Three plans, charged monthly in advance:</p>
-      <table>
+      {/* Scrolls on its own on a 360px phone instead of widening the page. */}
+      <div className="overflow-x-auto">
+        <table>
         <thead>
           <tr>
             <th>Plan</th>
@@ -112,7 +114,8 @@ export default function TermsPage() {
             </td>
           </tr>
         </tbody>
-      </table>
+        </table>
+      </div>
       <p>
         The managed and Keep it running figures are <strong>our fee only</strong>. It does not include what
         Google charges to show your advertisement — see the next section, which is the
