@@ -15,7 +15,7 @@ import { LegalPage } from "@/components/legal/LegalPage";
 // the advertiser's obligation to repay all appear here because all three are
 // what make that exposure bounded.
 //
-// The refund rule for the cinematic add-on mirrors isRefundable() in
+// The refund rule for the video bundle (the "cinematic" add-on) mirrors isRefundable() in
 // lib/cinematic/policy.ts exactly — paid, producing and failed are refundable,
 // delivered is not. Do not soften the wording without changing the function.
 
@@ -122,9 +122,7 @@ export default function TermsPage() {
         most important part of this page.
       </p>
       <p>
-        We may also offer one-off extras. The <strong>cinematic advertisement</strong>{" "}
-        currently costs $29 the first time and $39 after that (₹999, then ₹2,999, in India),
-        or $99 for a pack of three to use whenever you like.
+        We may also offer one-off extras, such as a <strong>video bundle</strong>.
         Prices shown in the product at the time you buy are the ones that apply. We may
         change prices for future billing periods, and will tell you before a change
         affects you.
@@ -174,7 +172,7 @@ export default function TermsPage() {
         <strong>Videos already produced are yours to keep</strong>, including after you
         cancel.
       </p>
-      <p>For the cinematic advertisement, which is bought individually:</p>
+      <p>For one-off extras such as a video bundle, which are bought individually:</p>
       <ul>
         <li>
           <strong>Before we deliver it, you get a full refund</strong> if you ask —

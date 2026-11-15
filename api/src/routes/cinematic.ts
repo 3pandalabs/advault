@@ -25,6 +25,18 @@ import { isCinematicConfigured } from "../lib/ai/cinematic/index.js";
 import { REAL_PHOTO_CLOSE_SECONDS } from "../lib/cinematic/policy.js";
 import { CinematicBriefError, generateCinematicBrief } from "../lib/cinematic/brief.js";
 
+// VIDEO BUNDLE add-on (internally still "cinematic": routes, SKUs, tables).
+// Not to be confused with the cinematic OPENER shot that every $10 ad now
+// starts with (render/cinematic.ts) — that one is always on.
+//
+// PAUSED 2026-11-15 (Anil): since the $10 ad got its own cinematic opener,
+// a standalone fully-generated ad adds little for customers, and real photos
+// are what build trust. New sales are off unless VIDEO_BUNDLE_SALES=on.
+// While paused: no price card, no new packs, and new orders only for
+// customers who still hold unspent 3-pack credits (paid for, so honoured).
+// Past orders, delivery, refunds and the webhook keep working. TODO recheck.
+export const videoBundleSalesOpen = () => process.env.VIDEO_BUNDLE_SALES === "on";
+
 const WEB_ORIGIN = process.env.WEB_ORIGIN ?? "https://advault.3pandalabs.com";
 
 function publicPurchase(row: typeof purchases.$inferSelect) {
@@ -58,6 +70,7 @@ export async function cinematicRoutes(app: FastifyInstance) {
       const { currency } = req.query as { currency: string };
       if (!isCurrency(currency)) return reply.code(400).send({ error: "unsupported_currency" });
 
+      if (!videoBundleSalesOpen()) return [];
       return Object.values(ADD_ONS)
         .filter((a) => a.currency === currency && a.sku === "cinematic")
         .map((a) => ({
@@ -92,10 +105,12 @@ export async function cinematicRoutes(app: FastifyInstance) {
     // -------------------------------------------------------------------
     scoped.get("/cinematic/quote", async (req) => {
       const quote = await quoteFor(req.userId!, "cinematic");
-      const pack = maybeAddOnFor(quote.currency, "cinematic_pack");
+      const open = videoBundleSalesOpen();
+      const pack = open ? maybeAddOnFor(quote.currency, "cinematic_pack") : null;
+      const creditsLeft = await packCreditsLeft(req.userId!);
       return {
         // Unspent 3-pack credits; while > 0 an order costs nothing more.
-        creditsLeft: await packCreditsLeft(req.userId!),
+        creditsLeft,
         pack: pack
           ? {
               addOnKey: pack.key,
@@ -114,7 +129,7 @@ export async function cinematicRoutes(app: FastifyInstance) {
         isFirstPurchase: quote.isFirstPurchase,
         generatedSeconds: quote.addOn.generatedSeconds,
         totalSeconds: quote.addOn.generatedSeconds + REAL_PHOTO_CLOSE_SECONDS,
-        available: isCinematicConfigured(),
+        available: isCinematicConfigured() && (open || creditsLeft > 0),
         display: {
           amount: formatMinor(quote.amountMinor, quote.currency),
           listPrice: formatMinor(quote.addOn.priceMinor, quote.currency),
@@ -150,6 +165,9 @@ export async function cinematicRoutes(app: FastifyInstance) {
         // one.
         if (!isCinematicConfigured()) {
           return reply.code(503).send({ error: "cinematic_unavailable" });
+        }
+        if (!videoBundleSalesOpen() && (await packCreditsLeft(req.userId!)) === 0) {
+          return reply.code(410).send({ error: "video_bundle_paused" });
         }
 
         const campaign = await loadOwnedCampaign(body.campaignId, req.userId!, reply);
@@ -297,6 +315,7 @@ export async function cinematicRoutes(app: FastifyInstance) {
     // The 3-pack: paid up front, films nothing itself, grants credits that
     // the order route above spends. US only (no INR pack in the price list).
     scoped.post("/cinematic/packs", async (req, reply) => {
+      if (!videoBundleSalesOpen()) return reply.code(410).send({ error: "video_bundle_paused" });
       if (!isCinematicConfigured()) {
         return reply.code(503).send({ error: "cinematic_unavailable" });
       }
