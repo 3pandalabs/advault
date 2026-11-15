@@ -25,6 +25,7 @@ import { subscriptionRoutes } from "./routes/subscriptions.js";
 import { cinematicRoutes } from "./routes/cinematic.js";
 import { offerRoutes } from "./routes/offers.js";
 import { youtubeRoutes } from "./routes/youtube.js";
+import { sitevaultAuthRoutes } from "./routes/sitevaultAuth.js";
 
 const app = Fastify({
   logger: true,
@@ -127,6 +128,8 @@ await app.register(adMetricsRoutes);
 await app.register(adminInsightsRoutes);
 // Admin review queue for customer-uploaded videos.
 await app.register(videoReviewRoutes);
+// SiteVault checks AdVault logins here (same email + password on both).
+await app.register(sitevaultAuthRoutes);
 // Registered last and on its own, because it is the only route in this app
 // that spends an advertiser's money. Keeping it visibly separate in this list
 // is deliberate — see routes/launch.ts.

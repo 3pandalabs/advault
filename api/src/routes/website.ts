@@ -3,7 +3,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { requireAuth } from "../auth/plugin.js";
 import { db } from "../db/index.js";
-import { campaigns, creatives } from "../db/schema.js";
+import { campaigns, creatives, users } from "../db/schema.js";
 import { decryptToken, encryptToken } from "../lib/crypto.js";
 import { loadOwnedCampaign } from "../lib/ownership.js";
 import {
@@ -11,6 +11,7 @@ import {
   offerBanner,
   sitevaultCategory,
   resolveSitevaultSite,
+  setSitevaultOwner,
   servicesFromSticker,
   sitevaultConfigured,
   slugFromSiteUrl,
@@ -189,6 +190,7 @@ export async function websiteRoutes(app: FastifyInstance) {
       // $10 website fee (null for admins / at_cost: made and published at once, as before).
       const fee = await websiteFeeFor(req.userId!);
 
+      const [owner] = await db.select({ email: users.email }).from(users).where(eq(users.id, req.userId!)).limit(1);
       const housing = isHousingCategory(campaign.businessCategory);
       const { video, sticker } = await campaignAd(campaign.id);
       const result = await createSitevaultSite(
@@ -204,6 +206,9 @@ export async function websiteRoutes(app: FastifyInstance) {
           tagline: taglineFromSticker(sticker),
           slug: body.slug || undefined,
           awaitingPayment: fee ? "1" : undefined,
+          // Same login on SiteVault: the site goes to this AdVault user's account.
+          ownerAdvaultUserId: req.userId!,
+          ownerEmail: owner?.email,
         },
         await campaignPhotos(campaign.id),
         video,
@@ -283,6 +288,14 @@ export async function websiteRoutes(app: FastifyInstance) {
       const campaign = await loadOwnedCampaign(campaignId, req.userId!, reply);
       if (!campaign) return;
       let editUrl: string | null = null;
+      // Backfill: sites made before accounts join the owner's SiteVault account
+      // (fire and forget; SiteVault never moves a site that already has an owner).
+      const ownedSlug = slugFromSiteUrl(campaign.landingUrl) ?? slugFromSiteUrl(campaign.sitevaultPendingUrl);
+      if (campaign.sitevaultEditEnc && ownedSlug) {
+        void db.select({ email: users.email }).from(users).where(eq(users.id, req.userId!)).limit(1)
+          .then(([u]) => (u ? setSitevaultOwner(ownedSlug, { advaultUserId: req.userId!, email: u.email }) : false))
+          .catch(() => false);
+      }
       if (campaign.sitevaultEditEnc) {
         try {
           editUrl = decryptToken(campaign.sitevaultEditEnc);

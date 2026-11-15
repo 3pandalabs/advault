@@ -67,6 +67,9 @@ export type WebsiteFields = {
   slug?: string;
   /** "1": we charge the $10 website fee first; the site waits unpublished until markSitevaultPaid. */
   awaitingPayment?: string;
+  /** The AdVault account that owns the site: SiteVault saves it to that owner's account (same login). */
+  ownerAdvaultUserId?: string;
+  ownerEmail?: string;
 };
 
 export type Photo = { bytes: Buffer; contentType: string };
@@ -110,6 +113,23 @@ export async function createSitevaultSite(
     return { ok: true, siteUrl: body.siteUrl, editUrl: body.editUrl, slug: body.slug };
   }
   return { ok: false, status: res.status, errors: body.errors ?? { form: body.error ?? `sitevault_${res.status}` } };
+}
+
+/** Make sure the site belongs to this AdVault user's SiteVault account (idempotent; never steals an owned site). */
+export async function setSitevaultOwner(slug: string, owner: { advaultUserId: string; email: string }): Promise<boolean> {
+  const token = process.env.SITEVAULT_INTERNAL_TOKEN;
+  if (!token) return false;
+  try {
+    const res = await fetch(`${SITEVAULT_URL}/api/internal/sites/${encodeURIComponent(slug)}/owner`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify(owner),
+      signal: AbortSignal.timeout(10_000),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
 }
 
 /** The $10 website fee landed: SiteVault publishes the site with a year of Pro. Idempotent on ref. */
