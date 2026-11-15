@@ -1,0 +1,64 @@
+"use client";
+
+import { useEffect, useState } from "react";
+
+// A progress bar for an ad being made. Rendering has no live progress feed:
+// the renderer reports only queued / rendering / ready. So this is an honest
+// ESTIMATE from how long ads usually take (photo polish, AI motion, voice,
+// assembly: ~4-5 minutes for the first shape, the second follows), shown so
+// a shop owner can see it is working instead of a badge that never changes.
+// It never reaches 100% on its own: only the real "ready" status does.
+
+const STAGES: { until: number; label: string }[] = [
+  { until: 0.15, label: "Polishing your photos" },
+  { until: 0.65, label: "Bringing your photos to life" },
+  { until: 0.8, label: "Recording the voiceover" },
+  { until: 1, label: "Putting your ad together" },
+];
+
+export function RenderProgress({
+  createdAt,
+  queued,
+  expectedSeconds,
+}: {
+  createdAt: string;
+  queued: boolean;
+  /** Typical time from creation to ready for this video. */
+  expectedSeconds: number;
+}) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
+
+  const elapsed = Math.max(0, (now - Date.parse(createdAt)) / 1000);
+  const fraction = Math.min(0.95, elapsed / expectedSeconds);
+  const late = elapsed > expectedSeconds;
+  const left = Math.max(0, expectedSeconds - elapsed);
+  const stage = STAGES.find((s) => fraction < s.until) ?? STAGES[STAGES.length - 1];
+
+  return (
+    <div className="mt-4" role="status" aria-live="polite">
+      <div className="flex flex-wrap items-baseline justify-between gap-2 text-sm">
+        <span className="text-zinc-200">{queued ? "Waiting for the other shape to finish" : stage.label}…</span>
+        <span className="text-zinc-400">
+          {late
+            ? "Almost done, taking a little longer than usual"
+            : left >= 60
+              ? `About ${Math.ceil(left / 60)} min left`
+              : "Less than a minute left"}
+        </span>
+      </div>
+      <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-white/10">
+        <div
+          className="h-full rounded-full bg-amber-400 transition-[width] duration-1000 ease-linear"
+          style={{ width: `${Math.round(fraction * 100)}%` }}
+        />
+      </div>
+      <p className="mt-2 text-xs text-zinc-500">
+        Ads usually take {Math.round(expectedSeconds / 60)} minutes. You can leave this page; it keeps going.
+      </p>
+    </div>
+  );
+}

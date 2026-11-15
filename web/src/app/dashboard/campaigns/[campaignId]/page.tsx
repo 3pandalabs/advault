@@ -28,6 +28,7 @@ import { SquareLogo } from "./square-logo";
 import { VideoUpload } from "./video-upload";
 import { PerformanceCard } from "./performance-card";
 import { AudienceCard } from "./audience-card";
+import { RenderProgress } from "./render-progress";
 import { AUDIENCE_FILTERS_ENABLED } from "@/lib/audience";
 import { Badge, Card, CardDescription, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -454,6 +455,25 @@ export default function CampaignDetailPage({
                           : "Publishing…"}
               </Badge>
             </div>
+
+            {(creative.renderStatus === "queued" || creative.renderStatus === "rendering") && creative.kind !== "upload" && (
+              <RenderProgress
+                createdAt={creative.createdAt}
+                queued={creative.renderStatus === "queued"}
+                // The renderer makes one shape at a time: the later of a pair
+                // waits for the first, so it is expected to take longer.
+                expectedSeconds={
+                  campaign.creatives.some(
+                    (o) =>
+                      o.id !== creative.id &&
+                      (o.renderStatus === "queued" || o.renderStatus === "rendering") &&
+                      Date.parse(o.createdAt) < Date.parse(creative.createdAt),
+                  )
+                    ? 390
+                    : 300
+                }
+              />
+            )}
 
             {creative.renderStatus === "ready" && previews[creative.id] && (
               <video
