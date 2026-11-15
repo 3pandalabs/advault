@@ -300,7 +300,7 @@ export default function NewCampaignPage() {
         businessName: form.businessName.trim(),
         businessCategory: category,
         callToAction: form.callToAction.trim(),
-        landingUrl: form.landingUrl.trim(),
+        landingUrl: form.landingUrl.trim() || null,
         offerDetails: form.offerDetails.trim() || null,
         targetZipCodes: housing ? [] : zipCodes,
         targetAddress: housing
@@ -428,7 +428,8 @@ export default function NewCampaignPage() {
     form.name.trim() &&
     form.businessName.trim() &&
     category &&
-    /^https?:\/\//i.test(form.landingUrl.trim()) &&
+    // Optional (no website is fine), but if typed it must be a real link.
+    (form.landingUrl.trim() === "" || /^https?:\/\//i.test(form.landingUrl.trim())) &&
     (housing ? addressValid && realtyValid : zipCodes.length > 0 && invalidZips.length === 0 && !mixedCountries) &&
     budgetCents !== null &&
     !budgetOutOfRange;
@@ -961,7 +962,7 @@ export default function NewCampaignPage() {
             </div>
 
             <div>
-              <Label htmlFor="landingUrl">Where should viewers go?</Label>
+              <Label htmlFor="landingUrl">Your website (optional)</Label>
               <Input
                 id="landingUrl"
                 type="url"
@@ -969,6 +970,19 @@ export default function NewCampaignPage() {
                 value={form.landingUrl}
                 onChange={set("landingUrl")}
               />
+              <FieldHint>
+                No website? Leave it blank, you can still make your ad. Google needs a link
+                before the ad goes live, so add one later, or{" "}
+                <a
+                  href="https://sitevault.3pandalabs.com"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-amber-300 underline"
+                >
+                  get a free website from SiteVault
+                </a>
+                .
+              </FieldHint>
             </div>
 
             <div>

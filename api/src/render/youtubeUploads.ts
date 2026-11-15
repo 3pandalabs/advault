@@ -87,8 +87,7 @@ async function processJob(job: YouTubeUploadJob): Promise<void> {
   const description = [
     creative.offerDetails ?? "",
     "",
-    creative.landingUrl,
-    "",
+    ...(creative.landingUrl ? [creative.landingUrl, ""] : []),
     "Produced with AdVault by 3PandaLabs.",
   ]
     .join("\n")

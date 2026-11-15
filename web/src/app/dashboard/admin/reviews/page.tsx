@@ -152,9 +152,13 @@ function ReviewCard({ video: v, onDecided }: { video: VideoReview; onDecided: ()
           </CardTitle>
           <CardDescription>
             {v.campaignName} · {v.ownerEmail} ·{" "}
-            <a href={v.landingUrl} target="_blank" rel="noreferrer" className="hover:underline">
-              {v.landingUrl}
-            </a>
+            {v.landingUrl ? (
+              <a href={v.landingUrl} target="_blank" rel="noreferrer" className="hover:underline">
+                {v.landingUrl}
+              </a>
+            ) : (
+              "no website"
+            )}
           </CardDescription>
           <CardDescription>
             {v.aspectRatio === "9:16" ? "Shorts (9:16)" : "Pre-roll (16:9)"} · {v.durationSeconds ?? "?"}s

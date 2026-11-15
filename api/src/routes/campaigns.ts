@@ -37,10 +37,18 @@ const campaignInput = z.object({
   businessCategory: z.string().min(1).max(80),
   callToAction: z.string().min(1).max(40).default("Call now"),
   // Constrained to http(s) so a campaign can't ship a javascript: or data:
-  // landing URL into a live ad.
-  landingUrl: z.string().url().max(500).refine((u) => /^https?:\/\//i.test(u), {
-    message: "must be an http(s) URL",
-  }),
+  // landing URL into a live ad. OPTIONAL since 2026-11-15: a business with no
+  // website can still make ads (blank = null); launch requires one
+  // (landing_url_required in routes/launch.ts).
+  landingUrl: z.preprocess(
+    (v) => (typeof v === "string" && v.trim() === "" ? null : v),
+    z
+      .string()
+      .url()
+      .max(500)
+      .refine((u) => /^https?:\/\//i.test(u), { message: "must be an http(s) URL" })
+      .nullish(),
+  ),
   offerDetails: z.string().max(2000).nullish(),
   // One country per campaign: launch resolves every code against a single
   // country (US for 5 digits, IN for 6), so a mixed list would silently drop

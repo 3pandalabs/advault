@@ -117,6 +117,13 @@ export async function launchRoutes(app: FastifyInstance) {
         return reply.code(409).send({ error: "already_launched" });
       }
 
+      // Ads can be MADE without a website (since 2026-11-15), but Demand Gen
+      // needs a final URL, so launching is where a website becomes required.
+      if (!campaign.landingUrl) {
+        return reply.code(409).send({ error: "landing_url_required" });
+      }
+      const finalUrl = campaign.landingUrl;
+
       // A paid plan that includes ads. Skipped on a dry run, like the billing
       // and wallet gates: nothing can spend.
       if (!validateOnly) {
@@ -400,7 +407,7 @@ export async function launchRoutes(app: FastifyInstance) {
           nameSuffix: campaign.id.slice(0, 8),
           campaignName: campaign.name,
           dailyBudgetCents: campaign.dailyBudgetCents,
-          finalUrl: campaign.landingUrl,
+          finalUrl,
           geoTargetConstants,
           proximity:
             housing && campaign.targetAddress

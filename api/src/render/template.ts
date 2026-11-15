@@ -55,7 +55,8 @@ export function brandColorFor(category: string): string {
 }
 
 /** "https://www.bellahair.com/book?x" -> "bellahair.com". */
-export function displayDomain(url: string): string {
+export function displayDomain(url: string | null | undefined): string {
+  if (!url) return "";
   try {
     return new URL(url).hostname.replace(/^www\./, "");
   } catch {
@@ -101,7 +102,8 @@ export type TemplateInputs = {
   voicePath?: string;
   businessName: string;
   businessCategory: string;
-  landingUrl: string;
+  /** Null when the business has no website; the end card then omits it. */
+  landingUrl: string | null;
   /** Cinematic add-on: full-screen film, up to 30 s. */
   cinematic?: boolean;
   /** Mixed ad: a cinematic opening shot under the offer sticker. */

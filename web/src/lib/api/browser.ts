@@ -146,7 +146,7 @@ export type Campaign = {
   businessName: string;
   businessCategory: string;
   callToAction: string;
-  landingUrl: string;
+  landingUrl: string | null;
   offerDetails: string | null;
   targetZipCodes: string[];
   radiusMiles: number;
@@ -393,7 +393,7 @@ export function createCampaign(input: {
   businessName: string;
   businessCategory: string;
   callToAction: string;
-  landingUrl: string;
+  landingUrl: string | null;
   offerDetails?: string | null;
   targetZipCodes: string[];
   radiusMiles: number;
@@ -412,6 +412,7 @@ export function updateCampaign(
     audienceFilters: AudienceFilters | null;
     targetAddress: TargetAddress | null;
     radiusMiles: number;
+    landingUrl: string | null;
   }>,
 ) {
   return api<Campaign>(`/campaigns/${campaignId}`, { method: "PATCH", body: JSON.stringify(input) });
@@ -642,7 +643,7 @@ export type VideoReview = {
   campaignId: string;
   campaignName: string;
   businessName: string;
-  landingUrl: string;
+  landingUrl: string | null;
   campaignStatus: CampaignStatus;
   ownerEmail: string;
   aspectRatio: "16:9" | "9:16";
