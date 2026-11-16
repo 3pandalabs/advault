@@ -342,7 +342,7 @@ export default function PrivacyPage() {
           </tr>
           <tr>
             <td>AI providers for script, photos, video and voice (Anthropic; Google Gemini video, directly through Google Cloud and through fal.ai; Meta Muse image editing, Kling and ElevenLabs through fal.ai)</td>
-            <td>Your business name, category and offer text; the photos you uploaded for the ad; the ad's narration text</td>
+            <td>Your business name, category and offer text; the photos you uploaded for the ad; the ad&apos;s narration text</td>
             <td>To write the script (the script writer looks at your photos), touch up the photos (lighting, sharpness, tidying; never the agent portrait), animate them and read the voiceover</td>
           </tr>
           <tr>

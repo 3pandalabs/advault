@@ -11,6 +11,8 @@ import {
 import { Badge, Card, CardDescription, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { formatDate } from "@/lib/utils";
+import { SuggestionChips } from "@/components/SuggestionChips";
+import { GENERIC_MONTHLY_OFFER } from "@/lib/suggestions";
 
 // This month's offer.
 //
@@ -139,12 +141,22 @@ export default function OfferPage() {
           Replacing it re-makes this month&apos;s videos with the new deal.
         </CardDescription>
         <textarea
+          id="offer-text"
+          aria-label="This month's offer"
           className="mt-4 w-full rounded-lg border border-white/10 bg-black/20 p-3 text-sm"
           rows={3}
           maxLength={500}
           placeholder="30% off colouring till the 15th"
           value={text}
           onChange={(e) => setText(e.target.value)}
+        />
+        {/* This month's recorded offer (to tweak it), else a generic starting point. */}
+        <SuggestionChips
+          targetId="offer-text"
+          fieldLabel="offer"
+          value={text}
+          suggestions={[cycle?.offerText, GENERIC_MONTHLY_OFFER]}
+          onPick={setText}
         />
         <label className="mt-3 block text-sm text-zinc-400">
           Last day (optional — we&apos;ll work it out from your wording)

@@ -15,6 +15,8 @@ import { Card, CardDescription, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { siteVaultSlug } from "@/lib/sitevault";
+import { SuggestionChips } from "@/components/SuggestionChips";
+import { openingHoursSuggestions, townFromAddress } from "@/lib/suggestions";
 
 // "Your website" on the campaign page. A website is OPTIONAL to make ads
 // (since 2026-11-15) but Google needs a link to launch (landing_url_required).
@@ -71,6 +73,7 @@ export function WebsiteCard({
   const [draft, setDraft] = useState(campaign.landingUrl ?? "");
   const [phone, setPhone] = useState("");
   const [city, setCity] = useState(campaign.targetAddress?.city ?? "");
+  const town = townFromAddress(campaign.targetAddress);
   const [hours, setHours] = useState("");
   const [attest, setAttest] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -356,14 +359,25 @@ export function WebsiteCard({
 
       {mode === "link" && (
         <div className="mt-4 flex flex-col gap-2 sm:flex-row">
-          <Input
-            type="url"
-            placeholder="https://mikesplumbing.com"
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            disabled={busy}
-            aria-label="Website link"
-          />
+          <div className="min-w-0 flex-1">
+            <Input
+              id="website-link"
+              type="url"
+              placeholder="https://mikesplumbing.com"
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              disabled={busy}
+              aria-label="Website link"
+            />
+            <SuggestionChips
+              targetId="website-link"
+              fieldLabel="website link"
+              value={draft}
+              suggestions={[campaign.landingUrl, accountSite]}
+              onPick={setDraft}
+              disabled={busy}
+            />
+          </div>
           <div className="flex gap-2">
             <Button size="sm" onClick={saveLink} disabled={busy || !linkValid}>
               {busy ? "Saving…" : "Save"}
@@ -397,7 +411,15 @@ export function WebsiteCard({
             </label>
             <label className="text-sm">
               <span className="mb-1 block text-zinc-300">Town or city</span>
-              <Input placeholder="Secaucus, NJ" value={city} onChange={(e) => setCity(e.target.value)} disabled={busy} />
+              <Input id="website-city" placeholder="Secaucus, NJ" value={city} onChange={(e) => setCity(e.target.value)} disabled={busy} />
+              <SuggestionChips
+                targetId="website-city"
+                fieldLabel="town or city"
+                value={city}
+                suggestions={[town]}
+                onPick={setCity}
+                disabled={busy}
+              />
             </label>
           </div>
           <div className="text-sm">
@@ -450,9 +472,18 @@ export function WebsiteCard({
           <label className="block text-sm">
             <span className="mb-1 block text-zinc-300">Opening hours (optional)</span>
             <Input
+              id="website-hours"
               placeholder="Mon-Fri 8am-6pm, Sat 9am-2pm"
               value={hours}
               onChange={(e) => setHours(e.target.value)}
+              disabled={busy}
+            />
+            <SuggestionChips
+              targetId="website-hours"
+              fieldLabel="opening hours"
+              value={hours}
+              suggestions={openingHoursSuggestions(campaign.businessCategory)}
+              onPick={setHours}
               disabled={busy}
             />
           </label>
