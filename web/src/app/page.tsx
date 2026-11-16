@@ -55,6 +55,10 @@ const FOR_WHOM = [
 
 const FAQ = [
   {
+    q: "I don't have a website. Can I still advertise?",
+    a: "Yes. Make your ad without one; Google needs a link before the ad goes live, so press Make me a website on your campaign and we build a one-page website from your ad in minutes: your photos, offer and video, with call and directions buttons. It's $10 with the first year of Pro (visitor stats) included, then $49 a year.",
+  },
+  {
     q: "Do I need a Google Ads or YouTube account?",
     a: "No. We create and run the ad account for you. You never log in to Google Ads, and you don't need a YouTube channel.",
   },
@@ -127,6 +131,9 @@ export default function LandingPage() {
         <p className="mt-4 text-xl font-semibold tracking-tight">
           <span className="text-amber-300">$10</span> makes your ad.{" "}
           <span className="text-amber-300">From $49/month</span> keeps it running.
+        </p>
+        <p className="mt-2 text-base text-zinc-300">
+          No website? Don&apos;t worry, we&apos;ve got you covered: we&apos;ll build one from your ad in just minutes.
         </p>
         <div className="mt-8 flex flex-wrap items-center gap-3">
           <Link
