@@ -25,6 +25,11 @@ const credentials = z.object({
   password: z.string().min(10).max(200),
 });
 
+const loginCredentials = z.object({
+  email: z.string().email().max(320),
+  password: z.string().min(1).max(200),
+});
+
 async function issueSession(userId: string) {
   const secret = generateRefreshSecret();
   const [session] = await db
@@ -82,8 +87,10 @@ export async function authRoutes(app: FastifyInstance) {
     },
   );
 
-  app.post("/auth/login", { schema: { body: credentials } }, async (req, reply) => {
-    const { email, password } = req.body as z.infer<typeof credentials>;
+  // Login takes any length: the 10-char minimum is a sign-up rule, and accounts
+  // created on SiteVault (shared 3PandaLabs account) may have 8 or 9.
+  app.post("/auth/login", { schema: { body: loginCredentials } }, async (req, reply) => {
+    const { email, password } = req.body as z.infer<typeof loginCredentials>;
     const [user] = await db
       .select({ id: users.id, passwordHash: users.passwordHash, role: users.role })
       .from(users)
@@ -168,12 +175,17 @@ export async function authRoutes(app: FastifyInstance) {
         phone: users.phone,
         role: users.role,
         createdAt: users.createdAt,
+        // Shared 3PandaLabs account: where it was made, and whether it has a
+        // SiteVault website (the dashboard links one).
+        signupApp: users.signupApp,
+        sitevaultFirstUsedAt: users.sitevaultFirstUsedAt,
       })
       .from(users)
       .where(eq(users.id, req.userId!))
       .limit(1);
     if (!user) return reply.code(404).send({ error: "not_found" });
-    return user;
+    const { sitevaultFirstUsedAt, ...rest } = user;
+    return { ...rest, usesSitevault: sitevaultFirstUsedAt !== null };
   });
 
   app.patch(

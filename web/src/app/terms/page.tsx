@@ -31,7 +31,7 @@ export default function TermsPage() {
   return (
     <LegalPage
       title="Terms of Service"
-      effective="2 September 2026"
+      effective="16 November 2026"
       summary="You pay us to make your ads and, on the managed plan, to run them. You are responsible for the offers you advertise and for honouring them. We do not guarantee results, and nothing here is a promise that advertising will work."
     >
       <h2>1. Who this agreement is with</h2>
@@ -71,6 +71,13 @@ export default function TermsPage() {
         through your account. Tell us promptly at{" "}
         <a href={"mailto:" + CONTACT}>{CONTACT}</a> if you think someone else has access
         to it.
+      </p>
+      <p>
+        Your account is a single 3PandaLabs account shared with SiteVault, our website
+        builder: the same email and password sign you in to both, whichever one you created
+        it on, and it is stored by AdVault. Deleting or closing the account ends your
+        sign-in on both. Each product&rsquo;s own terms still apply to what you do in it, and
+        AdVault plans and SiteVault website plans are billed separately.
       </p>
 
       <h2>4. Plans and fees</h2>

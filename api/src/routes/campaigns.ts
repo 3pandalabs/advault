@@ -6,6 +6,7 @@ import { db } from "../db/index.js";
 import { campaigns, creatives } from "../db/schema.js";
 import { loadOwnedCampaign } from "../lib/ownership.js";
 import { realtySchema } from "../lib/realty/index.js";
+import { markAppUsed } from "../lib/sharedAccount/index.js";
 import {
   TARGETING_VIOLATION_DETAIL,
   audienceFiltersSchema,
@@ -119,6 +120,9 @@ export async function campaignRoutes(app: FastifyInstance) {
         userId: req.userId!,
       })
       .returning();
+    // Shared account: the first campaign is the account's first AdVault use
+    // (lib/sharedAccount). Never fails the create.
+    await markAppUsed(db, req.userId!, "advault").catch((err) => req.log.warn({ err }, "advault first-use stamp failed"));
     return reply.code(201).send(campaign);
   });
 

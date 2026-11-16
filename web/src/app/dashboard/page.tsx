@@ -3,8 +3,8 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { siteVaultSlug } from "@/lib/sitevault";
-import { listCampaigns, type Campaign, type CampaignStatus } from "@/lib/api/browser";
+import { SITEVAULT_ACCOUNT_URL, siteVaultSlug } from "@/lib/sitevault";
+import { getMe, listCampaigns, type Campaign, type CampaignStatus } from "@/lib/api/browser";
 import { Badge, Card, CardDescription, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { formatDate, formatMoney } from "@/lib/utils";
@@ -30,7 +30,16 @@ const STATUS_LABEL: Record<CampaignStatus, string> = {
 export default function CampaignsPage() {
   const [campaigns, setCampaigns] = useState<Campaign[] | null>(null);
   const [error, setError] = useState(false);
+  // Shared 3PandaLabs account: someone who came from SiteVault (or has a
+  // SiteVault website) gets a link back to it from the empty state.
+  const [usesSitevault, setUsesSitevault] = useState(false);
   const router = useRouter();
+
+  useEffect(() => {
+    getMe()
+      .then((me) => setUsesSitevault(Boolean(me.usesSitevault || me.signupApp === "sitevault")))
+      .catch(() => setUsesSitevault(false));
+  }, []);
 
   useEffect(() => {
     listCampaigns()
@@ -77,6 +86,14 @@ export default function CampaignsPage() {
             <Button>Create your first campaign</Button>
           </Link>
         </div>
+        {usesSitevault ? (
+          <p className="mt-5 text-sm text-zinc-400">
+            Your website lives on SiteVault, with the same login.{" "}
+            <a href={SITEVAULT_ACCOUNT_URL} className="text-sky-300 underline underline-offset-4">
+              Go to your website
+            </a>
+          </p>
+        ) : null}
       </Card>
     );
   }

@@ -19,10 +19,10 @@ is meant to be readable without a login.
 | Method | Path | Notes |
 |---|---|---|
 | POST | `/auth/register` | 409 `registration_failed` for a taken address — deliberately indistinguishable from any other rejection. |
-| POST | `/auth/login` | |
+| POST | `/auth/login` | Password length isn't checked here (only on register), because accounts made on SiteVault may have 8–9 characters. |
 | POST | `/auth/refresh` | Rotates: the presented token is destroyed. |
 | POST | `/auth/logout` | Always 204. |
-| GET | `/auth/me` | |
+| GET | `/auth/me` | Also `signupApp` (`advault` / `sitevault`) and `usesSitevault` (the account has a SiteVault website); the empty dashboard links to SiteVault when either says so. |
 | PATCH | `/auth/me` | Profile fields only — never email or role. |
 | DELETE | `/auth/sessions` | Signs out everywhere. |
 | GET | `/auth/me/deletion` | Preview for the confirmation screen: `{ liveCampaigns, activePlan, walletBalanceMinor, currencyCode }`. |
@@ -49,6 +49,19 @@ sign up again as a new account.
 
 No password reset — the shared mailer has no verified sender for this app. See
 CLAUDE.md.
+
+## Internal: SiteVault (shared 3PandaLabs account)
+
+Server to server from the SiteVault Worker, bearer `SITEVAULT_INTERNAL_TOKEN`
+(= the Worker's `INTERNAL_TOKEN`), over the DNS-only `api-internal` host.
+401 without it. `users` is the one account store for AdVault and SiteVault
+(`routes/sitevaultAuth.ts`, `lib/sharedAccount`, migration 0025).
+
+| Method | Path | Notes |
+|---|---|---|
+| POST | `/internal/sitevault/verify-login` | `{ email, password }` → `{ ok, userId, email }`; 401 `invalid_credentials` (same timing for unknown emails). |
+| POST | `/internal/sitevault/accounts` | `{ email, password (8–200), createdAt?, sitevaultUsedAt? }` (ISO). **201** `{ ok, userId, email }`, a new user with `signup_app = 'sitevault'` (bcrypt, like every account). **409** `email_exists` with the existing `userId`: nothing on that account changes, never its password. SiteVault links that id only after the person proved the SiteVault password for the same email (lazy move); a fresh sign-up is told to sign in. `createdAt` keeps an older SiteVault account's date; `sitevaultUsedAt` stamps its first website. Future times are clamped to now. |
+| POST | `/internal/sitevault/usage` | `{ userId, at? }` → `{ ok }`: stamps `sitevault_first_used_at` (only fills NULL or moves earlier). 404 `not_found` for an unknown or deleted account. |
 
 ## Assets
 

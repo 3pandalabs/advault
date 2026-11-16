@@ -15,3 +15,6 @@ export function siteVaultSlug(url: string | null | undefined): string | null {
     return null;
   }
 }
+
+/** SiteVault's "My website" page. Same 3PandaLabs login as AdVault. */
+export const SITEVAULT_ACCOUNT_URL = "https://sitevault.3pandalabs.com/account";
