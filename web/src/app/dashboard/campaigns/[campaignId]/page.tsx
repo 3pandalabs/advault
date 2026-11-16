@@ -613,11 +613,55 @@ export default function CampaignDetailPage({
         ))}
       </div>
 
-      {!campaign.googleCampaignResourceName && (
+      {/* "Use my own video" is the other way to get an ad: once they chose photos
+          (an order or an AdVault-made video exists) it is only noise. */}
+      {!campaign.googleCampaignResourceName && !newAd?.order && !campaign.creatives.some((c) => c.kind !== "upload") && (
         <VideoUpload campaignId={campaignId} isAdmin={isAdmin} onUploaded={refresh} />
       )}
 
-      <Card className="mt-6">
+      {newAd && !newAd.required && newAd.siteOffer && (
+        <Card className="mb-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="min-w-0">
+              <CardTitle>Offer on your website</CardTitle>
+              <CardDescription className="break-words">
+                Put “{newAd.siteOffer.offer}” on your SiteVault website. Free for your account.
+              </CardDescription>
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={busy}
+              onClick={() => {
+                setBusy(true);
+                setError(null);
+                pushFreeSiteOffer(campaign.id)
+                  .then(() => setSiteOfferRev((n) => n + 1))
+                  .catch((err) => orderFailed(err, "Could not update your website. Please try again."))
+                  .finally(() => setBusy(false));
+              }}
+            >
+              Put it on my website
+            </Button>
+          </div>
+        </Card>
+      )}
+
+      <WebsiteCard
+        campaign={campaign}
+        onSaved={(c) => setCampaign((prev) => (prev ? { ...prev, ...c } : prev))}
+        siteOfferRev={siteOfferRev}
+      />
+
+      {/* Parked for MVP2; still shown for a campaign that already has filters. */}
+      {(AUDIENCE_FILTERS_ENABLED || campaign.audienceFilters) && (
+        <AudienceCard
+          campaign={campaign}
+          onSaved={(c) => setCampaign((prev) => (prev ? { ...prev, ...c } : prev))}
+        />
+      )}
+
+      <Card className="mt-2 mb-4">
         <CardTitle>Launch</CardTitle>
         {campaign.googleCampaignResourceName ? (
           <>
@@ -715,48 +759,6 @@ export default function CampaignDetailPage({
           </>
         )}
       </Card>
-
-      {newAd && !newAd.required && newAd.siteOffer && (
-        <Card className="mb-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="min-w-0">
-              <CardTitle>Offer on your website</CardTitle>
-              <CardDescription className="break-words">
-                Put “{newAd.siteOffer.offer}” on your SiteVault website. Free for your account.
-              </CardDescription>
-            </div>
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={busy}
-              onClick={() => {
-                setBusy(true);
-                setError(null);
-                pushFreeSiteOffer(campaign.id)
-                  .then(() => setSiteOfferRev((n) => n + 1))
-                  .catch((err) => orderFailed(err, "Could not update your website. Please try again."))
-                  .finally(() => setBusy(false));
-              }}
-            >
-              Put it on my website
-            </Button>
-          </div>
-        </Card>
-      )}
-
-      <WebsiteCard
-        campaign={campaign}
-        onSaved={(c) => setCampaign((prev) => (prev ? { ...prev, ...c } : prev))}
-        siteOfferRev={siteOfferRev}
-      />
-
-      {/* Parked for MVP2; still shown for a campaign that already has filters. */}
-      {(AUDIENCE_FILTERS_ENABLED || campaign.audienceFilters) && (
-        <AudienceCard
-          campaign={campaign}
-          onSaved={(c) => setCampaign((prev) => (prev ? { ...prev, ...c } : prev))}
-        />
-      )}
 
       {/* Only once Google has the campaign — before launch there is nothing
           to report, and an all-zero card would read as "your ad isn't working". */}

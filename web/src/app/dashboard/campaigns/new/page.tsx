@@ -971,18 +971,8 @@ export default function NewCampaignPage() {
                 onChange={set("landingUrl")}
               />
               <FieldHint>
-                No website? Leave it blank, you can still make your ad. Google needs a link
-                before the ad goes live: on your campaign page, press{" "}
-                <span className="text-zinc-200">Make me a website</span> and we&apos;ll build one from your ad in minutes, for $10 (first year of Pro included), with{" "}
-                <a
-                  href="https://sitevault.3pandalabs.com"
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-amber-300 underline"
-                >
-                  SiteVault
-                </a>
-                .
+                Optional. Google needs a link before your ad goes live, but no website is fine: we&apos;ve got
+                you covered, and can make you one from your ad in minutes.
               </FieldHint>
             </div>
 

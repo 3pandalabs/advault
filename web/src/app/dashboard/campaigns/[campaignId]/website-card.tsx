@@ -251,7 +251,21 @@ export function WebsiteCard({
                 {campaign.landingUrl}
               </a>
             ) : (
-              "No website yet. Your ad can still be made; Google needs a link before it goes live."
+              <>
+                No website yet. Your ad can still be made; Google needs a link before it goes live.
+                {!locked && (
+                  <span className="mt-2 block text-zinc-300">
+                    We can build you a one-page website from your ad in minutes, with{" "}
+                    <a href="https://sitevault.3pandalabs.com" target="_blank" rel="noreferrer" className="text-amber-300 underline">
+                      SiteVault
+                    </a>
+                    : your photos, offer and ad video, with call and directions buttons.
+                    {websiteFee
+                      ? ` ${websiteFee}, with the first year of Pro (visitor stats) included; then $49 a year, cancel any time.`
+                      : ""}
+                  </span>
+                )}
+              </>
             )}
           </CardDescription>
         </div>
