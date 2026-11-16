@@ -737,6 +737,24 @@ export const decideVideoReview = (
   input: { decision: "approve" } | { decision: "reject"; reason: string },
 ) => api<Creative>(`/admin/video-reviews/${creativeId}`, { method: "POST", body: JSON.stringify(input) });
 
+// --- admins --------------------------------------------------------------
+
+export type AdminUser = {
+  id: string;
+  email: string;
+  displayName: string | null;
+  businessName: string | null;
+  role: "advertiser" | "admin";
+  signupApp: "advault" | "sitevault";
+  createdAt: string;
+};
+
+export const listAdminUsers = (q = "") =>
+  api<{ users: AdminUser[] }>(`/admin/users${q ? `?q=${encodeURIComponent(q)}` : ""}`);
+
+export const setUserRole = (id: string, role: AdminUser["role"]) =>
+  api<{ user: AdminUser }>(`/admin/users/${id}/role`, { method: "POST", body: JSON.stringify({ role }) });
+
 // --- billing ---------------------------------------------------------------
 
 export type LedgerEntry = {

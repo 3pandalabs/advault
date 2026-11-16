@@ -52,6 +52,9 @@ export default function AdminMetricsPage() {
             </Link>{" "}
             <Link href="/dashboard/admin/reviews" className="text-amber-300 hover:underline">
               Video reviews →
+            </Link>{" "}
+            <Link href="/dashboard/admin/users" className="text-amber-300 hover:underline">
+              Admins →
             </Link>
           </p>
         </div>
