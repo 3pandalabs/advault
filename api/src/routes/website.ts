@@ -112,6 +112,12 @@ async function campaignAd(campaignId: string): Promise<{ video: Video | null; st
 // SiteVault separately refuses a second live site for the same phone.
 
 /** The account's existing SiteVault site (from any other campaign), or null. */
+/** Admins may make any number of websites (testing); everyone else gets one per account. */
+async function isAdminUser(userId: string): Promise<boolean> {
+  const [u] = await db.select({ role: users.role }).from(users).where(eq(users.id, userId)).limit(1);
+  return u?.role === "admin";
+}
+
 async function accountSite(userId: string, exceptCampaignId: string) {
   const [row] = await db
     .select({ landingUrl: campaigns.landingUrl, sitevaultEditEnc: campaigns.sitevaultEditEnc })
@@ -182,12 +188,15 @@ export async function websiteRoutes(app: FastifyInstance) {
       if (campaign.landingUrl) return reply.code(409).send({ error: "website_exists" });
       if (campaign.sitevaultPendingUrl) return reply.code(409).send({ error: "website_payment_pending" });
       if (!sitevaultConfigured()) return reply.code(503).send({ error: "website_builder_not_configured" });
-      const existing = await accountSite(req.userId!, campaign.id);
-      if (existing) {
-        return reply.code(409).send({ error: "website_exists_for_account", detail: existing.siteUrl });
+      const admin = await isAdminUser(req.userId!);
+      if (!admin) {
+        const existing = await accountSite(req.userId!, campaign.id);
+        if (existing) {
+          return reply.code(409).send({ error: "website_exists_for_account", detail: existing.siteUrl });
+        }
+        const pendingElsewhere = await accountPendingSite(req.userId!, campaign.id);
+        if (pendingElsewhere) return reply.code(409).send({ error: "website_exists_for_account", detail: pendingElsewhere });
       }
-      const pendingElsewhere = await accountPendingSite(req.userId!, campaign.id);
-      if (pendingElsewhere) return reply.code(409).send({ error: "website_exists_for_account", detail: pendingElsewhere });
       // $10 website fee (null for admins / at_cost: made and published at once, as before).
       const fee = await websiteFeeFor(req.userId!);
 
@@ -210,6 +219,8 @@ export async function websiteRoutes(app: FastifyInstance) {
           // Same login on SiteVault: the site goes to this AdVault user's account.
           ownerAdvaultUserId: req.userId!,
           ownerEmail: owner?.email,
+          // Admin test site on SiteVault: no one-per-phone rule, never claims the number.
+          ownerAdmin: admin ? "1" : undefined,
         },
         await campaignPhotos(campaign.id),
         video,
@@ -338,7 +349,8 @@ export async function websiteRoutes(app: FastifyInstance) {
       // No website yet, but the account already has one: offer that instead
       // of making a second site for the same business.
       if (!campaign.landingUrl && !locked) {
-        const existing = await accountSite(req.userId!, campaign.id);
+        // Admins always get "Make me a website" (they may have many).
+        const existing = (await isAdminUser(req.userId!)) ? null : await accountSite(req.userId!, campaign.id);
         if (existing) return { siteUrl: null, editUrl, accountSite: { siteUrl: existing.siteUrl } };
         // What "Make me a website" costs (null = free: admins, at_cost).
         const fee = await websiteFeeFor(req.userId!);

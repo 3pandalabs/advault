@@ -70,6 +70,8 @@ export type WebsiteFields = {
   /** The AdVault account that owns the site: SiteVault saves it to that owner's account (same login). */
   ownerAdvaultUserId?: string;
   ownerEmail?: string;
+  /** "1": the owner is an AdVault admin making a test site. */
+  ownerAdmin?: string;
 };
 
 export type Photo = { bytes: Buffer; contentType: string };
