@@ -52,7 +52,9 @@ import {
 // marginal cost of producing an ad, so a five-scene script must not silently
 // cost 66% more than a three-scene one. Scenes beyond the cap render as Ken
 // Burns stills, which is what every ad rendered to date already looks like.
-const MOTION_MAX_CLIPS = Number(process.env.MOTION_MAX_CLIPS ?? 3);
+// 4 (was 3, 2026-11-16): a typical ad has 4 photo scenes, and the one left as
+// a Ken Burns still stood out as "no animation".
+const MOTION_MAX_CLIPS = Number(process.env.MOTION_MAX_CLIPS ?? 4);
 
 // KEEP THIS AT 1 in production. The shared cx33 has 4 vCPUs and also runs
 // Postgres, three other API containers and the whole monitoring stack; an
