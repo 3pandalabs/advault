@@ -172,7 +172,7 @@ export const AD_SCRIPT_JSON_SCHEMA = {
     photoMotions: {
       type: "array",
       description:
-        "One entry per supplied photo: one sentence on the small, natural movement that photo should come alive with, based on what is actually in it.",
+        "One entry per supplied photo: one sentence on the clearly visible movement (real action, or a real camera move with parallax) that photo should come alive with, based on what is actually in it.",
       items: {
         type: "object",
         properties: {

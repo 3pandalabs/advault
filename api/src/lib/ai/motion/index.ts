@@ -176,14 +176,24 @@ export const luma: MotionProvider = {
 // the caption: a caption ("$10 off your first cut") is not a camera direction,
 // and a fixed prompt lets the worker reuse one clip per photo across formats.
 
+// 2026-11-16: the old "small, soft movement; slow gentle push-in" wording made
+// clips of houses and skylines that looked like still photos. Ask for motion a
+// viewer sees in the first second.
 export const FAL_MOTION_PROMPT =
-  "Small, natural movement: people keep doing what they are doing, hair, cloth, leaves and light move softly; slow gentle push-in. Realistic, steady, natural. No text, no logos, no new objects, faces stay the same.";
+  "Clearly visible, natural movement throughout: people keep doing what they are doing; trees, cloth, water and light move; smooth dolly-in with real parallax. Realistic and natural. No text, no logos, no new objects, faces stay the same.";
 // Appended to a per-photo motion line, as the demos did.
-export const FAL_MOTION_STYLE = " Realistic, steady, natural. No text, no logos, no new objects, faces stay the same.";
+export const FAL_MOTION_STYLE =
+  " The motion must be clearly visible from the first second, never a near-still frame. Realistic and natural. No text, no logos, no new objects, faces stay the same.";
+
+// Scripts written before 2026-11-16 end every motion line with "slow gentle
+// push-in." Swap that for a visible camera move so re-renders of those ads
+// move too, not only newly written scripts.
+const GENTLE_ENDING = /[,;]?\s*slow gentle push-in\.?\s*$/i;
 
 /** The prompt a fal clip is made with (also part of the clip cache key). */
 export function falMotionPrompt(motionPrompt?: string): string {
-  return motionPrompt ? motionPrompt.trim() + FAL_MOTION_STYLE : FAL_MOTION_PROMPT;
+  if (!motionPrompt) return FAL_MOTION_PROMPT;
+  return motionPrompt.trim().replace(GENTLE_ENDING, ", smooth dolly-in with real parallax.") + FAL_MOTION_STYLE;
 }
 const FAL_MOTION_ENDPOINT = process.env.FAL_MOTION_ENDPOINT ?? "kling/v4/flash/image-to-video";
 
