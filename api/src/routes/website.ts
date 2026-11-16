@@ -21,6 +21,7 @@ import {
   type Video,
 } from "../lib/sitevault/index.js";
 import { stickerSchema } from "../lib/script/schema.js";
+import { markAppUsed } from "../lib/sharedAccount/index.js";
 import { getObjectBytes, headObject } from "../plugins/r2.js";
 import { proPhotoKey } from "../render/enhance.js";
 import { isHousingCategory } from "../lib/audience/policy.js";
@@ -223,6 +224,8 @@ export async function websiteRoutes(app: FastifyInstance) {
             errors: result.errors,
           });
       }
+      // Shared account: this account now has a SiteVault website (lib/sharedAccount).
+      await markAppUsed(db, req.userId!, "sitevault").catch((err) => req.log.warn({ err }, "sitevault first-use stamp failed"));
 
       if (fee) {
         // Made, unpublished: it becomes the link once the $10 is paid (lib/websiteFee).

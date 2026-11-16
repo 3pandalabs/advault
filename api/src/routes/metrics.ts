@@ -3,6 +3,7 @@ import type { FastifyInstance } from "fastify";
 import { db } from "../db/index.js";
 import { env } from "../env.js";
 import { secretEquals } from "../lib/crypto.js";
+import { accountUsageCounts } from "../lib/sharedAccount/index.js";
 import { cpuPercentOfOneCore, requestsLastHour } from "../metrics/collector.js";
 
 // Ops-only endpoint, scraped by the admin page (admin.3pandalabs.com). The
@@ -142,6 +143,11 @@ export async function metricsRoutes(app: FastifyInstance) {
         (select count(*) from pg_stat_activity where datname = current_database())::int as connections
     `);
 
+    // Shared 3PandaLabs account (AdVault + SiteVault): live accounts by where
+    // they signed up and which apps they use (lib/sharedAccount, the
+    // account_app_usage view). sitevaultOnly is the SiteVault-only-benefits pool.
+    const usage = await accountUsageCounts(db);
+
     const c = counts.rows[0];
     const d = database.rows[0];
     const mem = process.memoryUsage();
@@ -220,6 +226,16 @@ export async function metricsRoutes(app: FastifyInstance) {
         cinematicFailedUnrefunded: c.cinematic_failed_unrefunded,
         addOnRevenueMinorInr: c.add_on_revenue_minor_inr,
         addOnRevenueMinorUsd: c.add_on_revenue_minor_usd,
+        // `advertisers` above counts every users row, which since 2026-11-16
+        // includes accounts made on SiteVault. These split it (deleted
+        // accounts excluded): where each signed up, and which apps it uses
+        // (first campaign / first website, see CLAUDE.md "One 3PandaLabs account").
+        accountsSignedUpOnAdvault: usage.signedUpOnAdvault,
+        accountsSignedUpOnSitevault: usage.signedUpOnSitevault,
+        accountsAdvaultOnly: usage.advaultOnly,
+        accountsSitevaultOnly: usage.sitevaultOnly,
+        accountsUsingBoth: usage.both,
+        accountsUsingNeither: usage.neither,
       },
       traffic: {
         // Rolling 60 minutes, in-process — see metrics/collector.ts. Resets on

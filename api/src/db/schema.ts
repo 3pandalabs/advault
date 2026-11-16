@@ -55,10 +55,20 @@ export const users = pgTable(
     // is kept, anonymised, because the financial records point at it.
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
 
+    // One 3PandaLabs account across AdVault and SiteVault (0025). This table is
+    // the shared store: SiteVault creates its sign-ups here. `signupApp` is
+    // where the account was created; the first-use stamps say which apps it
+    // actually uses (NULL = never). See lib/sharedAccount and the
+    // `account_app_usage` view for the one definition of the usage split.
+    signupApp: text("signup_app").notNull().default("advault"),
+    advaultFirstUsedAt: timestamp("advault_first_used_at", { withTimezone: true }),
+    sitevaultFirstUsedAt: timestamp("sitevault_first_used_at", { withTimezone: true }),
+
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
     check("users_role_check", sql`${t.role} in ('advertiser','admin')`),
+    check("users_signup_app_check", sql`${t.signupApp} in ('advault','sitevault')`),
     check("users_currency_check", sql`${t.currencyCode} in ('INR','USD')`),
     check("users_margin_mode_check", sql`${t.marginMode} in ('standard','at_cost')`),
   ],

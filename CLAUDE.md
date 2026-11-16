@@ -97,6 +97,49 @@ customise this app, it forces a special case into a page that has none. The
 boundary changes, also update this app's Mermaid flow diagram in
 `3pandalabs/admin`.
 
+## One 3PandaLabs account (AdVault + SiteVault)
+
+Since 2026-11-16 (migration 0025, `lib/sharedAccount`, `routes/sitevaultAuth.ts`)
+**the `users` table is the one account store for AdVault and SiteVault**
+(`3pandalabs/sitevault`). The same email + password signs in on both, whichever
+app it was created on. SiteVault keeps its own KV account record (sites,
+sessions) linked by `advaultUserId`, but the login lives here. Routes:
+`api/ROUTES.md` "Internal: SiteVault".
+
+- `users.signup_app`: `advault` (default, every pre-0025 row) or `sitevault`
+  (created by SiteVault, `POST /internal/sitevault/accounts`).
+- `users.advault_first_used_at`: the first campaign (`POST /campaigns` stamps
+  it; 0025 backfilled the earliest campaign).
+- `users.sitevault_first_used_at`: the first SiteVault website. Stamped by
+  "Make me a website" here, and by SiteVault (`POST /internal/sitevault/usage`)
+  when an owner creates or claims a site, and on every SiteVault sign-in of an
+  account that has one (self-healing, so older sites get counted too). 0025
+  backfilled campaigns AdVault made a site for. Stamps only move earlier.
+- **Definitions** (the `account_app_usage` view, the one SQL definition; deleted
+  accounts excluded): uses AdVault = `advault_first_used_at IS NOT NULL`; uses
+  SiteVault = `sitevault_first_used_at IS NOT NULL`; `app_usage` is
+  `advault_only` / `sitevault_only` / `both` / `neither` (signed up, used
+  nothing). **SiteVault-only customer = `app_usage = 'sitevault_only'`**: has a
+  SiteVault website and has never made an AdVault campaign, whichever app they
+  signed up on. Select them with `sitevaultOnlyCustomers(db)` or
+  `SELECT email FROM account_app_usage WHERE app_usage = 'sitevault_only';`.
+  Don't re-derive the split elsewhere; read the view.
+- `/metrics` `counts.accountsSignedUpOn{Advault,Sitevault}`,
+  `accountsAdvaultOnly`, `accountsSitevaultOnly`, `accountsUsingBoth`,
+  `accountsUsingNeither`. `advertisers` still counts every users row, so it now
+  includes SiteVault sign-ups.
+- Password policy: `/auth/register` needs 10+; the internal create accepts 8+
+  because older SiteVault accounts were made with 8 (new SiteVault sign-ups ask
+  for 10), so `/auth/login` checks no minimum. All hashes are bcrypt.
+- Account deletion here ends the SiteVault sign-in too (the email is
+  anonymised); the SiteVault website is removed separately.
+- Tests (`lib/sharedAccount/*.test.ts`, `routes/sitevaultAuth.test.ts`) run on
+  PGlite (in-process Postgres, devDependency) with every `drizzle/*.sql`
+  applied, including a re-run of 0025 to prove it idempotent. Reuse that
+  pattern for anything else that needs a real database.
+- Privacy and terms pages on BOTH apps describe the shared account. Change
+  them with any change to what it stores.
+
 ## Google Ads OAuth tokens are the most sensitive thing in this database
 
 A stored Google Ads refresh token authorises **spending someone else's money**.

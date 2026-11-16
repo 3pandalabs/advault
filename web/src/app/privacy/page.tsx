@@ -36,7 +36,7 @@ export default function PrivacyPage() {
   return (
     <LegalPage
       title="Privacy Policy"
-      effective="15 November 2026"
+      effective="16 November 2026"
       summary="We collect what we need to make your ad and run your campaign, and nothing else. We do not sell your data, we do not track you around the internet, and this site sets no cookies at all."
     >
       <h2>Who we are</h2>
@@ -62,6 +62,15 @@ export default function PrivacyPage() {
           <strong>Your account</strong> — email address, a password (stored only as a
           bcrypt hash, never as text we can read), your name, your business name and
           category, your phone number, and your country.
+        </li>
+        <li>
+          <strong>One 3PandaLabs account for AdVault and SiteVault</strong> — your account is
+          shared with SiteVault, our website builder (also by 3PandaLabs): the same email and
+          password sign you in to both, and AdVault stores that account for both apps,
+          including accounts created on SiteVault. With it we record which app you created
+          the account on and when you first used each app (your first AdVault campaign, your
+          first SiteVault website), so we know whether you use AdVault, SiteVault or both and
+          can offer benefits that depend on it.
         </li>
         <li>
           <strong>Your campaign</strong> — what you sell, the offer you are running, your
@@ -315,7 +324,10 @@ export default function PrivacyPage() {
               Only if you press &ldquo;Make me a website&rdquo;: to build and publish your public
               website. You can change or remove it with its edit link. If you tick &ldquo;Also
               put this offer on my website&rdquo; when buying an ad, we send only your offer
-              text to that website, after payment
+              text to that website, after payment. Your shared account: when you sign in to
+              SiteVault, it sends us the email and password you typed so we can check them, and
+              we reply only yes or no with your account ID; when you sign up on SiteVault, it
+              asks us to create your account here, and tells us when you make your first website
             </td>
           </tr>
           <tr>
@@ -373,7 +385,9 @@ export default function PrivacyPage() {
         <li>
           <strong>Your account</strong> — for as long as it is open. When you delete it
           (Settings → Delete account), your sign-in, name, business details and phone
-          number are erased at once.
+          number are erased at once. Because the account is shared, this also ends your
+          SiteVault sign-in; your SiteVault website itself is removed separately (see
+          SiteVault&rsquo;s privacy page).
         </li>
         <li>
           <strong>Uploaded photos</strong> — until you delete them or your account.

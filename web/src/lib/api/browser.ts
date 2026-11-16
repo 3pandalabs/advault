@@ -114,6 +114,10 @@ export type Me = {
   businessCategory: string | null;
   phone: string | null;
   role: "advertiser" | "admin";
+  /** Shared 3PandaLabs account: the app the account was created on. */
+  signupApp?: "advault" | "sitevault";
+  /** The account has a SiteVault website. */
+  usesSitevault?: boolean;
 };
 
 export type Asset = {
