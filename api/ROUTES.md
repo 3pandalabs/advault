@@ -120,6 +120,8 @@ Server to server from the SiteVault Worker, bearer `SITEVAULT_INTERNAL_TOKEN`
 |---|---|---|---|
 | GET | `/admin/video-reviews?status=pending_review` | admin session, or `ADMIN_ANALYTICS_TOKEN` bearer | `{status, videos[]}`, `status` one of `pending_review` (default, oldest first) / `approved` / `rejected` (newest first), max 100. Each: business, campaign, owner email, landing URL, aspect, duration, size, attestation time, review fields, and a 10-minute `videoUrl`. |
 | POST | `/admin/video-reviews/:creativeId` | same | Body `{decision:'approve'}` or `{decision:'reject', reason}`. Only from `pending_review` (409 `already_reviewed` / `not_reviewable`; 400 `reason_required`). Approve queues the YouTube upload. Records `reviewed_by` (null for a token caller) and `reviewed_at`. |
+| GET | `/admin/users?q=` | admin session only (role re-read from the database; never the token) | `{users[]}`: live accounts, admins first then newest, max 50; `q` matches email, name or business. Each: id, email, displayName, businessName, role, signupApp, createdAt. Page: `/dashboard/admin/users`. |
+| POST | `/admin/users/:id/role` | same | Body `{role:'admin'|'advertiser'}`. 409 `own_role` (can't change your own), `last_admin` (never removes the last admin), `deleted_user`, `same_role`; 404 `not_found`. Serialised by an advisory lock. Applies at the user's next sign-in or token refresh. Rules: `lib/adminUsers/policy.ts`. |
 
 Launch answers **409 `video_pending_review`** while any of the campaign's uploads awaits review (dry run included), and **409 `video_rejected`** when rejected uploads were the only videos; rejected uploads are otherwise left out of the ad.
 
