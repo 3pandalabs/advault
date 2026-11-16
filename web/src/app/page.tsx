@@ -133,12 +133,8 @@ export default function LandingPage() {
           <span className="text-amber-300">From $49/month</span> keeps it running.
         </p>
         <p className="mt-2 text-base text-zinc-300">
-          No website? Don&apos;t worry, we&apos;ve got you covered: we&apos;ll build one in minutes while we make your
-          ad. Just want a website?{" "}
-          <a href="https://sitevault.3pandalabs.com" className="text-amber-300 underline hover:text-amber-200">
-            Try SiteVault
-          </a>
-          .
+          YouTube ads need a website to go live. No website? Don&apos;t worry, we&apos;ve got you covered: we&apos;ll
+          build one in minutes while we make your ad.
         </p>
         <div className="mt-8 flex flex-wrap items-center gap-3">
           <Link
