@@ -178,9 +178,11 @@ export default function SubscriptionPage() {
         </Card>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {plans.map((plan) => (
+          {/* Only Keep it running is sold today (2026-11-15); the other lines stay in
+              the API and come back as bundles later. */}
+          {plans.filter((plan) => plan.line === "evergreen").map((plan) => (
             <Card key={plan.key}>
-              <CardTitle>{plan.label}</CardTitle>
+              <CardTitle>{LINE_LABEL[plan.line] ?? plan.label}</CardTitle>
               <CardDescription>{plan.blurb}</CardDescription>
               <p className="mt-4 text-3xl font-semibold">
                 {plan.line === "evergreen" ? `from ${plan.display.allIn}` : plan.display.monthlyFee}
@@ -199,7 +201,15 @@ export default function SubscriptionPage() {
           ))}
           {plans.length === 0 ? (
             <p className="text-sm text-zinc-500">Loading plans…</p>
-          ) : null}
+          ) : (
+            <Card className="border-dashed">
+              <CardTitle>More bundles coming soon</CardTitle>
+              <CardDescription>
+                Monthly offer videos and fully managed ads are on the way. Start with Keep it running today; you can
+                switch when they arrive.
+              </CardDescription>
+            </Card>
+          )}
         </div>
       )}
     </div>

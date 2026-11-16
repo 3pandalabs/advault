@@ -66,12 +66,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             >
               Campaigns
             </Link>
-            <Link
-              href="/dashboard/offer"
-              className="rounded-lg px-3 py-2 text-zinc-300 hover:bg-white/10"
-            >
-              This month
-            </Link>
+            {/* "This month" (/dashboard/offer) is hidden: monthly offers belong to
+                the offer/managed plans, which aren't sold right now (only Keep it
+                running, which has no offers). The page still works by URL. */}
             {/* "Video bundle" (/dashboard/cinematic) is hidden: sales paused
                 2026-11-15, see api/src/routes/cinematic.ts. The page still
                 works by URL for anyone with past orders or pack credits. */}

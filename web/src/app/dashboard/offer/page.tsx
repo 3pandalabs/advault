@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import {
+  ApiError,
   approveOffer,
   currentOffer,
   submitOffer,
@@ -59,8 +60,15 @@ export default function OfferPage() {
       // sending people to a deal the shop won't honour.
       setInferred(result.expiryInferred);
       await refresh();
-    } catch {
-      setError("Could not save your offer.");
+    } catch (err) {
+      const code = err instanceof ApiError ? err.code : "";
+      setError(
+        code === "plan_has_no_offers"
+          ? "Keep it running doesn't include monthly offers. To advertise a new deal, open your campaign and make a new ad with it ($10)."
+          : code === "no_subscription"
+            ? "Monthly offers come with a monthly-offer plan, coming soon. To advertise a deal now, put it in your campaign's offer and make a new ad."
+            : "Could not save your offer. Please try again.",
+      );
     } finally {
       setBusy(false);
     }
