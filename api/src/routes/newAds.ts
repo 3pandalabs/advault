@@ -6,7 +6,7 @@ import { db } from "../db/index.js";
 import { assets, creatives, purchases, users } from "../db/schema.js";
 import { deleteObject } from "../plugins/r2.js";
 import { loadOwnedCampaign } from "../lib/ownership.js";
-import { SITE_OFFER_ADDON, formatMinor } from "../lib/pricing/index.js";
+import { SITE_OFFER_ADDON, chargeMinor, formatMinor } from "../lib/pricing/index.js";
 import { pushSiteOffer, quoteCampaignSiteOffer, recordSiteOffer } from "../lib/siteOffer/index.js";
 import { providerFor } from "../lib/payments/index.js";
 import { createPurchase, markDelivered, markPurchasePaid } from "../lib/cinematic/index.js";
@@ -118,7 +118,7 @@ export async function newAdRoutes(app: FastifyInstance) {
       // SiteVault (or a paused site, no offer text…) refuses the option
       // rather than guessing a price; the customer can untick and retry.
       const site = input?.siteOffer
-        ? await quoteCampaignSiteOffer({ campaign, exempt: false, currency: quote.currency, ticked: true })
+        ? await quoteCampaignSiteOffer({ campaign, exempt: false, currency: quote.currency, ticked: true, testMode: quote.testMode })
         : null;
       if (site && (!site.available || !site.mode || !site.slug)) {
         return reply.code(409).send({ error: "site_offer_unavailable" });
@@ -157,6 +157,7 @@ export async function newAdRoutes(app: FastifyInstance) {
         amountMinor: totalMinor,
         currency: quote.currency,
         purpose: "add_on",
+        testMode: quote.testMode,
         lineItems:
           addonMinor > 0
             ? [
@@ -304,15 +305,17 @@ async function newAdStatus(userId: string, campaign: { id: string; landingUrl: s
     exempt: !required,
     currency: quote?.currency ?? (await quoteNewAd(userId)).currency,
     ticked: false,
+    testMode: quote?.testMode,
   });
   const addon = quote ? SITE_OFFER_ADDON[quote.currency] : undefined;
+  const addonMinor = addon && quote ? chargeMinor(addon.priceMinor, quote.testMode) : null;
   return {
     siteOffer: site.available
       ? {
           offered: site.offered,
           offer: site.offer,
           credits: site.credits,
-          addonDisplay: addon && quote ? formatMinor(addon.priceMinor, quote.currency) : null,
+          addonDisplay: addonMinor !== null && quote ? formatMinor(addonMinor, quote.currency) : null,
         }
       : null,
     required,

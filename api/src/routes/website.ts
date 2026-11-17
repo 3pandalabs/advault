@@ -29,6 +29,7 @@ import { getObjectBytes, headObject } from "../plugins/r2.js";
 import { proPhotoKey } from "../render/enhance.js";
 import { isHousingCategory } from "../lib/audience/policy.js";
 import { fetchSiteOfferStatus, latestSiteOffer } from "../lib/siteOffer/index.js";
+import { billingIdentity } from "../lib/testMode/index.js";
 import {
   feeDisplay,
   isPaidStatus,
@@ -100,10 +101,12 @@ async function campaignAd(campaignId: string): Promise<{ sticker: StickerLike | 
 // SiteVault separately refuses a second live site for the same phone, and a
 // second site for the same shared account (409 account_has_site).
 
-/** Admins may make any number of websites (testing); everyone else gets one per account. */
+/**
+ * Admins may make any number of websites (testing); everyone else gets one per
+ * account. An admin testing as a customer gets the customer rule (lib/testMode).
+ */
 async function isAdminUser(userId: string): Promise<boolean> {
-  const [u] = await db.select({ role: users.role }).from(users).where(eq(users.id, userId)).limit(1);
-  return u?.role === "admin";
+  return (await billingIdentity(userId)).role === "admin";
 }
 
 type AccountSite = {

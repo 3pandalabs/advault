@@ -6,8 +6,9 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { requireAuth } from "../auth/plugin.js";
 import { db } from "../db/index.js";
-import { adAccounts, assets, campaigns, creatives, users } from "../db/schema.js";
+import { adAccounts, assets, campaigns, creatives } from "../db/schema.js";
 import { liveSubscriptionFor } from "../lib/subscriptions/index.js";
+import { billingIdentity } from "../lib/testMode/index.js";
 import { launchPlanBlock } from "../lib/subscriptions/policy.js";
 import { decryptToken } from "../lib/crypto.js";
 import { isGoogleAdsConfigured } from "../lib/googleAds/env.js";
@@ -133,13 +134,10 @@ export async function launchRoutes(app: FastifyInstance) {
       // A paid plan that includes ads. Skipped on a dry run, like the billing
       // and wallet gates: nothing can spend.
       if (!validateOnly) {
-        const [user] = await db
-          .select({ marginMode: users.marginMode })
-          .from(users)
-          .where(eq(users.id, req.userId!))
-          .limit(1);
+        // Admins and at_cost skip it, unless the admin is testing as a customer.
+        const who = await billingIdentity(req.userId!);
         const sub = await liveSubscriptionFor(req.userId!);
-        const block = launchPlanBlock({ role: req.userRole, marginMode: user?.marginMode, sub });
+        const block = launchPlanBlock({ role: who.role, marginMode: who.marginMode, sub });
         if (block) return reply.code(402).send({ error: block });
       }
 

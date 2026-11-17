@@ -2,10 +2,10 @@ import { and, desc, eq, inArray, isNotNull, isNull, lt, sql } from "drizzle-orm"
 import { db } from "../../db/index.js";
 import { campaigns, purchases, users } from "../../db/schema.js";
 import { createPurchase } from "../cinematic/index.js";
-import { currencyForCountry, formatMinor, maybeAddOnFor, type AddOn } from "../pricing/index.js";
+import { chargeMinor, currencyForCountry, formatMinor, maybeAddOnFor, type AddOn } from "../pricing/index.js";
 import { providerFor } from "../payments/index.js";
 import { markSitevaultPaid } from "../sitevault/index.js";
-import { paysPerAd } from "../newAd/index.js";
+import { billingIdentity } from "../testMode/index.js";
 
 // The $10 website fee (2026-11-15). "Make me a website" creates the SiteVault
 // site unpublished (awaitingPayment), then charges $10 (the first year of Pro
@@ -18,17 +18,24 @@ const WEB_ORIGIN = process.env.WEB_ORIGIN ?? "https://advault.3pandalabs.com";
 export const WEBSITE_FEE_MAX_ATTEMPTS = 5;
 const PAID = ["paid", "producing", "delivered"] as const;
 
+/** The website add-on, priced for this user: the $0.50 test price for an admin testing as a customer. */
+export type WebsiteFee = AddOn & { testMode: boolean };
+
 /** The fee this advertiser pays for a website, or null (admins, at_cost, no price in their currency). */
-export async function websiteFeeFor(userId: string): Promise<AddOn | null> {
-  if (!(await paysPerAd(userId))) return null;
+export async function websiteFeeFor(userId: string): Promise<WebsiteFee | null> {
+  const who = await billingIdentity(userId);
+  if (!who.role || who.exempt) return null;
   const [u] = await db.select({ countryCode: users.countryCode }).from(users).where(eq(users.id, userId)).limit(1);
-  return maybeAddOnFor(currencyForCountry(u?.countryCode ?? "US"), "website");
+  const fee = maybeAddOnFor(currencyForCountry(u?.countryCode ?? "US"), "website");
+  if (!fee) return null;
+  const priceMinor = chargeMinor(fee.priceMinor, who.testMode);
+  return { ...fee, priceMinor, firstPurchasePriceMinor: priceMinor, testMode: who.testMode };
 }
 
 export const feeDisplay = (fee: AddOn) => formatMinor(fee.priceMinor, fee.currency);
 
 /** A Stripe checkout for the campaign's unpaid site. */
-export async function startWebsiteCheckout(args: { userId: string; campaignId: string; slug: string; fee: AddOn }) {
+export async function startWebsiteCheckout(args: { userId: string; campaignId: string; slug: string; fee: WebsiteFee }) {
   const provider = providerFor(args.fee.currency);
   const purchase = await createPurchase({
     userId: args.userId,
@@ -44,6 +51,7 @@ export async function startWebsiteCheckout(args: { userId: string; campaignId: s
     amountMinor: args.fee.priceMinor,
     currency: args.fee.currency,
     purpose: "add_on",
+    testMode: args.fee.testMode,
     lineItems: [{ amountMinor: args.fee.priceMinor, name: "Your website (first year of Pro included)" }],
     userEmail: user?.email ?? "",
     returnUrl: `${WEB_ORIGIN}/dashboard/campaigns/${args.campaignId}?website=paid`,

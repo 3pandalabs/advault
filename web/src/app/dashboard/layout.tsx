@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { clearTokens, getMe, getTokens, type Me } from "@/lib/api/browser";
+import { clearTokens, getMe, getTokens, setTestAsCustomer, type Me } from "@/lib/api/browser";
+import { TEST_PRICE_DISPLAY } from "@/lib/testMode";
 import { WordmarkName, WordmarkTag } from "@/components/Wordmark";
 import { Button } from "@/components/ui/button";
 
@@ -36,6 +37,18 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       })
       .finally(() => setChecked(true));
   }, [router]);
+
+  const [turningOff, setTurningOff] = useState(false);
+  // Admin "Test as customer": switch back from the banner on any page.
+  async function turnOffTestMode() {
+    setTurningOff(true);
+    try {
+      await setTestAsCustomer(false);
+      window.location.reload();
+    } catch {
+      setTurningOff(false);
+    }
+  }
 
   function signOut() {
     clearTokens();
@@ -109,6 +122,16 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </div>
         )}
       </header>
+      {me?.testAsCustomer && me.role === "admin" && (
+        <div className="border-b border-amber-400/30 bg-amber-400/10">
+          <div className="mx-auto flex w-full max-w-5xl flex-wrap items-center justify-between gap-2 px-6 py-2 text-sm text-amber-200">
+            <span>Testing as a customer — every charge is {TEST_PRICE_DISPLAY}.</span>
+            <Button variant="outline" size="sm" onClick={turnOffTestMode} disabled={turningOff}>
+              {turningOff ? "Turning off…" : "Turn off"}
+            </Button>
+          </div>
+        </div>
+      )}
       <main className="mx-auto w-full max-w-5xl px-6 py-8">{children}</main>
     </div>
   );

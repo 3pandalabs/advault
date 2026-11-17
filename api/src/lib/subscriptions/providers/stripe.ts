@@ -49,6 +49,25 @@ function verifySignature(rawBody: string, header: string | undefined): boolean {
   });
 }
 
+/**
+ * The subscription's price. Normally the plan's fixed Stripe price id; in
+ * test mode an inline monthly price for amountMinor (the $0.50 test price),
+ * so no test price object has to exist in Stripe.
+ */
+export function stripeSubscriptionLine(req: SubscriptionCheckoutRequest): Record<string, string> {
+  if (req.testMode) {
+    return {
+      "line_items[0][price_data][currency]": req.currency.toLowerCase(),
+      "line_items[0][price_data][unit_amount]": String(req.amountMinor),
+      "line_items[0][price_data][recurring][interval]": "month",
+      "line_items[0][price_data][product_data][name]": "AdVault plan (test)",
+    };
+  }
+  const priceId = PRICE_IDS[req.planKey];
+  if (!priceId) throw new Error(`No Stripe price configured for ${req.planKey}`);
+  return { "line_items[0][price]": priceId };
+}
+
 export const stripeSubscriptions: SubscriptionProvider = {
   name: "stripe",
 
@@ -57,12 +76,9 @@ export const stripeSubscriptions: SubscriptionProvider = {
   },
 
   async createCheckout(req: SubscriptionCheckoutRequest): Promise<SubscriptionCheckout> {
-    const priceId = PRICE_IDS[req.planKey];
-    if (!priceId) throw new Error(`No Stripe price configured for ${req.planKey}`);
-
     const form = new URLSearchParams({
       mode: "subscription",
-      "line_items[0][price]": priceId,
+      ...stripeSubscriptionLine(req),
       "line_items[0][quantity]": "1",
       customer_email: req.userEmail,
       success_url: `${req.returnUrl}?subscribed=1`,
@@ -76,6 +92,8 @@ export const stripeSubscriptions: SubscriptionProvider = {
       // The Stripe account is shared by every 3PandaLabs app; see stripeRouting.ts.
       "metadata[app]": "advault",
       "subscription_data[metadata][app]": "advault",
+      // Admin "Test as customer": a $0.50 test subscription, not revenue.
+      ...(req.testMode ? { "metadata[test_mode]": "1", "subscription_data[metadata][test_mode]": "1" } : {}),
     });
 
     const res = await fetch(`${API}/checkout/sessions`, {

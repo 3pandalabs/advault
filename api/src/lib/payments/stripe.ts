@@ -55,6 +55,8 @@ export const stripe: PaymentProvider = {
       "metadata[purpose]": req.purpose,
       // The Stripe account is shared by every 3PandaLabs app; see stripeRouting.ts.
       "metadata[app]": "advault",
+      // Admin "Test as customer": a $0.50 test charge, not revenue.
+      ...(req.testMode ? { "metadata[test_mode]": "1" } : {}),
     });
 
     const res = await fetch(`${API}/checkout/sessions`, {

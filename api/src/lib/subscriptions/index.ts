@@ -87,6 +87,8 @@ export async function createSubscription(args: {
   planKey: string;
   provider: "razorpay" | "stripe" | "paddle" | "manual";
   now?: Date;
+  /** The monthly amount actually charged: the plan fee, or the $0.50 test price (lib/testMode). */
+  amountMinor?: number;
 }) {
   const plan = planByKey(args.planKey);
   if (!plan) throw new NoSuchPlan(args.planKey);
@@ -106,7 +108,7 @@ export async function createSubscription(args: {
           planKey: plan.key,
           line: plan.line,
           currencyCode: plan.currency,
-          amountMinor: plan.monthlyFeeMinor,
+          amountMinor: args.amountMinor ?? plan.monthlyFeeMinor,
           provider: args.provider,
           status: "pending",
           currentPeriodStart: period.start,
@@ -119,7 +121,7 @@ export async function createSubscription(args: {
         .values({
           subscriptionId: sub.id,
           userId: args.userId,
-          amountMinor: plan.monthlyFeeMinor,
+          amountMinor: args.amountMinor ?? plan.monthlyFeeMinor,
           currencyCode: plan.currency,
           periodStart: period.start,
           periodEnd: period.end,

@@ -5,6 +5,7 @@ import {
   addOnByKey,
   addOnFor,
   addOnPriceMinor,
+  chargeMinor,
   currencyForCountry,
   type AddOn,
   type AddOnSku,
@@ -12,6 +13,7 @@ import {
   type MarginMode,
 } from "../pricing/index.js";
 import { applyEntry, DuplicateLedgerEntry } from "../wallet/index.js";
+import { inTestMode } from "../testMode/policy.js";
 import { isProducible, purchaseLedgerRefs, shouldRetryProduction } from "./policy.js";
 
 // The one-off purchase lifecycle. Read ./policy.ts first — the states, the
@@ -83,6 +85,8 @@ export type Quote = {
   amountMinor: number;
   isFirstPurchase: boolean;
   currency: Currency;
+  /** Admin testing as a customer: amountMinor is the $0.50 test price. */
+  testMode: boolean;
 };
 
 export async function quoteFor(
@@ -94,11 +98,16 @@ export async function quoteFor(
   const currency = currencyForCountry(user?.countryCode ?? "US");
   const addOn = addOnFor(currency, sku);
   const prior = await priorPaidCount(userId, sku);
+  const testMode = inTestMode(user ?? { role: null });
   return {
     addOn,
-    amountMinor: addOnPriceMinor(addOn, { priorPaidCount: prior, marginMode }),
+    amountMinor: chargeMinor(
+      addOnPriceMinor(addOn, { priorPaidCount: prior, marginMode: testMode ? "standard" : marginMode }),
+      testMode,
+    ),
     isFirstPurchase: prior === 0,
     currency,
+    testMode,
   };
 }
 

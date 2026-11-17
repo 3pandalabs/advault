@@ -37,6 +37,7 @@ import { AUDIENCE_FILTERS_ENABLED } from "@/lib/audience";
 import { Badge, Card, CardDescription, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { formatDuration, formatMoney } from "@/lib/utils";
+import { actsAsAdmin } from "@/lib/testMode";
 
 type Loaded = Campaign & { creatives: Creative[] };
 
@@ -166,7 +167,7 @@ export default function CampaignDetailPage({
   useEffect(() => {
     refresh();
     listAdAccounts().then(setAdAccounts).catch(() => undefined);
-    getMe().then((me) => setIsAdmin(me.role === "admin")).catch(() => undefined);
+    getMe().then((me) => setIsAdmin(actsAsAdmin(me))).catch(() => undefined);
     getNewAdStatus(campaignId)
       .then((s) => {
         setNewAd(s);

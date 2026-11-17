@@ -16,6 +16,7 @@ import {
   uploadLimitsFor,
 } from "../lib/uploads/policy.js";
 import { initialReviewStatus } from "../lib/uploads/review.js";
+import { customerFlowRole } from "../lib/testMode/index.js";
 import { creativeVideoKey, deleteObject, headObject, presignUpload } from "../plugins/r2.js";
 import { enqueueYoutubeUpload } from "../render/youtubeJobs.js";
 
@@ -60,7 +61,7 @@ function ownVideoAllowed(role: string | undefined): boolean {
 export async function uploadRoutes(app: FastifyInstance) {
   app.addHook("onRequest", requireAuth);
   app.addHook("preHandler", async (req, reply) => {
-    if (req.method === "POST" && !ownVideoAllowed(req.userRole)) return reply.code(403).send({ error: "own_video_paused" });
+    if (req.method === "POST" && !ownVideoAllowed(await customerFlowRole(req))) return reply.code(403).send({ error: "own_video_paused" });
   });
 
   app.post(
@@ -73,7 +74,7 @@ export async function uploadRoutes(app: FastifyInstance) {
       if (campaign.status === "live") return reply.code(409).send({ error: "campaign_is_live" });
 
       // Checked here too so a bad file is refused before it is uploaded.
-      const check = checkUploadedVideo(req.body as z.infer<typeof metaSchema>, uploadLimitsFor(req.userRole));
+      const check = checkUploadedVideo(req.body as z.infer<typeof metaSchema>, uploadLimitsFor(await customerFlowRole(req)));
       if (!check.ok) return reply.code(400).send({ error: check.error });
 
       const creativeId = crypto.randomUUID();
@@ -93,7 +94,7 @@ export async function uploadRoutes(app: FastifyInstance) {
       if (!campaign) return;
       if (campaign.status === "live") return reply.code(409).send({ error: "campaign_is_live" });
 
-      const check = checkUploadedVideo(body, uploadLimitsFor(req.userRole));
+      const check = checkUploadedVideo(body, uploadLimitsFor(await customerFlowRole(req)));
       if (!check.ok) return reply.code(400).send({ error: check.error });
 
       // The key is derived from the campaign we just checked, never taken from
@@ -107,7 +108,7 @@ export async function uploadRoutes(app: FastifyInstance) {
       }
 
       const now = new Date();
-      const reviewStatus = initialReviewStatus(req.userRole);
+      const reviewStatus = initialReviewStatus(await customerFlowRole(req));
       const [row] = await db
         .insert(creatives)
         .values({

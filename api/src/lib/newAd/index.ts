@@ -1,8 +1,9 @@
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "../../db/index.js";
-import { purchases, users } from "../../db/schema.js";
+import { purchases } from "../../db/schema.js";
 import { formatMinor, freeFirstAd } from "../pricing/index.js";
 import { quoteFor, type Quote } from "../cinematic/index.js";
+import { billingIdentity } from "../testMode/index.js";
 
 const CLAIMED = ["paid", "producing", "delivered"] as const;
 
@@ -53,14 +54,13 @@ export type NewAdBrief = {
 /** First render + two redos per paid ad. */
 export const RENDERS_PER_AD = 3;
 
-/** Does this user pay per ad? Everyone but admins and at_cost accounts. */
+/**
+ * Does this user pay per ad? Everyone but admins and at_cost accounts; an
+ * admin testing as a customer pays (lib/testMode).
+ */
 export async function paysPerAd(userId: string): Promise<boolean> {
-  const [u] = await db
-    .select({ role: users.role, marginMode: users.marginMode })
-    .from(users)
-    .where(eq(users.id, userId))
-    .limit(1);
-  return !!u && u.role !== "admin" && u.marginMode !== "at_cost";
+  const who = await billingIdentity(userId);
+  return who.role !== undefined && !who.exempt;
 }
 
 /**

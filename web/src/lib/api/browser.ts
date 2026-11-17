@@ -114,6 +114,11 @@ export type Me = {
   businessCategory: string | null;
   phone: string | null;
   role: "advertiser" | "admin";
+  /**
+   * Admin "Test as customer": billed like a customer, every charge $0.50.
+   * Customer screens should use actsAsAdmin() (lib/testMode), never `role`.
+   */
+  testAsCustomer?: boolean;
   /** Shared 3PandaLabs account: the app the account was created on. */
   signupApp?: "advault" | "sitevault";
   /** The account has a SiteVault website. */
@@ -287,6 +292,9 @@ export type BillingOptions = {
 // --- endpoint wrappers -----------------------------------------------------
 
 export const getMe = () => api<Me>("/auth/me");
+/** Admins only (403 otherwise). */
+export const setTestAsCustomer = (on: boolean) =>
+  api<{ testAsCustomer: boolean }>("/auth/me/test-mode", { method: "PATCH", body: JSON.stringify({ on }) });
 export const listCampaigns = () => api<Campaign[]>("/campaigns");
 export const getCampaign = (id: string) =>
   api<Campaign & { creatives: Creative[] }>(`/campaigns/${id}`);
@@ -863,7 +871,8 @@ export type Plan = {
 };
 
 export function listPlans(currency: string) {
-  return api<{ currency: string; plans: Plan[] }>(`/plans?currency=${encodeURIComponent(currency)}`);
+  // testMode: the signed-in admin is testing as a customer; plan fees are the test price.
+  return api<{ currency: string; plans: Plan[]; testMode?: boolean }>(`/plans?currency=${encodeURIComponent(currency)}`);
 }
 
 export type SubscriptionView = {

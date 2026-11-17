@@ -6,7 +6,7 @@
 // customer pays $10. Always PAID in AdVault; SiteVault only applies it
 // (POST /api/internal/sites/<slug>/offer, idempotent on our purchase id).
 
-import { SITE_OFFER_ADDON, type Currency } from "../pricing/index.js";
+import { SITE_OFFER_ADDON, chargeMinor, type Currency } from "../pricing/index.js";
 
 export type SiteOfferMode = "paid" | "credit" | "free";
 
@@ -31,6 +31,8 @@ export type SiteOfferQuoteInput = {
   ticked: boolean;
   /** The site already shows exactly this offer: nothing to sell or push. */
   alreadyOnSite?: boolean;
+  /** Admin testing as a customer (lib/testMode): the add-on is the $0.50 test price. */
+  testMode?: boolean;
 };
 
 export type SiteOfferQuote = {
@@ -58,7 +60,7 @@ export function siteOfferQuote(i: SiteOfferQuoteInput): SiteOfferQuote {
     const addon = SITE_OFFER_ADDON[i.currency];
     if (!addon) return NONE;
     offered = "paid";
-    price = addon.priceMinor;
+    price = chargeMinor(addon.priceMinor, i.testMode === true);
   }
   return i.ticked
     ? { available: true, offered, mode: offered, addonMinor: price }

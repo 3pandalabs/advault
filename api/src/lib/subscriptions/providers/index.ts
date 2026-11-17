@@ -22,6 +22,12 @@ export type SubscriptionCheckoutRequest = {
   currency: Currency;
   userEmail: string;
   returnUrl: string;
+  /**
+   * Admin testing as a customer (lib/testMode): charge amountMinor (the $0.50
+   * test price) monthly instead of the plan's fixed price id, tagged
+   * `test_mode=1`.
+   */
+  testMode?: boolean;
 };
 
 export type SubscriptionCheckout = {

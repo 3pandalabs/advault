@@ -22,6 +22,7 @@ import { parseDollarsToCents } from "@/lib/utils";
 import { SuggestionChips } from "@/components/SuggestionChips";
 import { callToActionSuggestions, campaignNameSuggestions } from "@/lib/suggestions";
 import { AudienceFiltersEditor, HOUSING_NOTICE } from "@/components/AudienceFiltersEditor";
+import { actsAsAdmin } from "@/lib/testMode";
 import {
   AUDIENCE_FILTERS_ENABLED,
   CATEGORIES,
@@ -190,7 +191,7 @@ export default function NewCampaignPage() {
     // does not type it again.
     getMe()
       .then((me) => {
-        setIsAdmin(me.role === "admin");
+        setIsAdmin(actsAsAdmin(me));
         const profileCategory = me.businessCategory ?? "";
         const preset = PRESET_CATEGORIES.includes(profileCategory) && profileCategory !== "Other";
         setCategoryChoice((c) => c || (preset ? profileCategory : profileCategory ? "Other" : ""));
