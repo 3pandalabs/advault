@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   ApiError,
   createWebsite,
+  deleteAccountWebsite,
   getWebsite,
   updateCampaign,
   linkExistingWebsite,
@@ -50,6 +51,17 @@ const MAKE_ERRORS: Record<string, string> = {
   campaign_is_live: "This campaign is live, so its website can't be changed here.",
   website_builder_not_configured: "The website builder isn't switched on yet. Please paste a link instead.",
   website_builder_failed: "We couldn't build the website just now. Please try again in a minute.",
+};
+
+// Admin "Delete it and make a new one".
+const DELETE_ERRORS: Record<string, string> = {
+  account_website_changed: "Your website changed meanwhile. Reload the page and try again.",
+  website_in_use_by_launched_campaign: "A launched campaign uses this website, so it can't be deleted.",
+  website_has_subscription: "This website has a SiteVault subscription. Cancel it first, then delete.",
+  website_not_your_site: "This website belongs to another account.",
+  no_account_website: "There's no website to delete any more. Reload the page.",
+  campaign_is_live: MAKE_ERRORS.campaign_is_live!,
+  admin_role_required: "Only admins can delete a website.",
 };
 
 type SiteOfferState = { outcome: "updated" | "pending" | "retrying" | "failed"; offer: string | null };
@@ -118,6 +130,12 @@ export function WebsiteCard({
   const [address, setAddress] = useState<AddressCheck | null>(null);
   const fetchedWebsite = useRef(false);
   const [accountSite, setAccountSite] = useState<string | null>(null);
+  // "pending" = made on another campaign and waiting for payment (admins see it to delete it).
+  const [accountSiteState, setAccountSiteState] = useState<string | null>(null);
+  // REAL admins (also in "Test as customer"): delete the site and make a new one.
+  const [adminCanDelete, setAdminCanDelete] = useState(false);
+  const [adminCanMakeAnother, setAdminCanMakeAnother] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [siteOffer, setSiteOffer] = useState<SiteOfferState | null>(null);
   // $10 website fee: the made-but-unpaid site, and the price ("$10"; null = free).
   const [pendingSite, setPendingSite] = useState<PendingSite | null>(null);
@@ -155,7 +173,7 @@ export function WebsiteCard({
     getWebsite(campaign.id)
       .then((w) => {
         setEditUrl(w.editUrl);
-        setAccountSite(w.accountSite?.siteUrl ?? null);
+        applyAccountSite(w);
         setPendingSite(w.pendingSite ?? null);
         setWebsiteFee(w.websiteFee);
         if (w.campaign) onSaved(w.campaign);
@@ -240,6 +258,39 @@ export function WebsiteCard({
       onSaved(res.campaign);
     } catch (err) {
       setError(err instanceof ApiError ? (MAKE_ERRORS[err.code] ?? "Could not use your website. Please try again.") : "Could not use your website. Please try again.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function applyAccountSite(w: Awaited<ReturnType<typeof getWebsite>>) {
+    setAccountSite(w.accountSite?.siteUrl ?? null);
+    setAccountSiteState(w.accountSite?.state ?? null);
+    setAdminCanDelete(Boolean(w.adminCanDelete));
+    setAdminCanMakeAnother(Boolean(w.adminCanMakeAnother));
+  }
+
+  // Admin: delete the account's website for good, then the full "Make me a
+  // website" form, exactly as for a brand-new one (the price, if any, is re-read).
+  async function deleteAndMakeNew() {
+    if (!accountSite) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await deleteAccountWebsite(campaign.id, accountSite);
+      setConfirmDelete(false);
+      const w = await getWebsite(campaign.id);
+      applyAccountSite(w);
+      setPendingSite(w.pendingSite ?? null);
+      setWebsiteFee(w.websiteFee);
+      // Another older site may still be on the account: then the card shows that one.
+      if (!w.accountSite) setMode("make");
+    } catch (err) {
+      setError(
+        err instanceof ApiError
+          ? (DELETE_ERRORS[err.code] ?? "Could not delete the website. Please try again.")
+          : "Could not delete the website. Please try again.",
+      );
     } finally {
       setBusy(false);
     }
@@ -373,19 +424,57 @@ export function WebsiteCard({
       {!locked && !campaign.landingUrl && mode === "view" && !pendingSite && accountSite && (
         <div className="mt-4 space-y-2">
           <p className="text-sm text-zinc-300">
-            Your business already has a website:{" "}
+            {accountSiteState === "pending" ? "Your business already has a website, waiting for payment on another campaign: " : "Your business already has a website: "}
             <a href={accountSite} target="_blank" rel="noreferrer" className="break-all text-amber-300 underline">
               {accountSite}
             </a>
           </p>
           <div className="flex flex-col gap-2 sm:flex-row">
-            <Button onClick={linkExisting} disabled={busy}>
-              {busy ? "Saving…" : "Use my website"}
-            </Button>
+            {accountSiteState !== "pending" && (
+              <Button onClick={linkExisting} disabled={busy}>
+                {busy ? "Saving…" : "Use my website"}
+              </Button>
+            )}
             <Button variant="outline" onClick={() => setMode("link")} disabled={busy}>
               Use a different website
             </Button>
           </div>
+          {adminCanDelete && !confirmDelete && (
+            <div className="rounded-lg border border-white/10 bg-white/5 p-3 text-sm text-zinc-300">
+              <p>
+                <span className="font-medium text-zinc-100">Admin:</span> as an admin you can delete this website and
+                make a new one.
+              </p>
+              <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+                <Button size="sm" variant="outline" onClick={() => setConfirmDelete(true)} disabled={busy}>
+                  Delete it and make a new one
+                </Button>
+                {adminCanMakeAnother && (
+                  <Button size="sm" variant="ghost" onClick={() => setMode("make")} disabled={busy}>
+                    Keep it and make another
+                  </Button>
+                )}
+              </div>
+            </div>
+          )}
+          {adminCanDelete && confirmDelete && (
+            <div className="rounded-lg border border-red-400/40 bg-red-500/10 p-3 text-sm text-zinc-200" role="alert">
+              <p className="font-medium text-red-200">Delete {accountSite} for good?</p>
+              <p className="mt-1">
+                The website goes offline for good: its page, photos, video and before &amp; after photos are deleted,
+                and any campaign not yet launched that uses it loses its link. This can&apos;t be undone. Then you can
+                make a new website.
+              </p>
+              <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+                <Button size="sm" onClick={deleteAndMakeNew} disabled={busy}>
+                  {busy ? "Deleting…" : "Yes, delete it for good"}
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => setConfirmDelete(false)} disabled={busy}>
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

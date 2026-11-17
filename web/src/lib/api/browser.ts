@@ -497,6 +497,10 @@ export function getWebsite(campaignId: string) {
     campaign?: Campaign;
     /** The account already has a SiteVault site (one per business): offer to reuse it. */
     accountSite?: { siteUrl: string; state?: string | null };
+    /** REAL admins (test mode or not): may delete the account's site and make a new one. */
+    adminCanDelete?: boolean;
+    /** Admins outside test mode may also make another site without deleting. */
+    adminCanMakeAnother?: boolean;
     /** Made but not paid for yet ($10 website fee). */
     pendingSite?: PendingSite;
     /** What "Make me a website" costs; null = free. Present only while there is no website. */
@@ -509,6 +513,14 @@ export function getWebsite(campaignId: string) {
 /** Use the account's existing SiteVault website for this campaign. */
 export function linkExistingWebsite(campaignId: string) {
   return api<{ campaign: Campaign; siteUrl: string }>(`/campaigns/${campaignId}/website/use-existing`, { method: "POST" });
+}
+
+/** Admin only: delete the account's website for good (SiteVault + every link here), to make a new one. */
+export function deleteAccountWebsite(campaignId: string, siteUrl: string) {
+  return api<{ deleted: boolean; slug: string; unlinkedCampaigns: number }>(`/campaigns/${campaignId}/website/account-site/delete`, {
+    method: "POST",
+    body: JSON.stringify({ siteUrl }),
+  });
 }
 
 export function generateCreatives(

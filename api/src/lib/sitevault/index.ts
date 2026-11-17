@@ -191,6 +191,34 @@ export async function setSitevaultOwner(slug: string, owner: { advaultUserId: st
   }
 }
 
+/**
+ * Delete the account's site for good (admin "Delete it and make a new one"):
+ * SiteVault `DELETE /api/internal/sites/<slug>` removes its files, address,
+ * phone and account link. Idempotent there (an unknown slug = deleted false).
+ * Never throws. Errors: SiteVault's code (`not_your_site`, `has_subscription`)
+ * or `sitevault_<status>` / `sitevault_unreachable`.
+ */
+export async function deleteSitevaultSite(
+  slug: string,
+  owner: { advaultUserId: string; email?: string | null },
+): Promise<{ ok: true; slug: string; deleted: boolean } | { ok: false; error: string }> {
+  const token = process.env.SITEVAULT_INTERNAL_TOKEN;
+  if (!token) return { ok: false, error: "sitevault_not_configured" };
+  try {
+    const q = new URLSearchParams({ advaultUserId: owner.advaultUserId, ...(owner.email ? { email: owner.email } : {}) });
+    const res = await fetch(`${SITEVAULT_URL}/api/internal/sites/${encodeURIComponent(slug)}?${q}`, {
+      method: "DELETE",
+      headers: { authorization: `Bearer ${token}`, accept: "application/json" },
+      signal: AbortSignal.timeout(15_000),
+    });
+    const body = (await res.json().catch(() => ({}))) as { ok?: boolean; slug?: string; deleted?: boolean; error?: string };
+    if (res.ok && body.ok) return { ok: true, slug: body.slug ?? slug, deleted: Boolean(body.deleted) };
+    return { ok: false, error: body.error ?? `sitevault_${res.status}` };
+  } catch (err) {
+    return { ok: false, error: `sitevault_unreachable: ${String(err).slice(0, 200)}` };
+  }
+}
+
 /** The $10 website fee landed: SiteVault publishes the site with a year of Pro. Idempotent on ref. */
 export async function markSitevaultPaid(slug: string, ref: string): Promise<{ ok: true; siteUrl: string } | { ok: false; error: string }> {
   const token = process.env.SITEVAULT_INTERNAL_TOKEN;
