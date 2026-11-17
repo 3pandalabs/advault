@@ -37,6 +37,8 @@ export async function generateForCampaign(args: {
   peopleAssetIds?: string[];
   /** Real estate: the agent's own photo (also counted as people). */
   portraitAssetId?: string | null;
+  /** Version number for the new creatives (redo = previous + 1). Default 1. */
+  version?: number;
   warn: (msg: string, err: unknown) => void;
 }): Promise<GenerateResult> {
   const { campaign, userId } = args;
@@ -141,6 +143,7 @@ export async function generateForCampaign(args: {
         script: finalScript,
         scriptSource: source,
         sourceAssetKeys: orderedKeys,
+        version: args.version ?? 1,
       })
       .returning();
 

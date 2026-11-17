@@ -606,6 +606,9 @@ export const creatives = pgTable(
     // snapshotted at generation time so deleting an asset later doesn't make an
     // already-rendered creative unexplainable.
     sourceAssetKeys: text("source_asset_keys").array().notNull().default(sql`'{}'::text[]`),
+    // Which make of this campaign's ad: 1 = the first, 2 = after one redo...
+    // Shown as "Version N" so a redo is visibly a new version (migration 0028).
+    version: integer("version").notNull().default(1),
 
     // queued -> rendering -> ready | failed
     renderStatus: text("render_status").notNull().default("queued"),
