@@ -971,8 +971,8 @@ export default function NewCampaignPage() {
                 onChange={set("landingUrl")}
               />
               <FieldHint>
-                Optional. Google needs a link before your ad goes live, but no website is fine: we&apos;ve got
-                you covered, and can make you one from your ad in minutes.
+                Optional. YouTube needs a website link before your ad goes live. No website yet? Don&apos;t
+                worry, we&apos;ve got you covered: we can make you one in minutes, with no hassle and at almost no cost.
               </FieldHint>
             </div>
 
