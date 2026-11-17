@@ -31,6 +31,8 @@ For each photo, write one motion sentence for an image-to-video model: the clear
 
 Also write openerPrompt: one text-to-video prompt for a 5-second cinematic opening shot that plays before the real photos and sets the mood of this business (a plumber: water running clear over polished copper at dawn; a salon: warm morning light across empty styling chairs). Describe light, texture, materials and camera movement only. NEVER people or faces, NEVER text, signs, labels, logos, numbers or prices (don't write the shot length either), and never a specific product the business may not sell: it is generated footage, not evidence. For real estate, the mood of a neighbourhood at golden hour, never a specific home and never who lives there.
 
+When the advertiser supplied before & after photos of their own work, they play as their own scene right after the opening, labelled BEFORE and AFTER; they are not among the indexed photos and need no scene. The voiceover may point to them in general words ("from this... to this", "see the difference") but must not claim anything about that job the advertiser did not state: no time taken, no price, no materials, no guarantee, no "like new".
+
 Aim for a 15-second spot unless the scene count makes that impossible. Assign each scene to one of the supplied photos by index, and use each photo at most once unless there are fewer photos than scenes.`;
 
 export function buildAdScriptUserPrompt(input: {
@@ -47,6 +49,7 @@ export function buildAdScriptUserPrompt(input: {
   peopleIndexes?: number[];
   portraitIndex?: number | null;
   photosAttached?: boolean;
+  beforeAfterPairs?: number;
 }): string {
   const addr = input.targetAddress;
   const place = addr ? `${addr.street}, ${addr.city}, ${addr.state}` : null;
@@ -91,6 +94,12 @@ export function buildAdScriptUserPrompt(input: {
   if (input.portraitIndex != null && input.portraitIndex >= 0) {
     lines.push(
       `Photo ${input.portraitIndex} is the agent's own photo: use it for the last scene, with the call to action and their name.`,
+    );
+  }
+
+  if (input.beforeAfterPairs && input.beforeAfterPairs > 0) {
+    lines.push(
+      `Before & after: ${input.beforeAfterPairs} pair${input.beforeAfterPairs > 1 ? "s" : ""} of real before and after photos of the advertiser's own work play right after the opening (not attached, not indexed). The voiceover may say "from this... to this" style lines; claim nothing specific about the job.`,
     );
   }
 

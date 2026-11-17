@@ -10,6 +10,7 @@ import {
   getNewAdQuote,
   orderNewAd,
   getMe,
+  setBeforeAfter,
   listAssets,
   uploadAsset,
   uploadCreativeVideo,
@@ -24,6 +25,8 @@ import { callToActionSuggestions, campaignNameSuggestions } from "@/lib/suggesti
 import { AudienceFiltersEditor, HOUSING_NOTICE } from "@/components/AudienceFiltersEditor";
 import { actsAsAdmin } from "@/lib/testMode";
 import { ScriptProgress } from "../[campaignId]/render-progress";
+import { BeforeAfterEditor, completePairs, hasHalfPair, type DraftPair } from "@/components/BeforeAfterEditor";
+import { BEFORE_AFTER_ERRORS, beforeAfterAllowed } from "@/lib/beforeAfter";
 
 import {
   AUDIENCE_FILTERS_ENABLED,
@@ -166,6 +169,9 @@ export default function NewCampaignPage() {
   // Photos added under "You and your team" (always people).
   const [teamIds, setTeamIds] = useState<string[]>([]);
   const [uploading, setUploading] = useState(false);
+  // "Show your work: before & after" (trades only, lib/beforeAfter).
+  const [baPairs, setBaPairs] = useState<DraftPair[]>([]);
+  const [baAttested, setBaAttested] = useState(false);
 
   // Step 2 — targeting
   const [form, setForm] = useState({
@@ -359,6 +365,22 @@ export default function NewCampaignPage() {
               },
       });
 
+      // Before & after pairs live on the campaign, so they are saved before the
+      // ad is made or paid for (the paid order makes it later from the same row).
+      const pairs = showBeforeAfter ? completePairs(baPairs) : [];
+      if (pairs.length > 0) {
+        try {
+          await setBeforeAfter(campaign.id, pairs, baAttested);
+        } catch (err) {
+          const code = err instanceof ApiError ? err.code : "error";
+          setError(
+            `The campaign was created, but the before & after photos weren't saved (${BEFORE_AFTER_ERRORS[code] ?? code}). Opening the campaign so you can add them again…`,
+          );
+          setTimeout(() => router.push(`/dashboard/campaigns/${campaign.id}`), 3000);
+          return;
+        }
+      }
+
       // 202 — the API writes the scripts and queues the renders, then returns.
       // Encoding takes ~30s per creative, so the campaign page polls rather
       // than this request blocking on ffmpeg.
@@ -457,7 +479,13 @@ export default function NewCampaignPage() {
     }
   }
 
-  const canAdvanceFrom1 = useVideo ? videoFile !== null && rightsAttested : selectedAssetIds.length >= 1;
+  const showBeforeAfter = !useVideo && beforeAfterAllowed(category);
+  // Optional, but a half-made pair or an unticked box must be fixed first.
+  const beforeAfterReady =
+    !showBeforeAfter || (!hasHalfPair(baPairs) && (completePairs(baPairs).length === 0 || baAttested));
+  const canAdvanceFrom1 = useVideo
+    ? videoFile !== null && rightsAttested
+    : selectedAssetIds.length >= 1 && beforeAfterReady;
   const canAdvanceFrom2 =
     form.name.trim() &&
     form.businessName.trim() &&
@@ -766,6 +794,38 @@ export default function NewCampaignPage() {
               </>
             )}
           </div>
+
+          {showBeforeAfter && (
+            <div className="mt-8 border-t border-white/10 pt-6">
+              <h3 className="flex items-center gap-2 text-base font-semibold text-zinc-100">
+                Show your work: before &amp; after
+                <span className="rounded-full bg-white/10 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-zinc-300">
+                  Optional
+                </span>
+              </h3>
+              <p className="mt-1 text-sm text-zinc-400">
+                Up to two jobs: a photo from before you started and one of the finished work, taken from about the same
+                spot. Your ad shows the before, then wipes to the after. These photos are used exactly as you took them:
+                no touch-ups and no animation.
+              </p>
+              <BeforeAfterEditor
+                pairs={baPairs}
+                attested={baAttested}
+                onChange={(p, a) => {
+                  setBaPairs(p);
+                  setBaAttested(a);
+                }}
+                disabled={busy}
+              />
+              {!beforeAfterReady && (
+                <p className="mt-2 text-sm text-amber-300">
+                  {hasHalfPair(baPairs)
+                    ? "Each job needs both a before and an after photo (or remove it)."
+                    : "Tick the box to confirm these are real photos of your own work."}
+                </p>
+              )}
+            </div>
+          )}
 
           <div className="mt-6 flex justify-between">
             <Button variant="ghost" onClick={() => setStep(1)}>

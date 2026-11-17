@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import type { AdScript } from "../lib/script/schema.js";
+import { BEFORE_AFTER_PAIR_SECONDS } from "../lib/beforeAfter/policy.js";
 
 const exec = promisify(execFile);
 
@@ -144,6 +145,52 @@ async function renderScene(args: {
   ]);
 }
 
+// One half of a before & after pair (lib/beforeAfter): the photo exactly as
+// taken, with no zoom, no motion and no AI, under a BEFORE or AFTER label.
+// Both halves go through this same function, so a pair always gets identical
+// treatment. The whole photo is shown (fit inside the frame over a blurred
+// copy of itself) rather than cropped, so nothing of the job is cut away.
+export function beforeAfterStillFilter(label: "BEFORE" | "AFTER", aspectRatio: AspectRatio): string {
+  const { width, height } = DIMENSIONS[aspectRatio];
+  const fontSize = aspectRatio === "9:16" ? 72 : 64;
+  return [
+    `[0:v]split=2[bg][fg]`,
+    `[bg]scale=${width}:${height}:force_original_aspect_ratio=increase,crop=${width}:${height},boxblur=24:2,eq=brightness=-0.15[bgb]`,
+    `[fg]scale=${width}:${height}:force_original_aspect_ratio=decrease[fgs]`,
+    [
+      `[bgb][fgs]overlay=(W-w)/2:(H-h)/2`,
+      `drawtext=fontfile=${FONT_BOLD}:expansion=none:text='${label}':fontcolor=${label === "AFTER" ? "0x101418" : "white"}` +
+        `:fontsize=${fontSize}:x=${Math.round(width * 0.05)}:y=${Math.round(height * 0.06)}` +
+        `:box=1:boxcolor=${label === "AFTER" ? "0xF5C242" : "black@0.75"}:boxborderw=24`,
+      `fps=30`,
+      `format=yuv420p[out]`,
+    ].join(","),
+  ].join(";");
+}
+
+async function renderBeforeAfterStill(args: {
+  imagePath: string;
+  label: "BEFORE" | "AFTER";
+  outputPath: string;
+  durationSeconds: number;
+  aspectRatio: AspectRatio;
+}): Promise<void> {
+  await ffmpeg([
+    "-loop", "1",
+    "-i", args.imagePath,
+    "-t", String(args.durationSeconds),
+    "-filter_complex", beforeAfterStillFilter(args.label, args.aspectRatio),
+    "-map", "[out]",
+    "-r", "30",
+    "-c:v", "libx264",
+    "-preset", "veryfast",
+    "-crf", "23",
+    "-pix_fmt", "yuv420p",
+    "-an",
+    args.outputPath,
+  ]);
+}
+
 // Closing frame: business name and call to action on a flat background. Built
 // with lavfi rather than from an uploaded photo so it renders identically
 // regardless of what the advertiser uploaded.
@@ -269,6 +316,9 @@ export type RenderInputs = {
   clipPaths?: Map<number, string>;
   // Optional voiceover audio for the whole spot. Absent means a silent cut.
   voicePath?: string;
+  // Before & after pairs (plain photos), shown after the first scene: the
+  // before, then the after, each labelled. No wipe here; the template has it.
+  beforeAfterPaths?: { before: string; after: string }[];
 };
 
 export type RenderOutputs = {
@@ -303,6 +353,24 @@ export async function renderCreative(input: RenderInputs): Promise<RenderOutputs
     });
     segments.push(segmentPath);
     durationSeconds += scene.durationSeconds;
+
+    // After the opening scene (or the only one), the before & after pairs.
+    if (i === 0) {
+      for (const [p, pair] of (input.beforeAfterPaths ?? []).slice(0, 2).entries()) {
+        for (const [label, imagePath] of [["BEFORE", pair.before], ["AFTER", pair.after]] as const) {
+          const baPath = join(input.workDir, `ba-${p}-${label.toLowerCase()}.mp4`);
+          await renderBeforeAfterStill({
+            imagePath,
+            label,
+            outputPath: baPath,
+            durationSeconds: BEFORE_AFTER_PAIR_SECONDS / 2,
+            aspectRatio: input.aspectRatio,
+          });
+          segments.push(baPath);
+          durationSeconds += BEFORE_AFTER_PAIR_SECONDS / 2;
+        }
+      }
+    }
   }
 
   const endCardPath = join(input.workDir, "end-card.mp4");

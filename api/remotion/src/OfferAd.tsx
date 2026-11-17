@@ -55,6 +55,14 @@ export type OfferAdProps = {
    * little longer; every real photo then goes to the reel.
    */
   opener?: string;
+  /**
+   * Before & after pairs (2026-11-17, api lib/beforeAfter): the advertiser's
+   * own photos of one job, shown PLAIN (no AI pass, no motion, no zoom; both
+   * halves treated identically) after the opener: BEFORE, a wipe, AFTER.
+   */
+  beforeAfter?: { before: string; after: string }[];
+  /** Seconds per pair (api BEFORE_AFTER_PAIR_SECONDS). */
+  beforeAfterSeconds?: number;
   durationSeconds: number;
   width: number;
   height: number;
@@ -106,6 +114,95 @@ const MovingPhoto: React.FC<{ photo: string; seconds: number; dir: number; blur?
           filter: blur ? `blur(${blur}px) brightness(0.7)` : undefined,
         }}
       />
+    </AbsoluteFill>
+  );
+};
+
+// One plain photo, whole (fit inside the frame over a blurred copy of itself),
+// never moving. Used for BOTH halves of a pair so they look exactly alike.
+const PlainPhoto: React.FC<{ photo: string }> = ({ photo }) => (
+  <AbsoluteFill style={{ overflow: "hidden", background: "#000" }}>
+    <Img
+      src={photo}
+      style={{ width: "100%", height: "100%", objectFit: "cover", filter: "blur(28px) brightness(0.55)", transform: "scale(1.1)" }}
+    />
+    <AbsoluteFill>
+      <Img src={photo} style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+    </AbsoluteFill>
+  </AbsoluteFill>
+);
+
+const BaLabel: React.FC<{ text: string; side: "left" | "right"; u: number; bg: string; fg: string; show: number }> = ({
+  text,
+  side,
+  u,
+  bg,
+  fg,
+  show,
+}) => (
+  <div
+    style={{
+      position: "absolute",
+      top: 70 * u,
+      [side]: 50 * u,
+      fontFamily,
+      fontWeight: 900,
+      fontSize: 64 * u,
+      letterSpacing: 4 * u,
+      color: fg,
+      background: bg,
+      padding: `${10 * u}px ${32 * u}px`,
+      borderRadius: 18 * u,
+      boxShadow: "0 12px 40px rgba(0,0,0,.45)",
+      opacity: show,
+      transform: `scale(${interpolate(show, [0, 1], [0.7, 1])})`,
+    }}
+  >
+    {text}
+  </div>
+);
+
+// BEFORE for ~40% of the pair, then a left-to-right wipe (a bright edge
+// travelling across) reveals AFTER, which holds to the end.
+const BeforeAfterPair: React.FC<{ before: string; after: string; seconds: number; u: number; accent: string; brand: string }> = ({
+  before,
+  after,
+  seconds,
+  u,
+  accent,
+  brand,
+}) => {
+  const frame = useCurrentFrame();
+  const { fps, width } = useVideoConfig();
+  const t = frame / fps;
+  const wipeStart = seconds * 0.38;
+  const wipeEnd = wipeStart + 0.9;
+  const p = interpolate(t, [wipeStart, wipeEnd], [0, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
+  // Ease in-out so the edge doesn't start or stop abruptly.
+  const e = p < 0.5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2;
+  const edge = e * width;
+  const beforeIn = spring({ frame, fps, config: { damping: 200 }, durationInFrames: 10 });
+  return (
+    <AbsoluteFill>
+      <PlainPhoto photo={before} />
+      <AbsoluteFill style={{ clipPath: `inset(0 ${100 - e * 100}% 0 0)` }}>
+        <PlainPhoto photo={after} />
+      </AbsoluteFill>
+      {e > 0 && e < 1 && (
+        <div
+          style={{
+            position: "absolute",
+            top: 0,
+            bottom: 0,
+            left: edge - 4 * u,
+            width: 8 * u,
+            background: "#fff",
+            boxShadow: `0 0 ${30 * u}px ${accent}`,
+          }}
+        />
+      )}
+      <BaLabel text="BEFORE" side="left" u={u} bg="rgba(0,0,0,.78)" fg="#fff" show={beforeIn * (1 - e)} />
+      <BaLabel text="AFTER" side="right" u={u} bg={accent} fg={brand} show={e} />
     </AbsoluteFill>
   );
 };
@@ -365,7 +462,11 @@ export const OfferAd: React.FC<OfferAdProps> = (p) => {
   const f = (s: number) => Math.round(s * fps);
   const u = vertical ? width / 1080 : height / 1080;
   const hookEnd = p.opener ? OPENER_HOOK_END : HOOK_END;
-  const photosEnd = Math.max(hookEnd + 5, p.durationSeconds - END_CARD_SECONDS);
+  const pairs = p.cinematic ? [] : (p.beforeAfter ?? []).slice(0, 2);
+  const pairSeconds = p.beforeAfterSeconds ?? 3.5;
+  // The before & after scene sits between the hook and the reel.
+  const reelStart = hookEnd + pairs.length * pairSeconds;
+  const photosEnd = Math.max(reelStart + 5, p.durationSeconds - END_CARD_SECONDS);
   // The hook uses the first photo (or the opener); the reel the rest (or all,
   // if only one or two, or if the opener took the hook).
   const reel = p.opener || p.photos.length <= 2 ? p.photos : p.photos.slice(1);
@@ -386,10 +487,17 @@ export const OfferAd: React.FC<OfferAdProps> = (p) => {
         </AbsoluteFill>
       </Sequence>
 
+      {/* 1b. Before & after: full screen in both formats, plain photos. */}
+      {pairs.map((pair, i) => (
+        <Sequence key={pair.before + i} from={f(hookEnd + i * pairSeconds)} durationInFrames={f(pairSeconds)}>
+          <BeforeAfterPair before={pair.before} after={pair.after} seconds={pairSeconds} u={u} accent={p.accentColor} brand={p.brandColor} />
+        </Sequence>
+      ))}
+
       {/* 2. The business, moving. Landscape frames the photos on the right. */}
-      <Sequence from={f(hookEnd)} durationInFrames={f(photosEnd - hookEnd)}>
-        {!vertical && !p.cinematic && <MovingPhoto photo={p.photos[0]} seconds={photosEnd - hookEnd} dir={-1} blur={24} />}
-        <PhotoReel photos={reel} seconds={photosEnd - hookEnd} framed={!vertical && !p.cinematic} />
+      <Sequence from={f(reelStart)} durationInFrames={f(photosEnd - reelStart)}>
+        {!vertical && !p.cinematic && <MovingPhoto photo={p.photos[0]} seconds={photosEnd - reelStart} dir={-1} blur={24} />}
+        <PhotoReel photos={reel} seconds={photosEnd - reelStart} framed={!vertical && !p.cinematic} />
         {!vertical && !p.cinematic && (
           <AbsoluteFill style={{ inset: "0 56% 0 4%", justifyContent: "center" }}>
             <div style={{ fontFamily, fontWeight: 900, fontSize: 110 * u * Math.min(1, 6 / p.priceText.length), color: p.accentColor, lineHeight: 1 }}>

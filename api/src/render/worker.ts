@@ -38,6 +38,7 @@ import { adScriptSchema, type AdScript } from "../lib/script/schema.js";
 import { falMotionPrompt, motionIsPerFormat, motionProvider } from "../lib/ai/motion/index.js";
 import { falOmni } from "../lib/ai/cinematic/index.js";
 import { enhancePhotos } from "./enhance.js";
+import { plainPhotoIndexes } from "../lib/beforeAfter/policy.js";
 import { defaultVoiceFor } from "../lib/script/schema.js";
 import { synthesizeVoice, voiceProvider } from "../lib/ai/voice/index.js";
 import {
@@ -97,6 +98,8 @@ async function generateMotionClips(args: {
   workDir: string;
   creativeId: string;
   campaignId: string;
+  /** Photo indexes that must stay plain (before & after photos): never a motion clip. */
+  plain?: number[];
 }): Promise<Map<number, string>> {
   const clips = new Map<number, string>();
   const provider = motionProvider();
@@ -115,9 +118,11 @@ async function generateMotionClips(args: {
   );
   const picked: { i: number; scene: (typeof args.script.scenes)[number]; imagePath: string; key: string }[] = [];
   const seenKeys = new Set<string>();
+  const plain = new Set(args.plain ?? []);
   for (const [i, scene] of order) {
     if (picked.length >= MOTION_MAX_CLIPS) break;
     const assetIndex = Math.min(scene.assetIndex, args.imagePaths.length - 1);
+    if (plain.has(assetIndex)) continue;
     const imagePath = args.imagePaths[assetIndex];
     const key = args.sourceAssetKeys[assetIndex];
     if (!imagePath || !key || seenKeys.has(key)) continue;
@@ -350,6 +355,23 @@ async function processJob(job: RenderJob): Promise<void> {
 
     const aspectRatio = creative.aspectRatio as AspectRatio;
 
+    // Before & after pairs (lib/beforeAfter): downloaded as they are and
+    // handed straight to the layout. They never go through the photo pass or
+    // motion below, so both halves of a pair get the same plain treatment.
+    const beforeAfterPaths: { before: string; after: string }[] = [];
+    for (const [i, pair] of (script.beforeAfter ?? []).entries()) {
+      const paths = [];
+      for (const [half, key] of [["before", pair.beforeKey], ["after", pair.afterKey]] as const) {
+        const path = join(workDir, `ba-${i}-${half}.${key.split(".").pop() ?? "jpg"}`);
+        await writeFile(path, await getObjectBytes(key));
+        paths.push(path);
+      }
+      beforeAfterPaths.push({ before: paths[0]!, after: paths[1]! });
+    }
+    // The same photo in the ordinary photos too (only when every chosen photo
+    // was a pair photo, lib/creatives/generate.ts): it stays plain there too.
+    const plain = plainPhotoIndexes(creative.sourceAssetKeys, script.beforeAfter);
+
     // The demo "pro photo" pass (render/enhance.ts): brighter, sharper, tidied
     // photos for both the stills and the motion clips. Off unless
     // PHOTO_ENHANCE=fal; never the agent's portrait; failures keep originals.
@@ -357,7 +379,7 @@ async function processJob(job: RenderJob): Promise<void> {
       campaignId: creative.campaignId,
       sourceAssetKeys: creative.sourceAssetKeys,
       imagePaths,
-      skip: script.portraitIndex != null ? [script.portraitIndex] : [],
+      skip: [...(script.portraitIndex != null ? [script.portraitIndex] : []), ...plain],
       workDir,
       log: (msg, extra) => log(msg, { creativeId: creative.id, ...(extra as object) }),
     });
@@ -376,6 +398,7 @@ async function processJob(job: RenderJob): Promise<void> {
       workDir,
       creativeId: creative.id,
       campaignId: creative.campaignId,
+      plain,
     });
     // Template only: the ffmpeg fallback layout has no opener slot.
     const opener = TEMPLATE_ENABLED
@@ -403,6 +426,7 @@ async function processJob(job: RenderJob): Promise<void> {
             clipPaths,
             voicePath,
             openerPath: opener?.path,
+            beforeAfterPaths,
             businessName: creative.businessName,
             businessCategory: creative.businessCategory,
             landingUrl: creative.landingUrl,
@@ -423,6 +447,7 @@ async function processJob(job: RenderJob): Promise<void> {
         imagePaths,
         clipPaths,
         voicePath,
+        beforeAfterPaths,
       });
     }
 
@@ -453,6 +478,7 @@ async function processJob(job: RenderJob): Promise<void> {
         photosEnhancedReused: enhanced.reused,
         enhanceErrors: enhanced.errors.length ? enhanced.errors : undefined,
         perPhotoMotion: Boolean(script.photoMotions?.length),
+        beforeAfterPairs: beforeAfterPaths.length || undefined,
         // Why there is no opener, when there is none: the script had no usable
         // prompt (none written, or dropped by the safety filter) vs generation failed.
         opener: opener ? (opener.reused ? "reused" : "made") : !AD_OPENER ? null : script.openerPrompt ? "failed" : "no-prompt",

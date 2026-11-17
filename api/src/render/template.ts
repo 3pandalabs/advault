@@ -5,6 +5,7 @@ import { promisify } from "node:util";
 import type { AdScript } from "../lib/script/schema.js";
 import type { AspectRatio } from "./ffmpeg.js";
 import { DIMENSIONS } from "./ffmpeg.js";
+import { BEFORE_AFTER_PAIR_SECONDS } from "../lib/beforeAfter/policy.js";
 
 const exec = promisify(execFile);
 
@@ -108,6 +109,8 @@ export type TemplateInputs = {
   cinematic?: boolean;
   /** Mixed ad: a cinematic opening shot under the offer sticker. */
   openerPath?: string;
+  /** Before & after pairs (plain photos, lib/beforeAfter): a wipe scene after the opener. */
+  beforeAfterPaths?: { before: string; after: string }[];
 };
 
 /** Renders the template ad; returns the MP4 path, or null to fall back. */
@@ -134,11 +137,17 @@ export async function renderTemplate(input: TemplateInputs, log: (msg: string, e
 
   const spoken = input.voicePath ? await audioSeconds(input.voicePath) : null;
   const sceneSeconds = script.scenes.reduce((a, s) => a + s.durationSeconds, 0);
+  const pairs = input.cinematic ? [] : (input.beforeAfterPaths ?? []).slice(0, 2);
+  // Each pair adds its own time; the reel keeps what it had.
+  const pairSeconds = pairs.length * BEFORE_AFTER_PAIR_SECONDS;
   // Room for the voice plus the 4.2 s end card; within YouTube-friendly bounds.
   const durationSeconds = input.cinematic
     ? Math.min(30, Math.max(15, Math.ceil(Math.max(spoken ?? 0, sceneSeconds - 2) + 4.5)))
     : // An opener takes ~1.4 s more of hook, so the reel keeps its time.
-      Math.min(input.openerPath ? 22 : 20, Math.max(12, Math.ceil((spoken ?? sceneSeconds - 2) + 5 + (input.openerPath ? 1.5 : 0))));
+      Math.min(
+        (input.openerPath ? 22 : 20) + pairSeconds,
+        Math.max(12 + pairSeconds, Math.ceil((spoken ?? sceneSeconds - 2) + 5 + (input.openerPath ? 1.5 : 0) + pairSeconds)),
+      );
   const captions = timeCaptions(
     script.scenes.map((s) => s.caption),
     spoken ?? durationSeconds - 4.5,
@@ -165,6 +174,8 @@ export async function renderTemplate(input: TemplateInputs, log: (msg: string, e
     captions,
     cinematic: input.cinematic ?? false,
     opener: input.openerPath ? basename(input.openerPath) : undefined,
+    beforeAfter: pairs.map((p) => ({ before: basename(p.before), after: basename(p.after) })),
+    beforeAfterSeconds: BEFORE_AFTER_PAIR_SECONDS,
     durationSeconds,
     width,
     height,

@@ -38,6 +38,8 @@ export type GenerateScriptInput = {
    * limit) it is retried once without.
    */
   imageUrls?: string[];
+  /** How many before & after pairs play after the opener (lib/beforeAfter). Not attached as images. */
+  beforeAfterPairs?: number;
 };
 
 // Structured outputs rather than tool use: there is one shape to return and no

@@ -85,6 +85,13 @@ export default function PrivacyPage() {
           that go into the video, plus the original filename, file type and size.
         </li>
         <li>
+          <strong>Before &amp; after photos</strong> — for trades only (contractors, cleaning,
+          landscaping, auto work and similar), if you add them: up to two pairs of photos of a
+          job you did, and a record of who confirmed they are real photos of your own work and
+          when. They appear in your ad exactly as you took them (no touch-ups, no animation) and,
+          if we make your website, on your SiteVault site.
+        </li>
+        <li>
           <strong>Videos you upload</strong> — if you use your own finished video instead of
           one AdVault makes: the video file, its size and length, and a record of who
           confirmed they hold the rights to it and when. An AdVault staff member watches
@@ -317,8 +324,8 @@ export default function PrivacyPage() {
           <tr>
             <td>SiteVault (our own website builder, also by 3PandaLabs, hosted on Cloudflare)</td>
             <td>
-              Your business name, category, offer, the phone, town and hours you give us, and your
-              ad photos
+              Your business name, category, offer, the phone, town and hours you give us, your
+              ad photos, and your before &amp; after photos if you added any
             </td>
             <td>
               Only if you press &ldquo;Make me a website&rdquo;: to build and publish your public
@@ -343,7 +350,7 @@ export default function PrivacyPage() {
           <tr>
             <td>AI providers for script, photos, video and voice (Anthropic; Google Gemini video, directly through Google Cloud and through fal.ai; Meta Muse image editing, Kling and ElevenLabs through fal.ai)</td>
             <td>Your business name, category and offer text; the photos you uploaded for the ad; the ad&apos;s narration text</td>
-            <td>To write the script (the script writer looks at your photos), touch up the photos (lighting, sharpness, tidying; never the agent portrait), animate them and read the voiceover</td>
+            <td>To write the script (the script writer looks at your photos), touch up the photos (lighting, sharpness, tidying; never the agent portrait or before &amp; after photos), animate them and read the voiceover</td>
           </tr>
           <tr>
             <td>Payment providers</td>

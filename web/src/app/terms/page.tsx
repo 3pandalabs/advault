@@ -213,6 +213,12 @@ export default function TermsPage() {
         delete the material or close your account, except where it is already part of a
         published advertisement.
       </p>
+      <p>
+        If you add <strong>before &amp; after photos</strong>, you confirm they are real,
+        unedited photos of work your business did, showing the same job. We show them as
+        you took them, without AI touch-ups or animation, and you must not use them to
+        suggest results you don&apos;t deliver.
+      </p>
 
       <h2>8. Who owns the finished advertisement</h2>
       <p>

@@ -83,19 +83,48 @@ export type SitevaultResult =
 /** The finished ad, shown on the site. MP4 only, under SiteVault's 40 MB limit. */
 export type Video = { bytes: Buffer };
 
+/** One before & after pair of the advertiser's own work (lib/beforeAfter), as sent. */
+export type BeforeAfterPhotos = { before: Photo; after: Photo };
+
+function photoExt(contentType: string): string {
+  return contentType === "image/png" ? "png" : contentType === "image/webp" ? "webp" : "jpg";
+}
+
+/**
+ * Before & after pairs as SiteVault's internal create takes them: file fields
+ * `ba1Before`, `ba1After`, `ba2Before`, `ba2After` (2026-11-17). Optional:
+ * a site without pairs sends none of them, exactly as before. Both halves or
+ * neither, at most two pairs; a half pair is dropped here rather than sent.
+ */
+export function appendBeforeAfter(form: FormData, pairs: readonly BeforeAfterPhotos[]): void {
+  pairs
+    .filter((p) => p.before && p.after)
+    .slice(0, 2)
+    .forEach((p, i) => {
+      for (const [half, photo] of [["Before", p.before], ["After", p.after]] as const) {
+        form.append(
+          `ba${i + 1}${half}`,
+          new Blob([new Uint8Array(photo.bytes)], { type: photo.contentType }),
+          `ba${i + 1}-${half.toLowerCase()}.${photoExt(photo.contentType)}`,
+        );
+      }
+    });
+}
+
 export async function createSitevaultSite(
   fields: WebsiteFields,
   photos: Photo[],
   video: Video | null = null,
+  beforeAfter: readonly BeforeAfterPhotos[] = [],
 ): Promise<SitevaultResult> {
   const token = process.env.SITEVAULT_INTERNAL_TOKEN;
   if (!token) return { ok: false, status: 503, errors: { form: "website_builder_not_configured" } };
   const form = new FormData();
   for (const [k, v] of Object.entries(fields)) if (v) form.append(k, v);
   photos.forEach((p, i) => {
-    const ext = p.contentType === "image/png" ? "png" : p.contentType === "image/webp" ? "webp" : "jpg";
-    form.append("photos", new Blob([new Uint8Array(p.bytes)], { type: p.contentType }), `photo-${i + 1}.${ext}`);
+    form.append("photos", new Blob([new Uint8Array(p.bytes)], { type: p.contentType }), `photo-${i + 1}.${photoExt(p.contentType)}`);
   });
+  appendBeforeAfter(form, beforeAfter);
   if (video) form.append("video", new Blob([new Uint8Array(video.bytes)], { type: "video/mp4" }), "ad.mp4");
   const res = await fetch(`${SITEVAULT_URL}/api/internal/sites`, {
     method: "POST",
