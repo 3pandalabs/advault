@@ -44,9 +44,20 @@ const startedNow = () => Date.now();
 // creatives render for free; spending is a separate, explicit action on the
 // campaign page.
 
-const ASPECT_OPTIONS = [
-  { value: "16:9" as const, label: "16:9 pre-roll", hint: "Plays before YouTube videos" },
-  { value: "9:16" as const, label: "9:16 Shorts", hint: "Vertical, for the Shorts feed" },
+// Every ad is made in BOTH shapes (2026-11-17, Anil): no choice is offered.
+// Google serves the 9:16 cut on Shorts and the 16:9 one in-stream, so one
+// shape alone silently halves where the ad can run. Same price either way.
+const FORMATS = [
+  {
+    value: "16:9" as const,
+    label: "Widescreen (16:9)",
+    hint: "Plays before and during YouTube videos: on TVs, laptops and phones held sideways.",
+  },
+  {
+    value: "9:16" as const,
+    label: "Vertical (9:16)",
+    hint: "Fills the whole phone screen in the YouTube Shorts feed, where many people now watch.",
+  },
 ];
 
 const MAX_PHOTOS = 5;
@@ -188,7 +199,7 @@ export default function NewCampaignPage() {
   const [profile, setProfile] = useState({ businessName: "", customCategory: "" });
 
   // Step 3 — formats
-  const [aspectRatios, setAspectRatios] = useState<("16:9" | "9:16")[]>(["16:9", "9:16"]);
+  const aspectRatios: ("16:9" | "9:16")[] = FORMATS.map((f) => f.value);
   // Keep it running subscribers pay per ad; null means the ad is included.
   const [newAdPrice, setNewAdPrice] = useState<string | null>(null);
   const [freeAd, setFreeAd] = useState(false);
@@ -1126,35 +1137,24 @@ export default function NewCampaignPage() {
 
       {step === 3 && (
         <Card>
-          <CardTitle>Which formats?</CardTitle>
+          <CardTitle>Your ad comes in two shapes</CardTitle>
           <CardDescription>
-            Most local businesses run both. They are written separately — a vertical Shorts
-            caption has far less room than the same words in a 16:9 pre-roll.
+            We make both, at no extra cost. YouTube shows each one where it fits best, so your
+            ad can appear in more places for the same budget.
           </CardDescription>
 
-          <div className="mt-5 space-y-3">
-            {ASPECT_OPTIONS.map((opt) => (
-              <label
-                key={opt.value}
-                className="flex cursor-pointer items-start gap-3 rounded-lg border border-white/10 bg-white/[0.02] p-3 hover:bg-white/[0.05]"
-              >
-                <input
-                  type="checkbox"
-                  className="mt-1 accent-amber-400"
-                  checked={aspectRatios.includes(opt.value)}
-                  onChange={(e) =>
-                    setAspectRatios((r) =>
-                      e.target.checked ? [...r, opt.value] : r.filter((x) => x !== opt.value),
-                    )
-                  }
-                />
-                <span>
-                  <span className="block text-sm font-medium text-zinc-100">{opt.label}</span>
-                  <span className="block text-xs text-zinc-500">{opt.hint}</span>
-                </span>
-              </label>
+          <ul className="mt-5 space-y-3">
+            {FORMATS.map((f) => (
+              <li key={f.value} className="rounded-lg border border-white/10 bg-white/[0.02] p-3">
+                <span className="block text-sm font-medium text-zinc-100">{f.label}</span>
+                <span className="block text-xs text-zinc-500">{f.hint}</span>
+              </li>
             ))}
-          </div>
+          </ul>
+          <p className="mt-3 text-xs text-zinc-500">
+            The words on screen are written separately for each, because a vertical screen has
+            less room for them.
+          </p>
 
           {freeAd ? (
             <p className="mt-5 text-sm text-zinc-400">
@@ -1184,7 +1184,7 @@ export default function NewCampaignPage() {
             <Button variant="ghost" onClick={() => setStep(2)}>
               Back
             </Button>
-            <Button onClick={onFinish} disabled={busy || aspectRatios.length === 0}>
+            <Button onClick={onFinish} disabled={busy}>
               {busy ? "Creating…" : freeAd ? "Make my free ad" : newAdPrice ? `Pay ${newAdPrice} and make my ad` : "Generate my ads"}
             </Button>
           </div>
