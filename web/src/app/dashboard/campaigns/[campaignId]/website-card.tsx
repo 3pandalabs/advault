@@ -62,9 +62,12 @@ export function WebsiteCard({
   campaign,
   onSaved,
   siteOfferRev = 0,
+  ownVideoOnly = false,
 }: {
   campaign: Campaign;
   onSaved: (c: Campaign) => void;
+  /** The campaign's only ads are the owner's own videos: theirs goes on the site when it's made. */
+  ownVideoOnly?: boolean;
   /** Bumped by the campaign page after a website offer is bought or pushed. */
   siteOfferRev?: number;
 }) {
@@ -288,7 +291,7 @@ export function WebsiteCard({
         </p>
       )}
 
-      {siteVaultSlug(campaign.landingUrl) && mode === "view" && (campaign.siteVideoPushedAt || campaign.siteVideoWanted || !locked) && (
+      {siteVaultSlug(campaign.landingUrl) && mode === "view" && !ownVideoOnly && (campaign.siteVideoPushedAt || campaign.siteVideoWanted || !locked) && (
         <p className="mt-3 text-sm text-zinc-300">
           {campaign.siteVideoPushedAt
             ? "Your ad is playing on your website."

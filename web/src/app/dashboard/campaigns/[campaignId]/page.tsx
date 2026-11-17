@@ -653,6 +653,7 @@ export default function CampaignDetailPage({
 
       <WebsiteCard
         campaign={campaign}
+        ownVideoOnly={campaign.creatives.length > 0 && campaign.creatives.every((c) => c.kind === "upload")}
         onSaved={(c) => setCampaign((prev) => (prev ? { ...prev, ...c } : prev))}
         siteOfferRev={siteOfferRev}
       />

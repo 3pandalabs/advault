@@ -23,12 +23,14 @@ export async function pushSiteVideo(campaignId: string): Promise<"pushed" | "fai
   };
   const slug = slugFromSiteUrl(c.landingUrl);
   if (!slug) return fail("not_a_sitevault_site");
+  // A generated ad first; a campaign that only has the owner's own video uses
+  // that (approved by an AdVault admin only: it goes on our domain).
   const rows = await db
     .select({ aspectRatio: creatives.aspectRatio, videoKey: creatives.videoKey, sizeBytes: creatives.sizeBytes })
     .from(creatives)
     .where(and(eq(creatives.campaignId, campaignId), ne(creatives.kind, "upload"), eq(creatives.renderStatus, "ready")))
     .orderBy(desc(creatives.createdAt));
-  const ad = pickSiteVideo(rows);
+  const ad = pickSiteVideo(rows) ?? pickSiteVideo(await approvedUploads(campaignId));
   if (!ad?.videoKey) return fail("no_ready_video");
   try {
     const bytes = await getObjectBytes(ad.videoKey);
@@ -43,6 +45,38 @@ export async function pushSiteVideo(campaignId: string): Promise<"pushed" | "fai
     .set({ siteVideoPushedAt: new Date(), siteVideoError: null })
     .where(eq(campaigns.id, campaignId));
   return "pushed";
+}
+
+/** The owner's own uploaded videos that an admin approved, newest first. */
+async function approvedUploads(campaignId: string) {
+  return db
+    .select({ aspectRatio: creatives.aspectRatio, videoKey: creatives.videoKey, sizeBytes: creatives.sizeBytes })
+    .from(creatives)
+    .where(
+      and(
+        eq(creatives.campaignId, campaignId),
+        eq(creatives.kind, "upload"),
+        eq(creatives.renderStatus, "ready"),
+        eq(creatives.reviewStatus, "approved"),
+      ),
+    )
+    .orderBy(desc(creatives.createdAt));
+}
+
+/**
+ * For a website made from a campaign with no photos (the owner used their own
+ * video): their approved video goes on the site straight away, since it is
+ * theirs and the site has nothing else to show. Null when there is none yet.
+ */
+export async function ownVideoForNewSite(campaignId: string): Promise<{ bytes: Buffer } | null> {
+  const ad = pickSiteVideo(await approvedUploads(campaignId));
+  if (!ad?.videoKey) return null;
+  try {
+    const bytes = await getObjectBytes(ad.videoKey);
+    return bytes.length <= SITE_VIDEO_MAX_BYTES ? { bytes } : null;
+  } catch {
+    return null;
+  }
 }
 
 /** After launch: never awaited by the launch path. */

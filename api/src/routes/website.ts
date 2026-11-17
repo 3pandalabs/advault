@@ -1,3 +1,4 @@
+import { ownVideoForNewSite } from "../lib/siteVideo/index.js";
 import { and, desc, eq, isNotNull, ne } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
@@ -187,6 +188,7 @@ export async function websiteRoutes(app: FastifyInstance) {
       const [owner] = await db.select({ email: users.email }).from(users).where(eq(users.id, req.userId!)).limit(1);
       const housing = isHousingCategory(campaign.businessCategory);
       const { sticker } = await campaignAd(campaign.id);
+      const photos = await campaignPhotos(campaign.id);
       const result = await createSitevaultSite(
         {
           businessName: campaign.businessName,
@@ -206,7 +208,10 @@ export async function websiteRoutes(app: FastifyInstance) {
           // Admin test site on SiteVault: no one-per-phone rule, never claims the number.
           ownerAdmin: admin ? "1" : undefined,
         },
-        await campaignPhotos(campaign.id),
+        photos,
+        // No photos means they used their own video: it goes on the site now
+        // (approved uploads only). Generated ads still wait for launch.
+        photos.length === 0 ? await ownVideoForNewSite(campaign.id) : null,
       );
       if (!result.ok) {
         req.log.warn({ campaignId, status: result.status, errors: result.errors }, "sitevault create failed");
