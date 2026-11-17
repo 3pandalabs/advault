@@ -1,6 +1,7 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import type { CheckoutRequest, CheckoutSession, PaymentProvider, WebhookResult } from "./index.js";
 import { isCurrency } from "../pricing/index.js";
+import { isUndeliverableEmail } from "../testMode/policy.js";
 
 // Stripe — the USD rail. REST + fetch for the same reason as Razorpay: one
 // endpoint and one signature check.
@@ -55,7 +56,8 @@ export const stripe: PaymentProvider = {
       mode: "payment",
       success_url: `${req.returnUrl}?status=success`,
       cancel_url: `${req.returnUrl}?status=cancelled`,
-      customer_email: req.userEmail,
+      // A test customer's *.invalid address (0030) is left off; Stripe asks for one.
+      ...(isUndeliverableEmail(req.userEmail) ? {} : { customer_email: req.userEmail }),
       ...stripeLineItems(req),
       "payment_intent_data[statement_descriptor_suffix]": STATEMENT_DESCRIPTOR_SUFFIX,
       // Round-trips to the webhook. Same reasoning as Razorpay's notes: this is

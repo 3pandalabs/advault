@@ -162,6 +162,8 @@ export default function CampaignDetailPage({
   const [busy, setBusy] = useState(false);
   const [logo, setLogo] = useState<Asset | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
+  // An admin's test customer: launch is always a dry run (api routes/launch.ts).
+  const [isTestCustomer, setIsTestCustomer] = useState(false);
   // Two-click remove: the first click arms it, so a stray click can't delete.
   const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
   // Keep it running: the campaign's paid-ad order, if this user pays per ad.
@@ -205,7 +207,12 @@ export default function CampaignDetailPage({
   useEffect(() => {
     refresh();
     listAdAccounts().then(setAdAccounts).catch(() => undefined);
-    getMe().then((me) => setIsAdmin(actsAsAdmin(me))).catch(() => undefined);
+    getMe()
+      .then((me) => {
+        setIsAdmin(actsAsAdmin(me));
+        setIsTestCustomer(me.isTestCustomer === true);
+      })
+      .catch(() => undefined);
     getNewAdStatus(campaignId)
       .then((s) => {
         setNewAd(s);
@@ -312,10 +319,13 @@ export default function CampaignDetailPage({
     setLaunchNote(null);
     try {
       const result = await launchCampaign(campaignId, adAccountId, onSite ? videoOnSite : undefined);
+      const lead = result.validateOnly
+        ? "Dry run passed. Google checked everything. Nothing went live and $0 was spent."
+        : result.note;
       setLaunchNote(
         result.radiusMilesAroundAddress !== null
-          ? `${result.note} Targeted ${result.radiusMilesAroundAddress} miles around your listing.`
-          : `${result.note} Targeted ${result.zipCodesTargeted} of ${result.zipCodesRequested} ZIP codes.`,
+          ? `${lead} Targeted ${result.radiusMilesAroundAddress} miles around your listing.`
+          : `${lead} Targeted ${result.zipCodesTargeted} of ${result.zipCodesRequested} ZIP codes.`,
       );
       await refresh();
     } catch (err) {
@@ -355,7 +365,11 @@ export default function CampaignDetailPage({
   const activeAccounts = adAccounts?.accounts.filter((a) => a.status === "active") ?? [];
   // Accounts a campaign can go into right now. One still waiting for its card
   // gets the "being set up" message instead of a button that would 409.
-  const launchableAccounts = activeAccounts.filter((a) => !isAwaitingPlatformSetup(a));
+  // A test customer only ever does a dry run, which Google allows before the
+  // card is added, so any account Google already knows (has an id) will do.
+  const launchableAccounts = activeAccounts.filter((a) =>
+    isTestCustomer ? Boolean(a.customerId) : !isAwaitingPlatformSetup(a),
+  );
   const launchedAccount = adAccounts?.accounts.find((a) => a.id === campaign.adAccountId);
   const launchedForCustomer = launchedAccount?.billingMode === "platform";
 
@@ -809,8 +823,16 @@ export default function CampaignDetailPage({
           </CardDescription>
         ) : (
           <>
+            {isTestCustomer && (
+              <p className="mb-2 rounded-lg border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-sm text-amber-200">
+                Test customer: this is a dry run. Google checks everything, nothing goes live, and $0
+                is spent.
+              </p>
+            )}
             <CardDescription>
-              {launchableAccounts.some((a) => a.billingMode === "platform")
+              {isTestCustomer
+                ? "Press the button to have Google check this ad and its settings."
+                : launchableAccounts.some((a) => a.billingMode === "platform")
                 ? `Launching starts your ads with a ${formatMoney(campaign.dailyBudgetCents, campaign.currencyCode)} daily budget, paid from your AdVault balance. Google reviews new ads first, usually within a day.`
                 : `This creates a paused campaign in your Google Ads account with a ${formatMoney(campaign.dailyBudgetCents, campaign.currencyCode)} daily budget. It does not start spending until you enable it there.`}
             </CardDescription>
@@ -834,8 +856,12 @@ export default function CampaignDetailPage({
                   onClick={() => onLaunch(account.id)}
                 >
                   {busy
-                    ? "Launching…"
-                    : account.billingMode === "platform"
+                    ? isTestCustomer
+                      ? "Checking…"
+                      : "Launching…"
+                    : isTestCustomer
+                      ? "Do a dry run"
+                      : account.billingMode === "platform"
                       ? "Launch my ads"
                       : `Launch to ${account.descriptiveName ?? account.customerId}`}
                 </Button>

@@ -9,6 +9,7 @@ import { adMetricsRoutes } from "./routes/adMetrics.js";
 import { adminInsightsRoutes } from "./routes/adminInsights.js";
 import { assetRoutes } from "./routes/assets.js";
 import { authRoutes } from "./routes/auth.js";
+import { testCustomerRoutes } from "./routes/testCustomers.js";
 import { billingRoutes } from "./routes/billing.js";
 import { stripeWebhookRoutes } from "./routes/stripeWebhook.js";
 import { campaignRoutes } from "./routes/campaigns.js";
@@ -113,6 +114,7 @@ app.setErrorHandler((err: FastifyError & { code?: string }, req, reply) => {
 });
 
 await app.register(authRoutes);
+await app.register(testCustomerRoutes);
 // Pricing + wallet + payment webhooks. The /pricing routes inside are
 // deliberately public — the landing-page calculator is the top of the funnel
 // and must work before signup.

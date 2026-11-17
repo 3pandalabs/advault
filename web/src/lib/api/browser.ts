@@ -123,6 +123,11 @@ export type Me = {
   signupApp?: "advault" | "sitevault";
   /** The account has a SiteVault website. */
   usesSitevault?: boolean;
+  /**
+   * An admin's test customer (api routes/testCustomers.ts): always test mode,
+   * $0.50 charges, launch is a dry run. The dashboard offers "Back to admin".
+   */
+  isTestCustomer?: boolean;
 };
 
 export type Asset = {
@@ -297,6 +302,32 @@ export const getMe = () => api<Me>("/auth/me");
 /** Admins only (403 otherwise). */
 export const setTestAsCustomer = (on: boolean) =>
   api<{ testAsCustomer: boolean }>("/auth/me/test-mode", { method: "PATCH", body: JSON.stringify({ on }) });
+// --- admin test customers (api routes/testCustomers.ts) ----------------------
+
+export type TestCustomer = { id: string; name: string; createdAt: string };
+
+/** A real admin's test customers (also from inside one). 403 for everyone else. */
+export const listTestCustomers = () =>
+  api<{ customers: TestCustomer[]; current: string | null }>("/test-customers");
+
+export const createTestCustomer = (name: string) =>
+  api<TestCustomer>("/test-customers", { method: "POST", body: JSON.stringify({ name }) });
+
+/** Swaps this browser's session to the other account; the old session is ended. */
+async function swapSession(path: string) {
+  const tokens = await api<{ accessToken: string; refreshToken: string }>(path, {
+    method: "POST",
+    body: JSON.stringify({ refreshToken: getTokens().refresh ?? undefined }),
+  });
+  setTokens(tokens.accessToken, tokens.refreshToken);
+}
+
+/** Become this test customer in this browser. */
+export const switchToTestCustomer = (id: string) => swapSession(`/test-customers/${id}/switch`);
+
+/** Leave the test customer and become the admin again. */
+export const backToAdmin = () => swapSession("/test-customers/back");
+
 export const listCampaigns = () => api<Campaign[]>("/campaigns");
 export const getCampaign = (id: string) =>
   api<Campaign & { creatives: Creative[] }>(`/campaigns/${id}`);
@@ -597,6 +628,9 @@ export function launchCampaign(campaignId: string, adAccountId: string, videoOnW
     radiusMilesAroundAddress: number | null;
     audienceFiltersApplied: number;
     note: string;
+    /** A test customer's launch is always a dry run: nothing went live. */
+    validateOnly?: boolean;
+    testCustomer?: boolean;
   }>(`/campaigns/${campaignId}/launch`, {
     method: "POST",
     body: JSON.stringify({ adAccountId, videoOnWebsite }),

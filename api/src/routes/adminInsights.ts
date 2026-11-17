@@ -68,7 +68,7 @@ export async function adminInsightsRoutes(app: FastifyInstance) {
             + coalesce((select sum(i.amount_minor) from subscription_invoices i where i.user_id = u.id and i.status = 'paid'), 0)::int
             as revenue_minor
         from users u
-        where u.role = 'advertiser' and u.deleted_at is null
+        where u.role = 'advertiser' and u.test_owner_id is null and u.deleted_at is null
         order by u.created_at desc
       `)
     ).rows;
@@ -140,7 +140,7 @@ export async function adminInsightsRoutes(app: FastifyInstance) {
           count(c.launched_at)::int as launched,
           coalesce(sum((select sum(m.views) from campaign_daily_metrics m where m.campaign_id = c.id)), 0)::bigint as views
         from campaigns c join users u on u.id = c.user_id
-        where u.role = 'advertiser' and u.deleted_at is null
+        where u.role = 'advertiser' and u.test_owner_id is null and u.deleted_at is null
         group by c.business_category
         order by customers desc, campaigns desc
       `)
@@ -153,12 +153,12 @@ export async function adminInsightsRoutes(app: FastifyInstance) {
             p.currency_code, p.amount_minor as amount,
             case when p.created_at > now() - interval '30 days' then p.amount_minor else 0 end as last30
           from purchases p join users u on u.id = p.user_id
-          where ${PAID_PURCHASE} and u.role = 'advertiser'
+          where ${PAID_PURCHASE} and u.role = 'advertiser' and u.test_owner_id is null
           union all
           select 'Subscriptions', i.currency_code, i.amount_minor,
             case when i.paid_at > now() - interval '30 days' then i.amount_minor else 0 end
           from subscription_invoices i join users u on u.id = i.user_id
-          where i.status = 'paid' and u.role = 'advertiser'
+          where i.status = 'paid' and u.role = 'advertiser' and u.test_owner_id is null
         ) r group by source, currency_code order by all_time desc
       `)
     ).rows.map((r) => ({

@@ -54,6 +54,10 @@ export const users = pgTable(
     // Admin "Test as customer" (0027, lib/testMode): an admin with this on is
     // billed like a standard advertiser, at the $0.50 test price.
     testAsCustomer: boolean("test_as_customer").notNull().default(false),
+    // Admin test customer (0030, routes/testCustomers.ts): the admin who owns
+    // this account. Always test mode; launch is a dry run; cannot log in.
+    // FK to users(id) lives in the migration (self-reference).
+    testOwnerId: uuid("test_owner_id"),
 
     // Set when the user deleted their account (lib/accountDeletion.ts). The row
     // is kept, anonymised, because the financial records point at it.

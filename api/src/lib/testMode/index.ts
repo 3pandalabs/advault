@@ -3,7 +3,7 @@ import type { FastifyRequest } from "fastify";
 import { db } from "../../db/index.js";
 import { users } from "../../db/schema.js";
 import type { UserRole } from "../../auth/jwt.js";
-import { billingExempt, effectiveMarginMode, effectiveRole, inTestMode } from "./policy.js";
+import { billingExempt, effectiveMarginMode, effectiveRole, inTestMode, isTestCustomer } from "./policy.js";
 
 // Admin "Test as customer": the database side. Read ./policy.ts first.
 
@@ -15,17 +15,25 @@ export type BillingIdentity = {
   testMode: boolean;
   /** Skips per-ad fees, website fees and plan gates. */
   exempt: boolean;
+  /** An admin's test customer (0030): launch is always a dry run. */
+  testCustomer: boolean;
 };
 
 /** How billing and perk gates should treat this user right now. */
 export async function billingIdentity(userId: string): Promise<BillingIdentity> {
   const [u] = await db
-    .select({ role: users.role, marginMode: users.marginMode, testAsCustomer: users.testAsCustomer })
+    .select({
+      role: users.role,
+      marginMode: users.marginMode,
+      testAsCustomer: users.testAsCustomer,
+      testOwnerId: users.testOwnerId,
+    })
     .from(users)
     .where(eq(users.id, userId))
     .limit(1);
-  if (!u) return { role: undefined, marginMode: "standard", testMode: false, exempt: false };
+  if (!u) return { role: undefined, marginMode: "standard", testMode: false, exempt: false, testCustomer: false };
   return {
+    testCustomer: isTestCustomer(u),
     role: effectiveRole(u),
     marginMode: effectiveMarginMode(u),
     testMode: inTestMode(u),
@@ -33,7 +41,7 @@ export async function billingIdentity(userId: string): Promise<BillingIdentity> 
   };
 }
 
-/** Is this user an admin testing as a customer? */
+/** Is this user an admin testing as a customer, or a test customer? */
 export async function isTestMode(userId: string): Promise<boolean> {
   return (await billingIdentity(userId)).testMode;
 }
