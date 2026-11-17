@@ -280,7 +280,16 @@ It must never call a mutate endpoint. Routes (`/campaigns/:id/metrics`,
   `ADMIN_ANALYTICS_TOKEN`, never the shared `METRICS_TOKEN`: it names
   businesses and their spend, which `/metrics` deliberately never does.
 
-## Uploaded videos: open to everyone, behind a human review
+## Uploaded videos: behind a human review (admins only for launch)
+
+**Paused for customers (2026-11-16):** "Use my own video" is hidden for
+non-admins in the wizard and on the campaign page, and the upload POST routes
+answer 403 `own_video_paused` unless the user is an admin or
+`OWN_VIDEO_UPLOADS=on` is set on advault-api. Customers see "Already have a
+video ad? Email 3pandas@3pandalabs.com". Reason: every upload needs a human
+review and skips the paid $10 ad. Re-open by setting the env var and dropping
+the `isAdmin` gates in `campaigns/new/page.tsx` and `[campaignId]/page.tsx`.
+Everything below still applies to admin uploads.
 
 `routes/uploads.ts` lets **any user** attach a finished MP4 to **their own**
 campaign as a `kind = 'upload'` creative ("Use my own video"). It is inserted

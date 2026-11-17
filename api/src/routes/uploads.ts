@@ -50,8 +50,18 @@ const confirmSchema = metaSchema.extend({
   rightsAttested: z.literal(true),
 });
 
+// "Use my own video" is admins-only for launch (2026-11-16): every customer
+// upload needs a human review and skips the paid ad. OWN_VIDEO_UPLOADS=on on
+// advault-api opens it to everyone again.
+function ownVideoAllowed(role: string | undefined): boolean {
+  return role === "admin" || process.env.OWN_VIDEO_UPLOADS === "on";
+}
+
 export async function uploadRoutes(app: FastifyInstance) {
   app.addHook("onRequest", requireAuth);
+  app.addHook("preHandler", async (req, reply) => {
+    if (req.method === "POST" && !ownVideoAllowed(req.userRole)) return reply.code(403).send({ error: "own_video_paused" });
+  });
 
   app.post(
     "/campaigns/:campaignId/creatives/upload-url",
