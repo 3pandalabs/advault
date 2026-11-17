@@ -12,6 +12,8 @@ import {
 } from "@/lib/api/browser";
 import { Badge, Card, CardDescription, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { SuggestionChips } from "@/components/SuggestionChips";
+import { REJECT_REASON_SUGGESTIONS } from "@/lib/suggestions";
 
 // Admin-only: the review queue for customer-uploaded videos, from
 // GET /admin/video-reviews (which enforces admin itself; this page only hides
@@ -199,12 +201,22 @@ function ReviewCard({ video: v, onDecided }: { video: VideoReview; onDecided: ()
           {rejecting ? (
             <div className="space-y-2">
               <textarea
+                id={`reject-reason-${v.creativeId}`}
+                aria-label="Reason shown to the customer"
                 value={reason}
                 onChange={(e) => setReason(e.target.value)}
                 maxLength={500}
                 rows={2}
                 placeholder="Reason shown to the customer, e.g. “The background music is a copyrighted song.”"
                 className="w-full rounded-lg border border-white/15 bg-zinc-950 px-3 py-2 text-sm text-zinc-100"
+              />
+              <SuggestionChips
+                targetId={`reject-reason-${v.creativeId}`}
+                fieldLabel="rejection reason"
+                value={reason}
+                suggestions={REJECT_REASON_SUGGESTIONS}
+                onPick={setReason}
+                disabled={busy}
               />
               <div className="flex gap-2">
                 <Button

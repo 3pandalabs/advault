@@ -15,6 +15,8 @@ import {
 import { Badge, Card, CardDescription, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { formatDate } from "@/lib/utils";
+import { SuggestionChips } from "@/components/SuggestionChips";
+import { cinematicDescription } from "@/lib/suggestions";
 
 // The cinematic add-on: a one-off purchase, not part of any subscription.
 //
@@ -113,6 +115,7 @@ export default function CinematicPage() {
 
   const unavailable = quote !== null && !quote.available;
   const credits = quote?.creditsLeft ?? 0;
+  const selectedCampaign = campaigns.find((c) => c.id === campaignId);
 
   return (
     <div className="space-y-6">
@@ -201,6 +204,8 @@ export default function CinematicPage() {
           </label>
 
           <textarea
+            id="cinematic-description"
+            aria-label="What should it show?"
             className="mt-4 w-full rounded-lg border border-white/10 bg-black/20 p-3 text-sm"
             rows={5}
             minLength={20}
@@ -208,6 +213,14 @@ export default function CinematicPage() {
             placeholder="We're a family bakery, been on this street eleven years. Everything's baked from four in the morning. This August it's 20% off all cakes."
             value={description}
             onChange={(e) => setDescription(e.target.value)}
+          />
+          {/* Built from the chosen campaign: name, category, town and its offer. */}
+          <SuggestionChips
+            targetId="cinematic-description"
+            fieldLabel="description"
+            value={description}
+            suggestions={[selectedCampaign && cinematicDescription(selectedCampaign)]}
+            onPick={setDescription}
           />
           <p className="mt-1 text-xs text-zinc-500">{description.trim().length} / 2000</p>
 

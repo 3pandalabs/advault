@@ -19,6 +19,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardDescription, CardTitle } from "@/components/ui/card";
 import { FieldHint, Input, Label, Textarea } from "@/components/ui/input";
 import { parseDollarsToCents } from "@/lib/utils";
+import { SuggestionChips } from "@/components/SuggestionChips";
+import { callToActionSuggestions, campaignNameSuggestions } from "@/lib/suggestions";
 import { AudienceFiltersEditor, HOUSING_NOTICE } from "@/components/AudienceFiltersEditor";
 import {
   AUDIENCE_FILTERS_ENABLED,
@@ -167,6 +169,8 @@ export default function NewCampaignPage() {
   // The category dropdown; "Other" reveals the free-text box (form.businessCategory).
   const [categoryChoice, setCategoryChoice] = useState<string>("");
   const [audienceFilters, setAudienceFilters] = useState<AudienceFilters>({});
+  // The signup profile, kept so a field changed from it can be put back in one tap.
+  const [profile, setProfile] = useState({ businessName: "", customCategory: "" });
 
   // Step 3 — formats
   const [aspectRatios, setAspectRatios] = useState<("16:9" | "9:16")[]>(["16:9", "9:16"]);
@@ -183,6 +187,7 @@ export default function NewCampaignPage() {
         const profileCategory = me.businessCategory ?? "";
         const preset = PRESET_CATEGORIES.includes(profileCategory) && profileCategory !== "Other";
         setCategoryChoice((c) => c || (preset ? profileCategory : profileCategory ? "Other" : ""));
+        setProfile({ businessName: me.businessName ?? "", customCategory: preset ? "" : profileCategory });
         setForm((f) => ({
           ...f,
           businessName: f.businessName || (me.businessName ?? ""),
@@ -215,6 +220,7 @@ export default function NewCampaignPage() {
 
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
     setForm((f) => ({ ...f, [k]: e.target.value }));
+  const fill = (k: keyof typeof form) => (text: string) => setForm((f) => ({ ...f, [k]: text }));
 
   const zipCodes = form.zipInput
     .split(/[\s,]+/)
@@ -745,6 +751,13 @@ export default function NewCampaignPage() {
             <div>
               <Label htmlFor="name">Campaign name</Label>
               <Input id="name" value={form.name} onChange={set("name")} required />
+              <SuggestionChips
+                targetId="name"
+                fieldLabel="campaign name"
+                value={form.name}
+                suggestions={campaignNameSuggestions(form.businessName || profile.businessName)}
+                onPick={fill("name")}
+              />
               <FieldHint>Only you see this.</FieldHint>
             </div>
 
@@ -752,6 +765,13 @@ export default function NewCampaignPage() {
               <div>
                 <Label htmlFor="businessName">Business name</Label>
                 <Input id="businessName" value={form.businessName} onChange={set("businessName")} />
+                <SuggestionChips
+                  targetId="businessName"
+                  fieldLabel="business name"
+                  value={form.businessName}
+                  suggestions={[profile.businessName]}
+                  onPick={fill("businessName")}
+                />
               </div>
               <div>
                 <Label htmlFor="categoryChoice">Category</Label>
@@ -779,6 +799,15 @@ export default function NewCampaignPage() {
                     onChange={set("businessCategory")}
                     placeholder="Pet grooming"
                     maxLength={80}
+                  />
+                )}
+                {categoryChoice === "Other" && (
+                  <SuggestionChips
+                    targetId="businessCategory"
+                    fieldLabel="your category"
+                    value={form.businessCategory}
+                    suggestions={[profile.customCategory]}
+                    onPick={fill("businessCategory")}
                   />
                 )}
               </div>
@@ -984,6 +1013,13 @@ export default function NewCampaignPage() {
                 value={form.callToAction}
                 onChange={set("callToAction")}
               />
+              <SuggestionChips
+                targetId="callToAction"
+                fieldLabel="call to action"
+                value={form.callToAction}
+                suggestions={callToActionSuggestions(category, isListing)}
+                onPick={fill("callToAction")}
+              />
             </div>
 
             <div>
@@ -1000,7 +1036,7 @@ export default function NewCampaignPage() {
                 onChange={set("offerDetails")}
                 placeholder={offerPlaceholder(category, isListing)}
                 // Tab on the empty box takes the suggested text (like a
-                // code-editor suggestion); the button below does the same on
+                // code-editor suggestion); the chip below does the same on
                 // a phone, which has no Tab key.
                 onKeyDown={(e) => {
                   const example = offerExample(category, isListing);
@@ -1011,19 +1047,13 @@ export default function NewCampaignPage() {
                 }}
                 className="min-h-24"
               />
-              {form.offerDetails.trim() === "" && offerExample(category, isListing) ? (
-                <div className="mt-1.5 flex flex-wrap items-center gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setForm((f) => ({ ...f, offerDetails: offerExample(category, isListing)! }))}
-                  >
-                    Use this example
-                  </Button>
-                  <span className="hidden text-xs text-zinc-500 sm:inline">or press Tab</span>
-                </div>
-              ) : null}
+              <SuggestionChips
+                targetId="offerDetails"
+                fieldLabel="offer"
+                value={form.offerDetails}
+                suggestions={[offerExample(category, isListing)]}
+                onPick={fill("offerDetails")}
+              />
               {form.offerDetails.trim() !== "" && form.offerDetails === offerExample(category, isListing) ? (
                 <p className="mt-1.5 text-xs text-amber-300/90">
                   This is our example. Change the prices and details so every word is true for your
