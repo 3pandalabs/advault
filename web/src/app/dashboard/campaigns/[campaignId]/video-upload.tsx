@@ -87,7 +87,7 @@ export function VideoUpload({
     <Card className="mt-6 border-dashed">
       <CardTitle>Use my own video</CardTitle>
       <CardDescription>
-        A finished MP4, vertical (9:16) for Shorts or wide (16:9) for in-stream, at least 720p,{" "}
+        One finished MP4, vertical (9:16) or wide (16:9): we make the other shape for you. At least 720p,{" "}
         {limits.minSeconds}–{limits.maxSeconds} seconds, up to 200 MB.
         {isAdmin
           ? " As an admin, your upload is approved straight away."

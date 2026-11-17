@@ -506,7 +506,7 @@ export default function NewCampaignPage() {
         <Card>
           <CardTitle>Upload the finished ad video</CardTitle>
           <CardDescription>
-            MP4, vertical (9:16) for Shorts or wide (16:9) for in-stream, at least 720p,{" "}
+            One MP4, vertical (9:16) or wide (16:9): we make the other shape for you. At least 720p,{" "}
             {videoLimits.minSeconds}–{videoLimits.maxSeconds} seconds, up to 200 MB. AdVault makes no
             videos for this campaign.
             {isAdmin

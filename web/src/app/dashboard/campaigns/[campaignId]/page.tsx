@@ -621,7 +621,9 @@ export default function CampaignDetailPage({
 
       {/* "Use my own video" is the other way to get an ad: once they chose photos
           (an order or an AdVault-made video exists) it is only noise. */}
-      {!campaign.googleCampaignResourceName && !newAd?.order && !campaign.creatives.some((c) => c.kind !== "upload") && (
+      {/* Also hidden once a video is uploaded: one is enough (AdVault makes the
+          other shape). To replace it, remove it first. */}
+      {!campaign.googleCampaignResourceName && !newAd?.order && campaign.creatives.length === 0 && (
         <VideoUpload campaignId={campaignId} isAdmin={isAdmin} onUploaded={refresh} />
       )}
 
