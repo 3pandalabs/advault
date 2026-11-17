@@ -78,7 +78,7 @@ export type Photo = { bytes: Buffer; contentType: string };
 
 export type SitevaultResult =
   | { ok: true; siteUrl: string; editUrl: string; slug: string }
-  | { ok: false; status: number; errors: Record<string, string> };
+  | { ok: false; status: number; errors: Record<string, string>; code?: string; siteUrl?: string };
 
 /** The finished ad, shown on the site. MP4 only, under SiteVault's 40 MB limit. */
 export type Video = { bytes: Buffer };
@@ -114,7 +114,14 @@ export async function createSitevaultSite(
   if (res.ok && body.ok && body.siteUrl && body.editUrl && body.slug) {
     return { ok: true, siteUrl: body.siteUrl, editUrl: body.editUrl, slug: body.slug };
   }
-  return { ok: false, status: res.status, errors: body.errors ?? { form: body.error ?? `sitevault_${res.status}` } };
+  return {
+    ok: false,
+    status: res.status,
+    errors: body.errors ?? { form: body.error ?? `sitevault_${res.status}` },
+    ...(body.error ? { code: body.error } : {}),
+    // 409 account_has_site names the account's existing site.
+    ...(typeof body.siteUrl === "string" ? { siteUrl: body.siteUrl } : {}),
+  };
 }
 
 /** Put the ad video on the site (at launch). Replaces any earlier video. */
@@ -236,6 +243,50 @@ export function slugFromSiteUrl(url: string | null | undefined): string | null {
     return null;
   }
   return null;
+}
+
+export type AccountSitevaultSite = {
+  slug: string;
+  siteUrl: string;
+  /** SiteVault's siteState: live | grace | unpublished | paused. */
+  state: string;
+  /** "web" = built on SiteVault, "advault" = made here. */
+  source: string | null;
+};
+
+/** Is a SiteVault site state one an ad can link to? */
+export function sitevaultStateIsLive(state: string | null | undefined): boolean {
+  return state === "live" || state === "grace";
+}
+
+/**
+ * The website the shared 3PandaLabs account owns on SiteVault, wherever it was
+ * built (SiteVault `GET /api/internal/account-site`). null when there is none
+ * OR when SiteVault can't say (down, not configured, or an older Worker
+ * without the route): callers then behave as before this lookup existed, and
+ * SiteVault's own create refuses a second site (409 `account_has_site`).
+ */
+export async function fetchAccountSitevaultSite(user: { advaultUserId: string; email?: string | null }): Promise<AccountSitevaultSite | null> {
+  const token = process.env.SITEVAULT_INTERNAL_TOKEN;
+  if (!token) return null;
+  try {
+    const q = new URLSearchParams({ advaultUserId: user.advaultUserId, ...(user.email ? { email: user.email } : {}) });
+    const res = await fetch(`${SITEVAULT_URL}/api/internal/account-site?${q}`, {
+      headers: { authorization: `Bearer ${token}`, accept: "application/json" },
+      signal: AbortSignal.timeout(8_000),
+    });
+    if (!res.ok) return null;
+    const body = (await res.json().catch(() => null)) as Partial<AccountSitevaultSite> & { ok?: boolean } | null;
+    if (!body?.ok || typeof body.slug !== "string" || typeof body.siteUrl !== "string") return null;
+    return { slug: body.slug, siteUrl: body.siteUrl, state: String(body.state ?? ""), source: body.source ?? null };
+  } catch {
+    return null;
+  }
+}
+
+/** Edit link for a SiteVault site AdVault holds no edit key for: SiteVault sends it through sign-in (same account). */
+export function sitevaultSignInEditUrl(slug: string): string {
+  return `${SITEVAULT_URL}/edit/${encodeURIComponent(slug)}`;
 }
 
 /** The site's current link (after any rename), or null if it can't be resolved. */

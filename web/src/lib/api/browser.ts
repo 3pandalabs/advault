@@ -466,7 +466,7 @@ export function getWebsite(campaignId: string) {
     editUrl: string | null;
     campaign?: Campaign;
     /** The account already has a SiteVault site (one per business): offer to reuse it. */
-    accountSite?: { siteUrl: string };
+    accountSite?: { siteUrl: string; state?: string | null };
     /** Made but not paid for yet ($10 website fee). */
     pendingSite?: PendingSite;
     /** What "Make me a website" costs; null = free. Present only while there is no website. */

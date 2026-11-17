@@ -7,9 +7,14 @@ export const SITE_VIDEO_MAX_ATTEMPTS = 5;
 /** SiteVault's internal video limit. */
 export const SITE_VIDEO_MAX_BYTES = 40 * 1024 * 1024;
 
-/** Should launch ask for the video on the site? Default yes, only for a SiteVault site. */
-export function wantsSiteVideo(args: { requested: boolean | undefined; sitevaultSlug: string | null }): boolean {
-  return Boolean(args.sitevaultSlug) && args.requested !== false;
+/**
+ * Should launch ask for the video on the site? Default yes, only for a
+ * SiteVault site AdVault made (it holds the edit link, `sitevault_edit_enc`).
+ * SiteVault's video route refuses sites built on SiteVault itself
+ * (`not_an_advault_site`), e.g. one linked through "Use my website".
+ */
+export function wantsSiteVideo(args: { requested: boolean | undefined; sitevaultSlug: string | null; advaultMade: boolean }): boolean {
+  return Boolean(args.sitevaultSlug) && args.advaultMade && args.requested !== false;
 }
 
 /** Is a push still owed (wanted, not done, retries left)? */

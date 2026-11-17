@@ -201,13 +201,17 @@ export async function authRoutes(app: FastifyInstance) {
         }),
       },
     },
-    async (req) => {
+    async (req, reply) => {
       const body = req.body as Record<string, string | null | undefined>;
       // Only the profile fields above — email and role are deliberately absent,
       // so this route can never escalate a role or hijack an address.
+      // zod strips anything else, so `{}` or `{ email }` arrive empty; drizzle
+      // throws on an empty set(), which was a 500.
+      const set = Object.fromEntries(Object.entries(body).filter(([, v]) => v !== undefined));
+      if (Object.keys(set).length === 0) return reply.code(400).send({ error: "nothing_to_update" });
       const [user] = await db
         .update(users)
-        .set(body)
+        .set(set)
         .where(eq(users.id, req.userId!))
         .returning({
           id: users.id,

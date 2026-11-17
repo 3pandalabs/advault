@@ -132,7 +132,8 @@ export default function CampaignDetailPage({
   const [previews, setPreviews] = useState<Record<string, string>>({});
   // SiteVault site: the ad video joins the website at launch (box ticked by default).
   const [videoOnSite, setVideoOnSite] = useState(true);
-  const onSite = Boolean(siteVaultSlug(campaign?.landingUrl));
+  // Only a site AdVault made takes the ad video (SiteVault refuses one built there).
+  const onSite = Boolean(siteVaultSlug(campaign?.landingUrl)) && Boolean(campaign?.sitevaultEditEnc);
   const [launchNote, setLaunchNote] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);

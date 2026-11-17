@@ -3,14 +3,17 @@ import { pickSiteVideo, siteVideoDue, wantsSiteVideo, SITE_VIDEO_MAX_ATTEMPTS, S
 
 describe("wantsSiteVideo", () => {
   it("defaults to yes for a SiteVault site", () => {
-    expect(wantsSiteVideo({ requested: undefined, sitevaultSlug: "joes" })).toBe(true);
-    expect(wantsSiteVideo({ requested: true, sitevaultSlug: "joes" })).toBe(true);
+    expect(wantsSiteVideo({ requested: undefined, sitevaultSlug: "joes", advaultMade: true })).toBe(true);
+    expect(wantsSiteVideo({ requested: true, sitevaultSlug: "joes", advaultMade: true })).toBe(true);
   });
   it("respects an unticked box", () => {
-    expect(wantsSiteVideo({ requested: false, sitevaultSlug: "joes" })).toBe(false);
+    expect(wantsSiteVideo({ requested: false, sitevaultSlug: "joes", advaultMade: true })).toBe(false);
   });
   it("never for a website that isn't SiteVault", () => {
-    expect(wantsSiteVideo({ requested: true, sitevaultSlug: null })).toBe(false);
+    expect(wantsSiteVideo({ requested: true, sitevaultSlug: null, advaultMade: true })).toBe(false);
+  });
+  it("never for a site built on SiteVault itself (its video route refuses those)", () => {
+    expect(wantsSiteVideo({ requested: true, sitevaultSlug: "joes", advaultMade: false })).toBe(false);
   });
 });
 

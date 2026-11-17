@@ -44,6 +44,8 @@ async function checkAddress(params: { slug?: string; name: string; city: string 
 const MAKE_ERRORS: Record<string, string> = {
   website_exists: "This campaign already has a website.",
   website_exists_for_account: "Your business already has a website. Use it for this campaign instead.",
+  account_website_not_live: "Your website isn't published yet. Publish it on SiteVault first, then use it here.",
+  no_account_website: "We couldn't find your website just now. Please try again in a minute.",
   website_payment_pending: "Your website is built and waiting for payment. Use Pay and publish below.",
   campaign_is_live: "This campaign is live, so its website can't be changed here.",
   website_builder_not_configured: "The website builder isn't switched on yet. Please paste a link instead.",
@@ -146,7 +148,9 @@ export function WebsiteCard({
   // one. The same call follows a rename made on SiteVault (link updated).
   useEffect(() => {
     // Also when there is no website yet: the account may already have one.
-    if ((!campaign.sitevaultEditEnc && campaign.landingUrl) || editUrl || fetchedWebsite.current) return;
+    // A SiteVault link without a stored edit link (built on SiteVault, linked
+    // with "Use my website") still gets one: SiteVault's sign-in edit page.
+    if ((!campaign.sitevaultEditEnc && campaign.landingUrl && !siteVaultSlug(campaign.landingUrl)) || editUrl || fetchedWebsite.current) return;
     fetchedWebsite.current = true;
     getWebsite(campaign.id)
       .then((w) => {
@@ -320,7 +324,7 @@ export function WebsiteCard({
         </p>
       )}
 
-      {siteVaultSlug(campaign.landingUrl) && mode === "view" && !ownVideoOnly && (campaign.siteVideoPushedAt || campaign.siteVideoWanted || !locked) && (
+      {siteVaultSlug(campaign.landingUrl) && campaign.sitevaultEditEnc && mode === "view" && !ownVideoOnly && (campaign.siteVideoPushedAt || campaign.siteVideoWanted || !locked) && (
         <p className="mt-3 text-sm text-zinc-300">
           {campaign.siteVideoPushedAt
             ? "Your ad is playing on your website."

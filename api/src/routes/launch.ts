@@ -475,7 +475,7 @@ export async function launchRoutes(app: FastifyInstance) {
             launchedAt: new Date(),
             updatedAt: new Date(),
             // The ad video joins the SiteVault website now (lib/siteVideo).
-            ...(wantsSiteVideo({ requested: videoOnWebsite, sitevaultSlug: slugFromSiteUrl(campaign.landingUrl) })
+            ...(wantsSiteVideo({ requested: videoOnWebsite, sitevaultSlug: slugFromSiteUrl(campaign.landingUrl), advaultMade: Boolean(campaign.sitevaultEditEnc) })
               ? { siteVideoWanted: true }
               : {}),
           })
