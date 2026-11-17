@@ -22,7 +22,7 @@ const holder = vi.hoisted(() => {
     TOKEN_ENCRYPTION_KEY: "0".repeat(64),
   };
   for (const [k, v] of Object.entries(dummy)) process.env[k] ??= v;
-  return { db: null as unknown, launches: [] as { validateOnly?: boolean }[] };
+  return { db: null as unknown, launches: [] as { validateOnly?: boolean }[], checkouts: [] as { amountMinor: number; testMode?: boolean }[] };
 });
 
 vi.mock("../db/index.js", () => ({
@@ -54,6 +54,18 @@ vi.mock("../lib/googleAds/demandGen.js", async (orig) => ({
 }));
 vi.mock("../plugins/r2.js", async (orig) => ({ ...(await orig<object>()), getObjectBytes: async () => Buffer.from("logo") }));
 vi.mock("../lib/imageSize.js", async (orig) => ({ ...(await orig<object>()), checkLogo: () => ({ ok: true }) }));
+// Checkout stubbed: records what the wallet top-up would charge.
+vi.mock("../lib/payments/index.js", async (orig) => ({
+  ...(await orig<object>()),
+  providerFor: () => ({
+    name: "stripe",
+    isConfigured: () => true,
+    createCheckout: async (req: { paymentId: string; amountMinor: number; testMode?: boolean }) => {
+      holder.checkouts.push(req);
+      return { providerRef: `cs_test_${req.paymentId}`, redirectUrl: "https://checkout.invalid" };
+    },
+  }),
+}));
 vi.mock("../lib/billing/managedCard.js", async (orig) => ({ ...(await orig<object>()), syncCardLimit: async () => undefined }));
 
 let app: FastifyInstance;
@@ -91,6 +103,7 @@ beforeAll(async () => {
   const { authRoutes } = await import("./auth.js");
   const { testCustomerRoutes } = await import("./testCustomers.js");
   const { launchRoutes } = await import("./launch.js");
+  const { billingRoutes } = await import("./billing.js");
   app = Fastify();
   app.setValidatorCompiler(validatorCompiler);
   app.setSerializerCompiler(serializerCompiler);
@@ -98,6 +111,7 @@ beforeAll(async () => {
   await app.register(authRoutes);
   await app.register(testCustomerRoutes);
   await app.register(launchRoutes);
+  await app.register(billingRoutes);
   await app.ready();
 }, 60_000);
 
@@ -107,6 +121,7 @@ afterAll(async () => {
 
 beforeEach(() => {
   holder.launches.length = 0;
+  holder.checkouts.length = 0;
 });
 
 const call = (method: "GET" | "POST", url: string, token: string, payload?: unknown) =>
@@ -289,5 +304,22 @@ describe("launch", () => {
     expect(res.statusCode).toBe(402);
     expect(res.json().error).toBe("plan_required");
     expect(holder.launches).toEqual([]);
+  });
+});
+
+describe("ad budget top-up", () => {
+  it("a test customer is charged (and credited) the $0.50 test price, tagged test", async () => {
+    const { accessToken } = await switchInto(await createTestCustomer(adminToken(), "Top-up Test"));
+    const res = await call("POST", "/wallet/topup", accessToken, { amountMinor: 10_000 });
+    expect(res.statusCode).toBe(201);
+    expect(holder.checkouts).toEqual([expect.objectContaining({ amountMinor: 50, testMode: true })]);
+    const row = await pg.query<{ amount_minor: number }>(`select amount_minor from payments where id = $1`, [res.json().paymentId]);
+    expect(Number(row.rows[0]!.amount_minor)).toBe(50);
+  });
+
+  it("a real customer pays the amount asked for", async () => {
+    const res = await call("POST", "/wallet/topup", sign({ sub: customerId, role: "advertiser" }), { amountMinor: 10_000 });
+    expect(res.statusCode, res.body).toBe(201);
+    expect(holder.checkouts).toEqual([expect.objectContaining({ amountMinor: 10_000, testMode: false })]);
   });
 });

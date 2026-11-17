@@ -16,6 +16,8 @@ import {
   sumEntriesByType,
 } from "../lib/wallet/index.js";
 import { providerByName, providerFor } from "../lib/payments/index.js";
+import { chargeMinor } from "../lib/pricing/index.js";
+import { isTestMode } from "../lib/testMode/index.js";
 import {
   addOnFor,
   effectiveMonthlyFeeMinor,
@@ -223,6 +225,11 @@ export async function billingRoutes(app: FastifyInstance) {
 
         const currency = user.currencyCode as Currency;
         const provider = providerFor(currency);
+        // Test mode (admin testing as a customer, or a test customer): charge
+        // and credit the $0.50 test price, never the amount asked for, so a
+        // test top-up can't mint real ad budget it didn't pay for.
+        const testMode = await isTestMode(req.userId!);
+        const amountMinor = chargeMinor(body.amountMinor, testMode);
 
         // The payments row is written BEFORE the provider is called, so its id
         // can be carried in provider metadata and come back on the webhook.
@@ -233,7 +240,7 @@ export async function billingRoutes(app: FastifyInstance) {
           .values({
             userId: req.userId!,
             provider: provider.name,
-            amountMinor: body.amountMinor,
+            amountMinor,
             currencyCode: currency,
             purpose: body.purpose,
             status: "created",
@@ -243,9 +250,10 @@ export async function billingRoutes(app: FastifyInstance) {
         try {
           const session = await provider.createCheckout({
             paymentId: payment.id,
-            amountMinor: body.amountMinor,
+            amountMinor,
             currency,
             purpose: body.purpose,
+            testMode,
             userEmail: user.email,
             returnUrl: `${env.WEB_ORIGIN}/dashboard/wallet`,
           });
