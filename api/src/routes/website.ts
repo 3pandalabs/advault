@@ -25,7 +25,7 @@ import { markAppUsed } from "../lib/sharedAccount/index.js";
 import { getObjectBytes, headObject } from "../plugins/r2.js";
 import { proPhotoKey } from "../render/enhance.js";
 import { isHousingCategory } from "../lib/audience/policy.js";
-import { latestSiteOffer } from "../lib/siteOffer/index.js";
+import { fetchSiteOfferStatus, latestSiteOffer } from "../lib/siteOffer/index.js";
 import {
   feeDisplay,
   isPaidStatus,
@@ -278,6 +278,31 @@ export async function websiteRoutes(app: FastifyInstance) {
       if (!fee) return reply.code(409).send({ error: "website_fee_not_applicable" });
       const { checkout } = await startWebsiteCheckout({ userId: req.userId!, campaignId: campaign.id, slug, fee });
       return reply.code(201).send({ checkout });
+    },
+  );
+
+  // Is the campaign's website actually up? The card shows a "building your
+  // website" bar until it is, so the owner never opens a link that isn't
+  // live yet. SiteVault must say live (or in grace) AND the page must load.
+  // Not a SiteVault site = whatever they typed: ready.
+  app.get(
+    "/campaigns/:campaignId/website/ready",
+    { schema: { params: z.object({ campaignId: z.string().uuid() }) } },
+    async (req, reply) => {
+      const { campaignId } = req.params as { campaignId: string };
+      const campaign = await loadOwnedCampaign(campaignId, req.userId!, reply);
+      if (!campaign) return;
+      const url = campaign.landingUrl;
+      const slug = slugFromSiteUrl(url);
+      if (!url || !slug) return { ready: Boolean(url) };
+      const status = await fetchSiteOfferStatus(slug);
+      if (!status || (status.siteState !== "live" && status.siteState !== "grace")) return { ready: false };
+      try {
+        const res = await fetch(url, { redirect: "follow", signal: AbortSignal.timeout(6_000) });
+        return { ready: res.ok };
+      } catch {
+        return { ready: false };
+      }
     },
   );
 
