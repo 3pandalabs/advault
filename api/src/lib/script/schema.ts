@@ -227,7 +227,10 @@ export function cleanOpener(v: unknown): string | undefined {
   if (typeof v !== "string") return undefined;
   const t = v.replace(/\s+/g, " ").trim().slice(0, 400);
   if (t.length < 20) return undefined;
-  return rejectVisualPrompt(t) ? undefined : t;
+  const rejected = rejectVisualPrompt(t);
+  // Logged so a dropped opener is visible (render_info only says "no-prompt").
+  if (rejected) console.warn("opener prompt dropped", rejected.reason, JSON.stringify(rejected.match));
+  return rejected ? undefined : t;
 }
 
 /**

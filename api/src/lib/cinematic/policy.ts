@@ -117,8 +117,12 @@ const CLAIM_PATTERN = /[0-9]|%|₹|\$|£|€|\bfree\b|\bsale\b|\bdiscount\b/i;
  * Camera vocabulary that contains digits but is never a claim and never
  * rendered as text: "35mm lens", "f/1.8", "24fps", "4K". The system prompt asks
  * for lens and light detail, so these are expected; ignored by the claim check.
+ * Also shot length and camera turns ("5-second", "5 seconds", "360-degree
+ * orbit", "90°"): the opener prompt asks for a 5-second shot, so the model
+ * echoes it, and until 2026-11-16 that digit silently dropped the opener.
  */
-const CAMERA_SPEC_PATTERN = /\b\d+(?:\.\d+)?\s?(?:mm|fps|k)\b|\bf\/\d+(?:\.\d+)?/gi;
+const CAMERA_SPEC_PATTERN =
+  /\b\d+(?:\.\d+)?\s?(?:mm|fps|k)\b|\bf\/\d+(?:\.\d+)?|\b\d+(?:\.\d+)?\s?-?\s?(?:s|sec|secs|second|seconds)\b|\b\d+\s?-?\s?(?:degrees?|deg)\b|\b\d+\s?°/gi;
 
 /** Instructions to render words inside the frame, which we never allow. */
 // Includes the SURFACES that imply rendered text, not just the word "text".
