@@ -20,7 +20,9 @@ import {
   subscriptionProviderByName,
   subscriptionProviderFor,
 } from "../lib/subscriptions/providers/index.js";
+import { billingIdentity } from "../lib/testMode/index.js";
 import {
+  chargeMinor,
   estimateReach,
   formatMinor,
   isCurrency,
@@ -43,8 +45,12 @@ export async function subscriptionRoutes(app: FastifyInstance) {
       const { currency } = req.query as { currency: string };
       if (!isCurrency(currency)) return reply.code(400).send({ error: "unsupported_currency" });
 
+      // Public, but a signed-in admin testing as a customer sees the $0.50
+      // test fee they will actually be charged (lib/testMode).
+      const testMode = req.userId ? (await billingIdentity(req.userId)).testMode : false;
       const plans = Object.values(PLANS)
         .filter((p) => p.currency === currency)
+        .map((plan) => ({ ...plan, monthlyFeeMinor: chargeMinor(plan.monthlyFeeMinor, testMode) }))
         .map((p) => ({
           key: p.key,
           line: p.line,
@@ -72,7 +78,7 @@ export async function subscriptionRoutes(app: FastifyInstance) {
               : null,
         }));
 
-      return { currency, plans };
+      return { currency, plans, testMode };
     },
   );
 
@@ -131,7 +137,7 @@ export async function subscriptionRoutes(app: FastifyInstance) {
         if (!plan) return reply.code(400).send({ error: "no_such_plan" });
 
         const [user] = await db
-          .select({ email: users.email, currencyCode: users.currencyCode, marginMode: users.marginMode })
+          .select({ email: users.email, currencyCode: users.currencyCode })
           .from(users)
           .where(eq(users.id, req.userId!))
           .limit(1);
@@ -146,7 +152,10 @@ export async function subscriptionRoutes(app: FastifyInstance) {
         // at_cost is a 0%-margin growth mode. It gets no subscription row at
         // all rather than a zero-amount one, so counting rows answers "how many
         // people pay us" without a filter someone will forget.
-        if (user.marginMode === "at_cost") {
+        // Admin "Test as customer" is billed as standard, at the test price.
+        const who = await billingIdentity(req.userId!);
+        const amountMinor = chargeMinor(plan.monthlyFeeMinor, who.testMode);
+        if (who.marginMode === "at_cost") {
           return reply.code(409).send({ error: "at_cost_account", message: "No fee is charged on this account." });
         }
 
@@ -158,6 +167,7 @@ export async function subscriptionRoutes(app: FastifyInstance) {
             userId: req.userId!,
             planKey: plan.key,
             provider: provider.name,
+            amountMinor,
           });
         } catch (err) {
           if (err instanceof AlreadySubscribed) {
@@ -172,9 +182,10 @@ export async function subscriptionRoutes(app: FastifyInstance) {
             subscriptionId: created.subscription.id,
             invoiceId: created.invoice.id,
             planKey: plan.key,
-            amountMinor: plan.monthlyFeeMinor,
+            amountMinor,
             currency: plan.currency,
             userEmail: user.email,
+            testMode: who.testMode,
             returnUrl: `${env.WEB_ORIGIN}/dashboard/subscription`,
           });
 

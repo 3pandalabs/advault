@@ -97,3 +97,53 @@ describe("PATCH /auth/me", () => {
     expect(res.json()).toMatchObject({ phone: null });
   });
 });
+
+// Admin "Test as customer" (lib/testMode, migration 0027).
+describe("PATCH /auth/me/test-mode", () => {
+  const toggle = (id: string, on: boolean) =>
+    app.inject({ method: "PATCH", url: "/auth/me/test-mode", payload: { on }, headers: { "x-test-user": id } });
+  const me = (id: string) => app.inject({ method: "GET", url: "/auth/me", headers: { "x-test-user": id } });
+  let adminId: string;
+
+  beforeAll(async () => {
+    const res = await pg.query<{ id: string }>(
+      `insert into users (email, password_hash, role) values ('admin@x.test', 'x', 'admin') returning id`,
+    );
+    adminId = res.rows[0]!.id;
+  });
+
+  it("403 for a non-admin, and the flag stays off", async () => {
+    const res = await toggle(userId, true);
+    expect(res.statusCode).toBe(403);
+    expect(res.json()).toEqual({ error: "admin_role_required" });
+    expect((await me(userId)).json()).toMatchObject({ role: "advertiser", testAsCustomer: false });
+  });
+
+  it("401 without a session", async () => {
+    const res = await app.inject({ method: "PATCH", url: "/auth/me/test-mode", payload: { on: true } });
+    expect(res.statusCode).toBe(401);
+  });
+
+  it("an admin turns it on and off; GET /auth/me reports it and keeps the real role", async () => {
+    expect((await toggle(adminId, true)).json()).toEqual({ testAsCustomer: true });
+    expect((await me(adminId)).json()).toMatchObject({ role: "admin", testAsCustomer: true });
+    expect((await toggle(adminId, false)).json()).toEqual({ testAsCustomer: false });
+    expect((await me(adminId)).json()).toMatchObject({ role: "admin", testAsCustomer: false });
+  });
+
+  it("gates: an admin in test mode pays per ad at the $0.50 test price; off, exempt again", async () => {
+    const { paysPerAd, quoteNewAd } = await import("../lib/newAd/index.js");
+    const { websiteFeeFor } = await import("../lib/websiteFee/index.js");
+    expect(await paysPerAd(adminId)).toBe(false);
+    expect(await websiteFeeFor(adminId)).toBeNull();
+    await toggle(adminId, true);
+    expect(await paysPerAd(adminId)).toBe(true);
+    const quote = await quoteNewAd(adminId);
+    expect(quote).toMatchObject({ amountMinor: 50, testMode: true });
+    expect(await websiteFeeFor(adminId)).toMatchObject({ priceMinor: 50, testMode: true });
+    // A real customer is untouched.
+    expect(await quoteNewAd(userId)).toMatchObject({ amountMinor: 1000, testMode: false });
+    await toggle(adminId, false);
+    expect(await paysPerAd(adminId)).toBe(false);
+  });
+});

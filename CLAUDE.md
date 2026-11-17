@@ -518,6 +518,25 @@ customer keeps being charged and the database stays in month one.
 decision and are tested. Anything reaching for `db` or `fetch` belongs in the
 sibling `index.ts`.
 
+## Admin "Test as customer" (2026-11-17, migration 0027, `lib/testMode`)
+
+`users.test_as_customer`, switched by an admin in Settings (`PATCH
+/auth/me/test-mode`, 403 for non-admins); a banner shows on every dashboard
+page while it is on. An admin with it on is billed EXACTLY like a standard
+advertiser and every Stripe charge (ad, website, offer combo, video bundle,
+monthly plan) is `TEST_PRICE_MINOR` = 50 cents (`chargeMinor()` in
+`lib/pricing`), so the real checkout, webhook and ledger run end to end.
+Purchase/invoice rows hold the 50 cents, so webhook amount checks reconcile.
+Stripe metadata carries `test_mode=1`; `/metrics` and `/admin/ad-production`
+exclude admins' payments from revenue (`/admin/business` already did).
+Ad budget top-ups are not test priced (real Google spend).
+
+**Any customer-flow check on `role === "admin"` or `req.userRole` must go
+through `lib/testMode`** (`billingIdentity()`, `customerFlowRole(req)`; pure
+rules in `policy.ts`, tested), and the web uses `actsAsAdmin(me)` from
+`web/src/lib/testMode.ts`. Admin pages and `requireAdmin` keep the REAL role so
+the admin can always switch back. `at_cost` customers are unchanged.
+
 ## Stripe: one org account, one AdVault endpoint
 
 The 3PandaLabs Stripe account is shared by every app. AdVault tags what it

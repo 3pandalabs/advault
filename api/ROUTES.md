@@ -22,7 +22,8 @@ is meant to be readable without a login.
 | POST | `/auth/login` | Password length isn't checked here (only on register), because accounts made on SiteVault may have 8–9 characters. |
 | POST | `/auth/refresh` | Rotates: the presented token is destroyed. |
 | POST | `/auth/logout` | Always 204. |
-| GET | `/auth/me` | Also `signupApp` (`advault` / `sitevault`) and `usesSitevault` (the account has a SiteVault website); the empty dashboard links to SiteVault when either says so. |
+| GET | `/auth/me` | Also `signupApp` (`advault` / `sitevault`) and `usesSitevault` (the account has a SiteVault website); the empty dashboard links to SiteVault when either says so. `testAsCustomer`: admin "Test as customer" is on (`role` stays the real role). |
+| PATCH | `/auth/me/test-mode` | `{ on: boolean }` → `{ testAsCustomer }`. Admins only (real role from the DB): **403** `admin_role_required` otherwise, 401 without a session. While on, the admin is billed like a standard advertiser (plan gate at launch, $10 ad, website fee, offer combo, redo metering, own-video closed, video bundle paid, one website per account) and every Stripe charge is 50 cents (`TEST_PRICE_MINOR`), tagged `metadata.test_mode=1`; subscriptions use an inline monthly `price_data`. Ad budget top-ups are unchanged. Admin routes keep the real role. `GET /plans` with a session reports `testMode` and the test fee. See `lib/testMode`. |
 | PATCH | `/auth/me` | Profile fields only (`displayName`, `businessName`, `businessCategory`, `phone`; `null` clears) — never email or role, which are stripped. **400** `nothing_to_update` when no profile field is left (`{}`, or only email/role); it was a 500. |
 | DELETE | `/auth/sessions` | Signs out everywhere. |
 | GET | `/auth/me/deletion` | Preview for the confirmation screen: `{ liveCampaigns, activePlan, walletBalanceMinor, currencyCode }`. |

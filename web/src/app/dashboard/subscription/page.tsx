@@ -13,6 +13,7 @@ import {
 import { Badge, Card, CardDescription, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { formatDate } from "@/lib/utils";
+import { shownPrice } from "@/lib/testMode";
 
 // The subscription. This page is what makes someone a paying customer, and
 // before it existed there was no such thing in the product: every plan carried
@@ -49,6 +50,8 @@ const STATUS_COPY: Record<string, string> = {
 export default function SubscriptionPage() {
   const [view, setView] = useState<SubscriptionView | null>(null);
   const [plans, setPlans] = useState<Plan[]>([]);
+  // Admin "Test as customer": plan fees come back at the test price; copy follows.
+  const [testMode, setTestMode] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -65,7 +68,10 @@ export default function SubscriptionPage() {
   useEffect(() => {
     const currency = view?.subscription?.currencyCode ?? "USD";
     listPlans(currency)
-      .then((r) => setPlans(r.plans))
+      .then((r) => {
+        setPlans(r.plans);
+        setTestMode(r.testMode === true);
+      })
       .catch(() => setPlans([]));
   }, [view?.subscription?.currencyCode]);
 
@@ -190,7 +196,7 @@ export default function SubscriptionPage() {
               </p>
               <p className="mt-1 text-sm text-zinc-400">
                 {plan.line === "evergreen"
-                  ? `$30 goes to your ads (about $1/day) + ${plan.display.monthlyFee} AdVault fee. $10 one-time for each ad we make. Add budget any time for more views.`
+                  ? `$30 goes to your ads (about $1/day) + ${plan.display.monthlyFee} AdVault fee. ${shownPrice("$10", testMode)} one-time for each ad we make. Add budget any time for more views.`
                   : `${plan.includedCreativesPerMonth} fresh videos a month`}
                 {plan.line === "managed" ? ` · ${plan.display.allIn} all-in with ad spend` : ""}
               </p>

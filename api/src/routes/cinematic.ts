@@ -1,6 +1,7 @@
 import { and, desc, eq, sql } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
+import { customerFlowRole } from "../lib/testMode/index.js";
 import { requireAuth } from "../auth/plugin.js";
 import { db } from "../db/index.js";
 import { purchases, users } from "../db/schema.js";
@@ -8,6 +9,7 @@ import { loadOwnedCampaign } from "../lib/ownership.js";
 import {
   ADD_ONS,
   addOnByKey,
+  chargeMinor,
   formatMinor,
   isCurrency,
   maybeAddOnFor,
@@ -108,7 +110,9 @@ export async function cinematicRoutes(app: FastifyInstance) {
     scoped.get("/cinematic/quote", async (req) => {
       const quote = await quoteFor(req.userId!, "cinematic");
       const open = videoBundleSalesOpen();
-      const pack = open ? maybeAddOnFor(quote.currency, "cinematic_pack") : null;
+      const listPack = open ? maybeAddOnFor(quote.currency, "cinematic_pack") : null;
+      // Admin "Test as customer": the pack is charged at the test price too.
+      const pack = listPack ? { ...listPack, priceMinor: chargeMinor(listPack.priceMinor, quote.testMode) } : null;
       const creditsLeft = await packCreditsLeft(req.userId!);
       return {
         // Unspent 3-pack credits; while > 0 an order costs nothing more.
@@ -177,6 +181,8 @@ export async function cinematicRoutes(app: FastifyInstance) {
 
         const quote = await quoteFor(req.userId!, "cinematic");
         const [user] = await db.select().from(users).where(eq(users.id, req.userId!)).limit(1);
+        // An admin testing as a customer pays like one (lib/testMode).
+        const actsAsAdmin = (await customerFlowRole(req)) === "admin";
 
         // The shot plan is written HERE, by the API (which holds the Anthropic
         // key; the renderer does not), before any money moves: a brief that
@@ -209,7 +215,7 @@ export async function cinematicRoutes(app: FastifyInstance) {
 
         // A pack credit pays for it: no checkout. The advisory lock makes two
         // orders pressed at once unable to spend the same last credit.
-        if (user?.role !== "admin") {
+        if (!actsAsAdmin) {
           const viaCredit = await db.transaction(async (tx) => {
             await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${req.userId!}))`);
             if ((await packCreditsLeft(req.userId!, tx)) < 1) return null;
@@ -256,7 +262,7 @@ export async function cinematicRoutes(app: FastifyInstance) {
 
         // Admins test for free: the order is paid on creation and goes
         // straight to production (same as admin photo ads, which skip the $10).
-        if (user?.role === "admin") {
+        if (actsAsAdmin) {
           const [paid] = await db
             .update(purchases)
             .set({
@@ -293,6 +299,7 @@ export async function cinematicRoutes(app: FastifyInstance) {
           amountMinor: quote.amountMinor,
           currency: quote.currency,
           purpose: "add_on",
+          testMode: quote.testMode,
           userEmail: user?.email ?? "",
           // The cinematic page lists the order and polls its status.
           returnUrl: `${WEB_ORIGIN}/dashboard/cinematic?order=${purchase.id}`,
@@ -336,6 +343,7 @@ export async function cinematicRoutes(app: FastifyInstance) {
         amountMinor: quote.amountMinor,
         currency: quote.currency,
         purpose: "add_on",
+        testMode: quote.testMode,
         userEmail: user?.email ?? "",
         returnUrl: `${WEB_ORIGIN}/dashboard/cinematic?pack=${purchase.id}`,
       });

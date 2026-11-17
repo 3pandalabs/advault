@@ -117,11 +117,12 @@ export async function metricsRoutes(app: FastifyInstance) {
         -- Revenue. Until subscriptions existed these were all structurally zero:
         -- every plan carried a monthly fee of 0 and no 'fee' ledger row was ever
         -- written, so "is this product earning anything" was unanswerable from
-        -- the admin page.
-        (select count(*) from subscriptions where status = 'active')::int as paying_subscribers,
-        (select count(*) from subscriptions where status = 'past_due')::int as past_due_subscribers,
-        (select coalesce(sum(amount_minor), 0) from subscriptions where status in ('active','past_due') and currency_code = 'INR')::int as mrr_minor_inr,
-        (select coalesce(sum(amount_minor), 0) from subscriptions where status in ('active','past_due') and currency_code = 'USD')::int as mrr_minor_usd,
+        -- the admin page. Admins' own payments are excluded: an admin only pays
+        -- when testing as a customer at $0.50 (lib/testMode), which is not revenue.
+        (select count(*) from subscriptions where status = 'active' and user_id not in (select id from users where role = 'admin'))::int as paying_subscribers,
+        (select count(*) from subscriptions where status = 'past_due' and user_id not in (select id from users where role = 'admin'))::int as past_due_subscribers,
+        (select coalesce(sum(amount_minor), 0) from subscriptions where status in ('active','past_due') and currency_code = 'INR' and user_id not in (select id from users where role = 'admin'))::int as mrr_minor_inr,
+        (select coalesce(sum(amount_minor), 0) from subscriptions where status in ('active','past_due') and currency_code = 'USD' and user_id not in (select id from users where role = 'admin'))::int as mrr_minor_usd,
         -- Prepaid balances the org is holding against platform-funded ad spend.
         -- This is money we owe as media, not revenue, and it was previously
         -- invisible on the admin page — the outstanding exposure under MCC.
@@ -132,8 +133,8 @@ export async function metricsRoutes(app: FastifyInstance) {
         (select count(*) from purchases where status in ('paid','producing'))::int as cinematic_awaiting_production,
         (select count(*) from purchases where status = 'delivered')::int as cinematic_delivered,
         (select count(*) from purchases where status = 'failed')::int as cinematic_failed_unrefunded,
-        (select coalesce(sum(amount_minor),0) from purchases where currency_code = 'INR' and status in ('paid','producing','delivered'))::int as add_on_revenue_minor_inr,
-        (select coalesce(sum(amount_minor),0) from purchases where currency_code = 'USD' and status in ('paid','producing','delivered'))::int as add_on_revenue_minor_usd
+        (select coalesce(sum(amount_minor),0) from purchases where currency_code = 'INR' and status in ('paid','producing','delivered') and user_id not in (select id from users where role = 'admin'))::int as add_on_revenue_minor_inr,
+        (select coalesce(sum(amount_minor),0) from purchases where currency_code = 'USD' and status in ('paid','producing','delivered') and user_id not in (select id from users where role = 'admin'))::int as add_on_revenue_minor_usd
     `);
 
     const database = await db.execute<DatabaseRow>(sql`

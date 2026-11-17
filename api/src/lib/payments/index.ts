@@ -33,6 +33,8 @@ export type CheckoutRequest = {
    * providers charge the total.
    */
   lineItems?: { amountMinor: number; name: string }[];
+  /** Admin testing as a customer (lib/testMode): Stripe tags it `test_mode=1`. */
+  testMode?: boolean;
 };
 
 export type CheckoutSession = {

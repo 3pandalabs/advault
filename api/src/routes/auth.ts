@@ -12,6 +12,7 @@ import { hashSecret, verifySecret } from "../auth/password.js";
 import { db } from "../db/index.js";
 import { sessions, users } from "../db/schema.js";
 import { deleteAccount, deletionPreview } from "../lib/accountDeletion.js";
+import { mayToggleTestMode } from "../lib/testMode/policy.js";
 
 // No password-reset flow here, deliberately — unlike RsvpVault, which has one.
 // The shared 3pandalabs/mailer gateway sends through Resend, and only
@@ -174,6 +175,8 @@ export async function authRoutes(app: FastifyInstance) {
         businessCategory: users.businessCategory,
         phone: users.phone,
         role: users.role,
+        // Admin "Test as customer" (lib/testMode): billed like a customer, $0.50 charges.
+        testAsCustomer: users.testAsCustomer,
         createdAt: users.createdAt,
         // Shared 3PandaLabs account: where it was made, and whether it has a
         // SiteVault website (the dashboard links one).
@@ -223,6 +226,27 @@ export async function authRoutes(app: FastifyInstance) {
           role: users.role,
         });
       return user;
+    },
+  );
+
+  // Admin "Test as customer" (lib/testMode). Only an admin may switch it on
+  // (403 for anyone else); the REAL role is read from the database, not the
+  // JWT, so a just-demoted admin cannot. Admin pages keep working while it is
+  // on, so the admin can always switch back.
+  app.patch(
+    "/auth/me/test-mode",
+    { preHandler: requireAuth, schema: { body: z.object({ on: z.boolean() }) } },
+    async (req, reply) => {
+      const { on } = req.body as { on: boolean };
+      const [me] = await db.select({ role: users.role }).from(users).where(eq(users.id, req.userId!)).limit(1);
+      if (!me || !mayToggleTestMode(me.role)) return reply.code(403).send({ error: "admin_role_required" });
+      const [user] = await db
+        .update(users)
+        .set({ testAsCustomer: on })
+        .where(eq(users.id, req.userId!))
+        .returning({ testAsCustomer: users.testAsCustomer });
+      req.log.info({ userId: req.userId, on }, "admin test-as-customer toggled");
+      return { testAsCustomer: user!.testAsCustomer };
     },
   );
 

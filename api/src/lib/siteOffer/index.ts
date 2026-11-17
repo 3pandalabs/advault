@@ -57,6 +57,8 @@ export async function quoteCampaignSiteOffer(args: {
   exempt: boolean;
   currency: Currency;
   ticked: boolean;
+  /** Admin testing as a customer: the paid add-on is the $0.50 test price. */
+  testMode?: boolean;
 }): Promise<CampaignSiteOffer> {
   const slug = slugFromSiteUrl(args.campaign.landingUrl);
   const offer = offerBanner(args.campaign.offerDetails);
@@ -68,6 +70,7 @@ export async function quoteCampaignSiteOffer(args: {
     exempt: args.exempt,
     currency: args.currency,
     ticked: args.ticked,
+    testMode: args.testMode,
     // A website made from this campaign already carries its offer.
     alreadyOnSite: sameOffer(status?.offer, offer),
   });

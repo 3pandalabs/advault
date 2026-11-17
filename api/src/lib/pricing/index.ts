@@ -418,3 +418,19 @@ export function formatMinor(minor: number, currency: Currency): string {
     maximumFractionDigits: minor % MINOR_PER_MAJOR === 0 ? 0 : 2,
   }).format(minor / MINOR_PER_MAJOR);
 }
+
+// ---------------------------------------------------------------------------
+// Admin "Test as customer" (2026-11-17, lib/testMode). While an admin has it
+// on, EVERY Stripe charge AdVault makes for them (the $10 ad, the website, the
+// offer combo's $2, the video bundle, the monthly plan) is this amount: 50
+// cents, Stripe's minimum charge in USD. The purchase/invoice row records it,
+// so the webhook's amount check reconciles. Ad budget top-ups are NOT test
+// priced: that money really goes to Google.
+// ---------------------------------------------------------------------------
+
+export const TEST_PRICE_MINOR = 50;
+
+/** The amount to charge: the test price in test mode, else the real one. A $0 waiver stays $0. */
+export function chargeMinor(realMinor: number, testMode: boolean): number {
+  return testMode && realMinor > 0 ? TEST_PRICE_MINOR : realMinor;
+}

@@ -123,6 +123,8 @@ export async function adMetricsRoutes(app: FastifyInstance) {
           and(
             sql`${purchases.sku} = 'new_ad'`,
             sql`${purchases.amountMinor} > 0`,
+            // Not admins' $0.50 "Test as customer" payments (lib/testMode).
+            sql`${purchases.userId} not in (select id from users where role = 'admin')`,
             gte(purchases.paidAt, from),
             lt(purchases.paidAt, to),
           ),

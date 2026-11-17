@@ -50,6 +50,9 @@ export const users = pgTable(
     // 'standard' charges a platform fee; 'at_cost' passes Google's cost through
     // at 0% margin. A real mode, not a coupon — see lib/pricing.
     marginMode: text("margin_mode").notNull().default("standard"),
+    // Admin "Test as customer" (0027, lib/testMode): an admin with this on is
+    // billed like a standard advertiser, at the $0.50 test price.
+    testAsCustomer: boolean("test_as_customer").notNull().default(false),
 
     // Set when the user deleted their account (lib/accountDeletion.ts). The row
     // is kept, anonymised, because the financial records point at it.

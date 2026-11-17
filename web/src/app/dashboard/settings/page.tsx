@@ -16,6 +16,7 @@ import { Badge, Card, CardDescription, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { formatDate } from "@/lib/utils";
 import { DeleteAccountCard } from "./delete-account";
+import { TestAsCustomerCard } from "./test-mode";
 
 export default function SettingsPage() {
   const [data, setData] = useState<{ configured: boolean; accounts: AdAccount[] } | null>(null);
@@ -292,6 +293,8 @@ export default function SettingsPage() {
           support rather than creating a second one.
         </CardDescription>
       </Card>
+
+      <TestAsCustomerCard />
 
       <DeleteAccountCard />
     </div>
