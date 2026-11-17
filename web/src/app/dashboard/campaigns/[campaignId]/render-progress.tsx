@@ -62,3 +62,40 @@ export function RenderProgress({
     </div>
   );
 }
+
+// The step BEFORE the render: the API writes the script with AI inside the
+// generate / redo request itself (~20 s), and only then do the creatives
+// (and RenderProgress) exist. Without this the button just greys out and the
+// page looks stuck. Same honest-estimate rule: never 100% on its own.
+const SCRIPT_SECONDS = 25;
+
+export function ScriptProgress({ startedAt }: { startedAt: number }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 500);
+    return () => clearInterval(t);
+  }, []);
+  const elapsed = Math.max(0, (now - startedAt) / 1000);
+  const fraction = Math.min(0.95, elapsed / SCRIPT_SECONDS);
+  return (
+    <div role="status" aria-live="polite">
+      <div className="flex flex-wrap items-baseline justify-between gap-2 text-sm">
+        <span className="text-zinc-200">
+          {elapsed < 8 ? "Looking at your photos" : "Writing your ad script"}…
+        </span>
+        <span className="text-zinc-400">
+          {elapsed > SCRIPT_SECONDS ? "Almost there" : "About 20 seconds"}
+        </span>
+      </div>
+      <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-white/10">
+        <div
+          className="h-full rounded-full bg-amber-400 transition-[width] duration-500 ease-linear"
+          style={{ width: `${Math.round(fraction * 100)}%` }}
+        />
+      </div>
+      <p className="mt-2 text-xs text-zinc-500">
+        Next we make the video itself, which takes a few minutes. You can leave this page; it keeps going.
+      </p>
+    </div>
+  );
+}
