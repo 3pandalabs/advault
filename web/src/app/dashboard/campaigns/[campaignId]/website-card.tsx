@@ -8,6 +8,7 @@ import {
   updateCampaign,
   linkExistingWebsite,
   websiteCheckout,
+  websiteReady,
   type Campaign,
   type PendingSite,
 } from "@/lib/api/browser";
@@ -72,6 +73,34 @@ export function WebsiteCard({
   siteOfferRev?: number;
 }) {
   const locked = campaign.status === "live" || Boolean(campaign.googleCampaignResourceName);
+  // A SiteVault link is shown only once the site really loads; until then a
+  // "building your website" bar. Gives up after ~3 minutes and shows the link.
+  const isSiteVault = Boolean(siteVaultSlug(campaign.landingUrl));
+  const [siteReady, setSiteReady] = useState<boolean>(!isSiteVault);
+  const [checkStartedAt] = useState(() => Date.now());
+  useEffect(() => {
+    if (!isSiteVault) {
+      setSiteReady(true);
+      return;
+    }
+    let cancelled = false;
+    let tries = 0;
+    const check = () =>
+      websiteReady(campaign.id)
+        .then((r) => r.ready)
+        .catch(() => false)
+        .then((ready) => {
+          if (cancelled) return;
+          tries += 1;
+          if (ready || tries >= 45) setSiteReady(true);
+          else setTimeout(check, 4000);
+        });
+    setSiteReady(false);
+    void check();
+    return () => {
+      cancelled = true;
+    };
+  }, [campaign.id, campaign.landingUrl, isSiteVault]);
   const [mode, setMode] = useState<"view" | "link" | "make">("view");
   const [draft, setDraft] = useState(campaign.landingUrl ?? "");
   const [phone, setPhone] = useState("");
@@ -91,8 +120,6 @@ export function WebsiteCard({
   // $10 website fee: the made-but-unpaid site, and the price ("$10"; null = free).
   const [pendingSite, setPendingSite] = useState<PendingSite | null>(null);
   const [websiteFee, setWebsiteFee] = useState<string | null | undefined>(undefined);
-  const isSiteVault = siteVaultSlug(campaign.landingUrl) !== null;
-
   // Offer combo: did the latest website offer reach the site? Re-checked a
   // few times while SiteVault hasn't confirmed it yet (the push follows payment).
   useEffect(() => {
@@ -252,7 +279,9 @@ export function WebsiteCard({
         <div className="min-w-0">
           <CardTitle>Your website</CardTitle>
           <CardDescription>
-            {campaign.landingUrl ? (
+            {campaign.landingUrl && !siteReady ? (
+              <WebsiteBuilding startedAt={checkStartedAt} />
+            ) : campaign.landingUrl ? (
               <a href={campaign.landingUrl} target="_blank" rel="noreferrer" className="break-all hover:underline">
                 {campaign.landingUrl}
               </a>
@@ -281,7 +310,7 @@ export function WebsiteCard({
 
       {error && <p className="mt-3 text-sm text-red-300">{error}</p>}
 
-      {editUrl && campaign.landingUrl && mode === "view" && (
+      {editUrl && campaign.landingUrl && siteReady && mode === "view" && (
         <p className="mt-3 text-sm text-zinc-300">
           Made with SiteVault.{" "}
           <a href={editUrl} target="_blank" rel="noreferrer" className="text-amber-300 underline">
@@ -524,5 +553,27 @@ export function WebsiteCard({
         </div>
       )}
     </Card>
+  );
+}
+
+/** Shown until the new website actually loads: an estimate, never 100% on its own. */
+function WebsiteBuilding({ startedAt }: { startedAt: number }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
+  const fraction = Math.min(0.92, (now - startedAt) / 1000 / 40);
+  return (
+    <span className="mt-1 block" role="status" aria-live="polite">
+      <span className="block text-sm text-zinc-200">Building your website…</span>
+      <span className="mt-2 block h-2 w-full max-w-sm overflow-hidden rounded-full bg-white/10">
+        <span
+          className="block h-full rounded-full bg-amber-400 transition-[width] duration-1000 ease-linear"
+          style={{ width: `${Math.round(fraction * 100)}%` }}
+        />
+      </span>
+      <span className="mt-1 block text-xs text-zinc-500">Usually under a minute. The link appears here when it's live.</span>
+    </span>
   );
 }
