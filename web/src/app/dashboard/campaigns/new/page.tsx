@@ -102,13 +102,20 @@ function photoTip(category: string): string {
 }
 
 /** The category's example offer, or null when there is only the generic hint. */
-function offerExample(category: string, isListing: boolean): string | null {
+// "Other" or a category typed in: still one tap to a starting point (the
+// "This is our example. Change it…" warning shows until they edit it).
+const GENERIC_OFFER_EXAMPLE =
+  "10% off your first visit this month. Family-run, friendly service, same-week appointments.";
+
+function offerExample(category: string, isListing: boolean): string {
   if (isHousingCategory(category)) return isListing ? LISTING_EXAMPLE : AGENT_EXAMPLE;
-  return OFFER_EXAMPLES[category] ?? null;
+  return OFFER_EXAMPLES[category] ?? GENERIC_OFFER_EXAMPLE;
 }
 
 function offerPlaceholder(category: string, isListing: boolean): string {
-  return offerExample(category, isListing) ?? "Your deal or price, how long it lasts, and what makes you the one to call.";
+  // The placeholder shows the category's own example; with none, what to write.
+  if (isHousingCategory(category) || OFFER_EXAMPLES[category]) return offerExample(category, isListing);
+  return "Your deal or price, how long it lasts, and what makes you the one to call.";
 }
 
 export default function NewCampaignPage() {
