@@ -193,3 +193,14 @@ describe("negated mentions (2026-11-15)", () => {
     expect(rejectVisualPrompt("No logos, a banner showing 20% off")).not.toBeNull();
   });
 });
+
+describe("opener prompts with shot length or camera turns", () => {
+  it("keeps durations and degrees, still rejects prices", () => {
+    expect(rejectVisualPrompt("A 5-second slow dolly across brushed aluminum condenser fins, cool dawn light")).toBeNull();
+    expect(rejectVisualPrompt("Slow push-in over frosted copper coils, soft morning light, 5 seconds")).toBeNull();
+    expect(rejectVisualPrompt("Cool vapor from a vent in a sunlit room, slow 360-degree orbit")).toBeNull();
+    expect(rejectVisualPrompt("Slow 90° pan over polished copper, 3s")).toBeNull();
+    expect(rejectVisualPrompt("A 5-second shot of a $79 tune-up")?.reason).toBe("claim");
+    expect(rejectVisualPrompt("Copper pipes catching light, 50 percent brighter")?.reason).toBe("claim");
+  });
+});
