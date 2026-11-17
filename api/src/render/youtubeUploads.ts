@@ -158,7 +158,8 @@ async function runLoop(): Promise<void> {
         retryable,
         error: String(err),
       });
-      await failUploadJob(job, err, { retryable }).catch((e) =>
+      const uploadLimit = err instanceof YouTubeUploadError && err.uploadLimit;
+      await failUploadJob(job, err, { retryable, uploadLimit }).catch((e) =>
         log("failed to record upload failure", String(e)),
       );
     }
