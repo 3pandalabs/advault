@@ -117,6 +117,27 @@ export async function createSitevaultSite(
   return { ok: false, status: res.status, errors: body.errors ?? { form: body.error ?? `sitevault_${res.status}` } };
 }
 
+/** Put the ad video on the site (at launch). Replaces any earlier video. */
+export async function setSitevaultVideo(slug: string, video: Video): Promise<{ ok: true } | { ok: false; error: string }> {
+  const token = process.env.SITEVAULT_INTERNAL_TOKEN;
+  if (!token) return { ok: false, error: "sitevault_not_configured" };
+  try {
+    const form = new FormData();
+    form.append("video", new Blob([new Uint8Array(video.bytes)], { type: "video/mp4" }), "ad.mp4");
+    const res = await fetch(`${SITEVAULT_URL}/api/internal/sites/${encodeURIComponent(slug)}/video`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, accept: "application/json" },
+      body: form,
+      signal: AbortSignal.timeout(120_000),
+    });
+    if (res.ok) return { ok: true };
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    return { ok: false, error: body.error ?? `sitevault_${res.status}` };
+  } catch (err) {
+    return { ok: false, error: String(err).slice(0, 200) };
+  }
+}
+
 /** Make sure the site belongs to this AdVault user's SiteVault account (idempotent; never steals an owned site). */
 export async function setSitevaultOwner(slug: string, owner: { advaultUserId: string; email: string }): Promise<boolean> {
   const token = process.env.SITEVAULT_INTERNAL_TOKEN;

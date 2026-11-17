@@ -183,6 +183,13 @@
       "when": 1795500400000,
       "tag": "0025_shared_account",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1795500500000,
+      "tag": "0026_site_video",
+      "breakpoints": true
     }
   ]
 }

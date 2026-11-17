@@ -151,6 +151,9 @@ export type Campaign = {
   businessCategory: string;
   callToAction: string;
   landingUrl: string | null;
+  /** The ad video on the SiteVault site: asked for at launch (0026) / added. */
+  siteVideoWanted?: boolean;
+  siteVideoPushedAt?: string | null;
   /** Set when AdVault made the website with SiteVault (ciphertext; use getWebsite). */
   sitevaultEditEnc?: string | null;
   offerDetails: string | null;
@@ -538,7 +541,7 @@ export const generatePaidNewAd = (purchaseId: string) =>
     method: "POST",
   });
 
-export function launchCampaign(campaignId: string, adAccountId: string) {
+export function launchCampaign(campaignId: string, adAccountId: string, videoOnWebsite?: boolean) {
   return api<{
     campaign: Campaign;
     zipCodesRequested: number;
@@ -549,7 +552,7 @@ export function launchCampaign(campaignId: string, adAccountId: string) {
     note: string;
   }>(`/campaigns/${campaignId}/launch`, {
     method: "POST",
-    body: JSON.stringify({ adAccountId }),
+    body: JSON.stringify({ adAccountId, videoOnWebsite }),
   });
 }
 

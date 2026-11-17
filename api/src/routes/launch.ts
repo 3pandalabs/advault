@@ -1,3 +1,6 @@
+import { pushSiteVideoSoon } from "../lib/siteVideo/index.js";
+import { wantsSiteVideo } from "../lib/siteVideo/policy.js";
+import { slugFromSiteUrl } from "../lib/sitevault/index.js";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
@@ -76,6 +79,8 @@ export async function launchRoutes(app: FastifyInstance) {
           // Dry run: Google checks every operation and creates nothing. Skips
           // the billing and wallet gates, because nothing can spend.
           validateOnly: z.boolean().optional(),
+          // "Also show this ad on my website" (SiteVault sites only, default on).
+          videoOnWebsite: z.boolean().optional(),
         }),
       },
     },
@@ -88,9 +93,10 @@ export async function launchRoutes(app: FastifyInstance) {
       }
 
       const { campaignId } = req.params as { campaignId: string };
-      const { adAccountId, validateOnly = false } = req.body as {
+      const { adAccountId, validateOnly = false, videoOnWebsite } = req.body as {
         adAccountId: string;
         validateOnly?: boolean;
+        videoOnWebsite?: boolean;
       };
 
       const campaign = await loadOwnedCampaign(campaignId, req.userId!, reply);
@@ -468,6 +474,10 @@ export async function launchRoutes(app: FastifyInstance) {
             launchError: null,
             launchedAt: new Date(),
             updatedAt: new Date(),
+            // The ad video joins the SiteVault website now (lib/siteVideo).
+            ...(wantsSiteVideo({ requested: videoOnWebsite, sitevaultSlug: slugFromSiteUrl(campaign.landingUrl) })
+              ? { siteVideoWanted: true }
+              : {}),
           })
           .where(eq(campaigns.id, campaignId))
           .returning();
@@ -478,6 +488,9 @@ export async function launchRoutes(app: FastifyInstance) {
           .update(creatives)
           .set({ googleAdResourceName: result.adResourceName })
           .where(inArray(creatives.id, uploaded.map((c) => c.id)));
+
+        // Fire-and-forget: a SiteVault failure never fails the launch; the sweep retries.
+        if (updated?.siteVideoWanted) pushSiteVideoSoon(campaignId);
 
         // A platform customer's card limit tracks what they have live. Never
         // throws; a failure is logged and the old limit stays.

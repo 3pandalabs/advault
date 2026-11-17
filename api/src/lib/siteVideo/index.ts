@@ -1,0 +1,84 @@
+// Puts the ad video on the campaign's SiteVault website after launch.
+// Fire-and-forget from launch (a SiteVault failure never fails a launch), and
+// the API sweep retries every 10 minutes, up to SITE_VIDEO_MAX_ATTEMPTS.
+// Rules in policy.ts.
+
+import { and, desc, eq, isNull, lt, ne, sql } from "drizzle-orm";
+import { db } from "../../db/index.js";
+import { campaigns, creatives } from "../../db/schema.js";
+import { getObjectBytes } from "../../plugins/r2.js";
+import { setSitevaultVideo, slugFromSiteUrl } from "../sitevault/index.js";
+import { pickSiteVideo, siteVideoDue, SITE_VIDEO_MAX_ATTEMPTS, SITE_VIDEO_MAX_BYTES } from "./policy.js";
+
+export async function pushSiteVideo(campaignId: string): Promise<"pushed" | "failed" | "skipped"> {
+  const [c] = await db.select().from(campaigns).where(eq(campaigns.id, campaignId)).limit(1);
+  if (!c || !siteVideoDue(c)) return "skipped";
+  const fail = async (error: string) => {
+    await db
+      .update(campaigns)
+      .set({ siteVideoAttempts: sql`${campaigns.siteVideoAttempts} + 1`, siteVideoError: error.slice(0, 300) })
+      .where(eq(campaigns.id, campaignId));
+    console.error(JSON.stringify({ msg: "site video push failed", campaignId, error }));
+    return "failed" as const;
+  };
+  const slug = slugFromSiteUrl(c.landingUrl);
+  if (!slug) return fail("not_a_sitevault_site");
+  const rows = await db
+    .select({ aspectRatio: creatives.aspectRatio, videoKey: creatives.videoKey, sizeBytes: creatives.sizeBytes })
+    .from(creatives)
+    .where(and(eq(creatives.campaignId, campaignId), ne(creatives.kind, "upload"), eq(creatives.renderStatus, "ready")))
+    .orderBy(desc(creatives.createdAt));
+  const ad = pickSiteVideo(rows);
+  if (!ad?.videoKey) return fail("no_ready_video");
+  try {
+    const bytes = await getObjectBytes(ad.videoKey);
+    if (bytes.length > SITE_VIDEO_MAX_BYTES) return fail("video_too_large");
+    const r = await setSitevaultVideo(slug, { bytes });
+    if (!r.ok) return fail(r.error);
+  } catch (err) {
+    return fail(String(err));
+  }
+  await db
+    .update(campaigns)
+    .set({ siteVideoPushedAt: new Date(), siteVideoError: null })
+    .where(eq(campaigns.id, campaignId));
+  return "pushed";
+}
+
+/** After launch: never awaited by the launch path. */
+export function pushSiteVideoSoon(campaignId: string): void {
+  setImmediate(() => void pushSiteVideo(campaignId).catch(() => undefined));
+}
+
+export async function runSiteVideoSweep(): Promise<{ pushed: number; failed: number }> {
+  const due = await db
+    .select({ id: campaigns.id })
+    .from(campaigns)
+    .where(
+      and(
+        eq(campaigns.siteVideoWanted, true),
+        isNull(campaigns.siteVideoPushedAt),
+        lt(campaigns.siteVideoAttempts, SITE_VIDEO_MAX_ATTEMPTS),
+      ),
+    )
+    .limit(20);
+  let pushed = 0;
+  let failed = 0;
+  for (const { id } of due) {
+    const r = await pushSiteVideo(id);
+    if (r === "pushed") pushed += 1;
+    else if (r === "failed") failed += 1;
+  }
+  return { pushed, failed };
+}
+
+/** Every 10 minutes in the API (the only process holding SITEVAULT_INTERNAL_TOKEN). */
+export function startSiteVideoSweep(intervalMs = 10 * 60 * 1000): void {
+  const tick = () =>
+    runSiteVideoSweep()
+      .then((r) => {
+        if (r.pushed || r.failed) console.log(JSON.stringify({ msg: "site video sweep", ...r }));
+      })
+      .catch((err) => console.error(JSON.stringify({ msg: "site video sweep threw", error: String(err) })));
+  setInterval(tick, intervalMs).unref();
+}
