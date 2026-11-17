@@ -136,6 +136,8 @@ export function WebsiteCard({
   const [adminCanDelete, setAdminCanDelete] = useState(false);
   const [adminCanMakeAnother, setAdminCanMakeAnother] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  // After an admin delete: which site went (the card may then show another one).
+  const [deletedSite, setDeletedSite] = useState<string | null>(null);
   const [siteOffer, setSiteOffer] = useState<SiteOfferState | null>(null);
   // $10 website fee: the made-but-unpaid site, and the price ("$10"; null = free).
   const [pendingSite, setPendingSite] = useState<PendingSite | null>(null);
@@ -274,11 +276,13 @@ export function WebsiteCard({
   // website" form, exactly as for a brand-new one (the price, if any, is re-read).
   async function deleteAndMakeNew() {
     if (!accountSite) return;
+    const deleting = accountSite;
     setBusy(true);
     setError(null);
     try {
-      await deleteAccountWebsite(campaign.id, accountSite);
+      await deleteAccountWebsite(campaign.id, deleting);
       setConfirmDelete(false);
+      setDeletedSite(deleting);
       const w = await getWebsite(campaign.id);
       applyAccountSite(w);
       setPendingSite(w.pendingSite ?? null);
@@ -423,6 +427,11 @@ export function WebsiteCard({
 
       {!locked && !campaign.landingUrl && mode === "view" && !pendingSite && accountSite && (
         <div className="mt-4 space-y-2">
+          {deletedSite && deletedSite !== accountSite && (
+            <p className="text-sm text-emerald-300" role="status">
+              Deleted {deletedSite}. Your account has another website, shown below. Delete it too to make a new one.
+            </p>
+          )}
           <p className="text-sm text-zinc-300">
             {accountSiteState === "pending" ? "Your business already has a website, waiting for payment on another campaign: " : "Your business already has a website: "}
             <a href={accountSite} target="_blank" rel="noreferrer" className="break-all text-amber-300 underline">
@@ -523,6 +532,11 @@ export function WebsiteCard({
 
       {mode === "make" && (
         <div className="mt-4 space-y-3">
+          {deletedSite && (
+            <p className="text-sm text-emerald-300" role="status">
+              Deleted {deletedSite}. Now make the new website.
+            </p>
+          )}
           <p className="text-sm text-zinc-300">
             We&apos;ll build a one-page website from this campaign: your business name, your offer
             and your ad photos, with call and text buttons.
