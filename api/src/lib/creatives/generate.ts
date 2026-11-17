@@ -5,6 +5,7 @@ import { generateScript } from "../ai/script/index.js";
 import { enqueueRender } from "../../render/jobs.js";
 import type { AdScript } from "../script/schema.js";
 import { presignDownload } from "../../plugins/r2.js";
+import { beforeAfterAllowed, pairAssetIds, withoutPairPhotos, type BeforeAfterKeys } from "../beforeAfter/policy.js";
 
 // Writing the scripts and queueing the renders for a campaign. Shared by the
 // wizard's generate route and the paid new-ad order (Keep it running), so both
@@ -43,6 +44,13 @@ export async function generateForCampaign(args: {
 }): Promise<GenerateResult> {
   const { campaign, userId } = args;
 
+  // Before & after pairs (lib/beforeAfter): their photos play only in the
+  // before/after scene, plain, so they are kept out of the ordinary photos
+  // (which get the AI photo pass and motion). Unless that would leave none.
+  const pairs = beforeAfterAllowed(campaign.businessCategory) ? (campaign.beforeAfter ?? []) : [];
+  const withoutPairs = withoutPairPhotos(args.assetIds, pairs);
+  const assetIds = withoutPairs.length > 0 ? withoutPairs : args.assetIds;
+
   // Next version of this campaign's ad: one more than the newest made one
   // (uploads don't count). Every path that makes a new ad (first generate,
   // paid new ad, redo) goes through here, so they all number the same way.
@@ -58,10 +66,25 @@ export async function generateForCampaign(args: {
   const ownedAssets = await db
     .select()
     .from(assets)
-    .where(and(eq(assets.userId, userId), inArray(assets.id, args.assetIds)));
-  if (ownedAssets.length !== args.assetIds.length) {
+    .where(and(eq(assets.userId, userId), inArray(assets.id, assetIds)));
+  if (ownedAssets.length !== assetIds.length) {
     return { ok: false, status: 400, body: { error: "unknown_assets" } };
   }
+
+  // The pairs as R2 keys, owner-checked again (a deleted photo drops its pair).
+  const pairIds = pairAssetIds(pairs);
+  const pairRows = pairIds.length
+    ? await db
+        .select({ id: assets.id, r2Key: assets.r2Key })
+        .from(assets)
+        .where(and(eq(assets.userId, userId), inArray(assets.id, pairIds)))
+    : [];
+  const pairKey = new Map(pairRows.map((r) => [r.id, r.r2Key]));
+  const beforeAfter: BeforeAfterKeys[] = pairs.flatMap((p) => {
+    const beforeKey = pairKey.get(p.beforeAssetId);
+    const afterKey = pairKey.get(p.afterAssetId);
+    return beforeKey && afterKey ? [{ beforeKey, afterKey }] : [];
+  });
 
   // Counted across all of this user's campaigns, not just this one —
   // per-campaign would be trivially sidestepped by creating campaigns in a
@@ -83,10 +106,10 @@ export async function generateForCampaign(args: {
 
   // Preserve the order the advertiser chose — it is the order the scenes
   // will play in, and the model's assetIndex values point into it.
-  const orderedKeys = args.assetIds.map((id) => ownedAssets.find((a) => a.id === id)!.r2Key);
+  const orderedKeys = assetIds.map((id) => ownedAssets.find((a) => a.id === id)!.r2Key);
 
   // Positions in the chosen order, which is what script assetIndex means.
-  const indexOf = (id: string) => args.assetIds.indexOf(id);
+  const indexOf = (id: string) => assetIds.indexOf(id);
   const portraitIndex = args.portraitAssetId ? indexOf(args.portraitAssetId) : -1;
   const peopleIndexes = [...new Set([...(args.peopleAssetIds ?? []).map(indexOf), portraitIndex])]
     .filter((i) => i >= 0)
@@ -94,6 +117,7 @@ export async function generateForCampaign(args: {
   const marks = {
     ...(peopleIndexes.length ? { peopleIndexes } : {}),
     ...(portraitIndex >= 0 ? { portraitIndex } : {}),
+    ...(beforeAfter.length ? { beforeAfter } : {}),
   };
 
   // Photos the writer can look at (presigned, short-lived). A presign
@@ -131,6 +155,7 @@ export async function generateForCampaign(args: {
         peopleIndexes,
         portraitIndex: portraitIndex >= 0 ? portraitIndex : null,
         imageUrls: visibleUrls,
+        beforeAfterPairs: beforeAfter.length,
       },
       args.warn,
     );

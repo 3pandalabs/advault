@@ -92,6 +92,14 @@ export const adScriptSchema = z.object({
   // the template's end card, render/template.ts).
   peopleIndexes: z.array(z.number().int().min(0).max(4)).max(5).optional(),
   portraitIndex: z.number().int().min(0).max(4).optional(),
+  // Set by lib/creatives/generate.ts, never by the model: the advertiser's
+  // before & after pairs (lib/beforeAfter) as R2 keys. They are NOT in
+  // sourceAssetKeys, so they never get the AI photo pass or motion; the
+  // renderer shows them plain in their own scene after the opener.
+  beforeAfter: z
+    .array(z.object({ beforeKey: z.string().min(1).max(500), afterKey: z.string().min(1).max(500) }))
+    .max(2)
+    .optional(),
 });
 
 export type AdScript = z.infer<typeof adScriptSchema>;

@@ -195,7 +195,13 @@ export async function creativeRoutes(app: FastifyInstance) {
         });
       }
 
-      const { script } = req.body as { script: z.infer<typeof adScriptSchema> };
+      const { script: edited } = req.body as { script: z.infer<typeof adScriptSchema> };
+      // The before & after keys are AdVault's, never the editor's: an edited
+      // script could otherwise point the renderer at any R2 key (someone
+      // else's photo) as "our work". Always the stored ones.
+      const stored = adScriptSchema.safeParse(owned.creative.script);
+      const { beforeAfter: _ignored, ...rest } = edited;
+      const script = { ...rest, ...(stored.success && stored.data.beforeAfter ? { beforeAfter: stored.data.beforeAfter } : {}) };
       const maxIndex = Math.max(owned.creative.sourceAssetKeys.length - 1, 0);
       if (script.scenes.some((s) => s.assetIndex > maxIndex)) {
         return reply.code(400).send({ error: "asset_index_out_of_range" });

@@ -56,3 +56,37 @@ describe("slugFromSiteUrl", async () => {
     expect(slugFromSiteUrl(null)).toBeNull();
   });
 });
+
+describe("before & after pairs on the internal create", async () => {
+  const { appendBeforeAfter, createSitevaultSite } = await import("./index.js");
+  const { vi, afterEach } = await import("vitest");
+  const jpg = (s: string) => ({ bytes: Buffer.from(s), contentType: "image/jpeg" });
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("names the files ba1Before / ba1After / ba2Before / ba2After, at most two pairs", () => {
+    const form = new FormData();
+    appendBeforeAfter(form, [
+      { before: jpg("b1"), after: jpg("a1") },
+      { before: jpg("b2"), after: { bytes: Buffer.from("a2"), contentType: "image/png" } },
+      { before: jpg("b3"), after: jpg("a3") },
+    ]);
+    expect([...form.keys()]).toEqual(["ba1Before", "ba1After", "ba2Before", "ba2After"]);
+    expect((form.get("ba2After") as File).name).toBe("ba2-after.png");
+  });
+
+  it("sends nothing new without pairs (older sites and senders keep working)", async () => {
+    process.env.SITEVAULT_INTERNAL_TOKEN ??= "t";
+    let sent: FormData | null = null;
+    vi.stubGlobal("fetch", async (_url: string, init: RequestInit) => {
+      sent = init.body as FormData;
+      return new Response(JSON.stringify({ ok: true, siteUrl: "https://x.3pandasite.com/", editUrl: "e", slug: "x" }));
+    });
+    await createSitevaultSite({ businessName: "Roof Co", category: "roofing", phone: "5552011234", city: "Edison" }, [jpg("p")]);
+    expect([...sent!.keys()].filter((k) => k.startsWith("ba"))).toEqual([]);
+
+    await createSitevaultSite({ businessName: "Roof Co", category: "roofing", phone: "5552011234", city: "Edison" }, [jpg("p")], null, [
+      { before: jpg("b"), after: jpg("a") },
+    ]);
+    expect([...sent!.keys()]).toEqual(expect.arrayContaining(["photos", "ba1Before", "ba1After"]));
+  });
+});

@@ -1,10 +1,11 @@
 import { ownVideoForNewSite } from "../lib/siteVideo/index.js";
-import { and, desc, eq, isNotNull, ne } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, ne } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { requireAuth } from "../auth/plugin.js";
 import { db } from "../db/index.js";
-import { campaigns, creatives, users } from "../db/schema.js";
+import { assets, campaigns, creatives, users } from "../db/schema.js";
+import { beforeAfterAllowed, pairAssetIds } from "../lib/beforeAfter/policy.js";
 import { decryptToken, encryptToken } from "../lib/crypto.js";
 import { loadOwnedCampaign } from "../lib/ownership.js";
 import {
@@ -20,6 +21,7 @@ import {
   sitevaultConfigured,
   slugFromSiteUrl,
   taglineFromSticker,
+  type BeforeAfterPhotos,
   type Photo,
   type StickerLike,
 } from "../lib/sitevault/index.js";
@@ -78,6 +80,37 @@ async function campaignPhotos(campaignId: string): Promise<Photo[]> {
     photos.push({ bytes: await getObjectBytes(useKey), contentType: type });
   }
   return photos;
+}
+
+/**
+ * The campaign's before & after pairs (lib/beforeAfter) for the site: the
+ * ORIGINAL photos, never a polished copy (both halves stay as taken). A pair
+ * with a missing, oversized or non-image half is left out whole.
+ */
+async function campaignBeforeAfter(campaign: typeof campaigns.$inferSelect): Promise<BeforeAfterPhotos[]> {
+  if (!beforeAfterAllowed(campaign.businessCategory)) return [];
+  const pairs = campaign.beforeAfter ?? [];
+  const ids = pairAssetIds(pairs);
+  if (ids.length === 0) return [];
+  const rows = await db
+    .select({ id: assets.id, r2Key: assets.r2Key })
+    .from(assets)
+    .where(and(eq(assets.userId, campaign.userId), inArray(assets.id, ids)));
+  const keyOf = new Map(rows.map((r) => [r.id, r.r2Key]));
+  const load = async (id: string): Promise<Photo | null> => {
+    const key = keyOf.get(id);
+    if (!key || !IMAGE_EXT.test(key)) return null;
+    const head = await headObject(key).catch(() => null);
+    if (!head || !PHOTO_TYPES.has(head.contentType ?? "") || head.sizeBytes > MAX_PHOTO_BYTES) return null;
+    return { bytes: await getObjectBytes(key), contentType: head.contentType! };
+  };
+  const out: BeforeAfterPhotos[] = [];
+  for (const p of pairs) {
+    const before = await load(p.beforeAssetId).catch(() => null);
+    const after = await load(p.afterAssetId).catch(() => null);
+    if (before && after) out.push({ before, after });
+  }
+  return out;
 }
 
 /**
@@ -262,6 +295,8 @@ export async function websiteRoutes(app: FastifyInstance) {
         // No photos means they used their own video: it goes on the site now
         // (approved uploads only). Generated ads still wait for launch.
         photos.length === 0 ? await ownVideoForNewSite(campaign.id) : null,
+        // Optional before & after pairs (ba1Before... on SiteVault's side).
+        await campaignBeforeAfter(campaign),
       );
       if (!result.ok && result.status === 409 && result.code === "account_has_site") {
         // SiteVault says the account already owns a site (our lookup missed

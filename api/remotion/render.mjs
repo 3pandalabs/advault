@@ -55,7 +55,7 @@ const base = `http://127.0.0.1:${server.address().port}/`;
 try {
   const props = JSON.parse(await readFile(path.join(root, "props.json"), "utf8"));
   const url = (p) => (p ? base + encodeURIComponent(p) : p);
-  const inputProps = { ...props, photos: props.photos.map(url), voiceover: url(props.voiceover), portrait: url(props.portrait), opener: url(props.opener) };
+  const inputProps = { ...props, photos: props.photos.map(url), voiceover: url(props.voiceover), portrait: url(props.portrait), opener: url(props.opener), beforeAfter: (props.beforeAfter ?? []).map((b) => ({ before: url(b.before), after: url(b.after) })) };
 
   let serveUrl = process.env.REMOTION_SERVE_URL ?? path.join(here, "build");
   if (!existsSync(serveUrl)) {

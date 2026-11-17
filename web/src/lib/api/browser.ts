@@ -439,6 +439,26 @@ export function updateCampaign(
   return api<Campaign>(`/campaigns/${campaignId}`, { method: "PATCH", body: JSON.stringify(input) });
 }
 
+/** One before & after pair (api lib/beforeAfter), with the photos' keys for thumbnails. */
+export type BeforeAfterPair = { beforeAssetId: string; afterAssetId: string; beforeKey: string; afterKey: string };
+export type BeforeAfterState = { allowed: boolean; pairs: BeforeAfterPair[]; attestedAt: string | null };
+
+export function getBeforeAfter(campaignId: string) {
+  return api<BeforeAfterState>(`/campaigns/${campaignId}/before-after`);
+}
+
+/** Saves the pairs (an empty list removes them). `attested` is required when any pair is sent. */
+export function setBeforeAfter(
+  campaignId: string,
+  pairs: { beforeAssetId: string; afterAssetId: string }[],
+  attested: boolean,
+) {
+  return api<BeforeAfterState>(`/campaigns/${campaignId}/before-after`, {
+    method: "PUT",
+    body: JSON.stringify({ pairs, attested }),
+  });
+}
+
 /** One-click SiteVault website for a campaign with no website. */
 export function createWebsite(
   campaignId: string,

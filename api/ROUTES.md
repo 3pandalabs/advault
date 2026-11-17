@@ -83,6 +83,8 @@ Server to server from the SiteVault Worker, bearer `SITEVAULT_INTERNAL_TOKEN`
 | GET | `/campaigns/:campaignId` | Includes creatives — what the dashboard polls. |
 | PATCH | `/campaigns/:campaignId` | 409 `campaign_is_live`. Same targeting fields and 400s as POST, checked against the row as it would be after the patch. |
 | DELETE | `/campaigns/:campaignId` | 409 `campaign_is_live` — deleting the row would not stop the spend. |
+| GET | `/campaigns/:campaignId/before-after` | Owner only. `{allowed, pairs: [{beforeAssetId, afterAssetId, beforeKey, afterKey}], attestedAt}` (lib/beforeAfter). `allowed` = the category may show before & after (trades only). A deleted photo drops its pair. |
+| PUT | `/campaigns/:campaignId/before-after` | Owner only, any status (never re-renders). Body `{pairs: [{beforeAssetId, afterAssetId}] (max 2), attested}`; `[]` removes them. **400** `before_after_not_for_category` / `before_after_attestation_required` / `before_after_same_photo` / `before_after_duplicate_photo` (with `detail`), `unknown_assets` (not the user's own photo). Stores `before_after`, `before_after_attested_at/by`. Used by the next ad made and by "Make me a website". |
 | GET | `/campaigns/:campaignId/metrics?days=7` | Owner only. `{launched, days, since, currency, note, totals, daily[], lastSyncedAt}`. `days` 1–90 (default 7). Each summary: `impressions, views, clicks, spendMinor, spendDisplay, costPerViewMinor, costPerViewDisplay, ctr, viewRate` (rates 0..1, null with no denominator). Reads `campaign_daily_metrics`, never Google; `totals` is null before launch. |
 
 ## Admin analytics

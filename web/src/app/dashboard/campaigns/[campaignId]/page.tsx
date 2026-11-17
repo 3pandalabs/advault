@@ -31,6 +31,7 @@ import { VideoUpload } from "./video-upload";
 import { PerformanceCard } from "./performance-card";
 import { AudienceCard } from "./audience-card";
 import { WebsiteCard } from "./website-card";
+import { BeforeAfterCard } from "./before-after-card";
 import { SiteOfferOption, payLabel } from "./site-offer-option";
 import { RenderProgress, ScriptProgress } from "./render-progress";
 import { AUDIENCE_FILTERS_ENABLED } from "@/lib/audience";
@@ -715,6 +716,9 @@ export default function CampaignDetailPage({
           </div>
         </Card>
       )}
+
+      {/* Trades only (lib/beforeAfter); renders nothing for other categories. */}
+      <BeforeAfterCard campaign={campaign} />
 
       <WebsiteCard
         campaign={campaign}
