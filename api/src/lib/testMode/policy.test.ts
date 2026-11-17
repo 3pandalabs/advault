@@ -3,8 +3,8 @@ import { billingExempt, effectiveMarginMode, effectiveRole, inTestMode, mayToggl
 import { chargeMinor, SITE_OFFER_ADDON, TEST_PRICE_MINOR } from "../pricing/index.js";
 import { launchPlanBlock } from "../subscriptions/policy.js";
 import { siteOfferQuote } from "../siteOffer/policy.js";
-import { stripeSubscriptionLine } from "../subscriptions/providers/stripe.js";
-import { stripe } from "../payments/stripe.js";
+import { stripeSubscriptionLine, stripeSubscriptions } from "../subscriptions/providers/stripe.js";
+import { STATEMENT_DESCRIPTOR_SUFFIX, stripe } from "../payments/stripe.js";
 
 const admin = { role: "admin", testAsCustomer: false, marginMode: "standard" };
 const tester = { role: "admin", testAsCustomer: true, marginMode: "standard" };
@@ -106,5 +106,32 @@ describe("test price", () => {
     expect(new URLSearchParams(bodies[0]).get("metadata[test_mode]")).toBe("1");
     expect(new URLSearchParams(bodies[0]).get("line_items[0][price_data][unit_amount]")).toBe("50");
     expect(new URLSearchParams(bodies[1]).get("metadata[test_mode]")).toBeNull();
+  });
+
+  it("one-off checkouts carry the ADVAULT statement descriptor suffix; subscriptions don't (Stripe 400s)", async () => {
+    const bodies: string[] = [];
+    vi.stubGlobal("fetch", async (_url: string, init: { body: URLSearchParams }) => {
+      bodies.push(String(init.body));
+      return new Response(JSON.stringify({ id: "cs_1", url: "https://stripe.test" }), { status: 200 });
+    });
+    await stripe.createCheckout({ paymentId: "p", amountMinor: 50, currency: "USD", purpose: "add_on", userEmail: "a@b.c", returnUrl: "https://x" });
+    await stripeSubscriptions.createCheckout({
+      subscriptionId: "s",
+      invoiceId: "i",
+      planKey: "us-evergreen",
+      amountMinor: 50,
+      currency: "USD",
+      userEmail: "a@b.c",
+      returnUrl: "https://x",
+      testMode: true,
+    });
+    vi.unstubAllGlobals();
+    const payment = new URLSearchParams(bodies[0]);
+    expect(payment.get("mode")).toBe("payment");
+    expect(payment.get("payment_intent_data[statement_descriptor_suffix]")).toBe("ADVAULT");
+    expect(STATEMENT_DESCRIPTOR_SUFFIX).toMatch(/^[A-Z0-9 ]{1,10}$/);
+    const sub = new URLSearchParams(bodies[1]);
+    expect(sub.get("mode")).toBe("subscription");
+    expect([...sub.keys()].some((k) => k.startsWith("payment_intent_data"))).toBe(false);
   });
 });
