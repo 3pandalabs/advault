@@ -29,6 +29,19 @@ is meant to be readable without a login.
 | GET | `/auth/me/deletion` | Preview for the confirmation screen: `{ liveCampaigns, activePlan, walletBalanceMinor, currencyCode }`. |
 | POST | `/auth/me/delete` | `{ password }`. **204**; 403 `wrong_password`; 401 `account_deleted`. See below. |
 
+### Admin test customers (0030, `routes/testCustomers.ts`)
+
+Separate customer accounts a real admin owns (`users.test_owner_id`) and switches into, so one-per-account things (website, ad account, Mercury card, plan) can be tested from scratch. Real admin = `users.role` from the DB (never the JWT). From inside a test customer, these act for its owner.
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/test-customers` | `{ customers: [{ id, name, createdAt }], current }` (`current` = the test customer this session is in, else null). **403** `admin_role_required` for anyone else. |
+| POST | `/test-customers` | `{ name }` → **201** `{ id, name, createdAt }`. Role advertiser, email `test-<hex>@test.advault.invalid`, random unknown password (cannot log in; `/auth/login` also refuses). 409 `too_many_test_customers` past 50. |
+| POST | `/test-customers/:id/switch` | `{ refreshToken? }` → `{ accessToken, refreshToken }` for the test customer (access token carries `testOwner: <adminId>`). The presented refresh token's session is ended. **404** `test_customer_not_found` unless it is the caller's (owner's) own. |
+| POST | `/test-customers/back` | `{ refreshToken? }` → the admin's token pair. Only from a session whose `testOwner` claim matches the row's `test_owner_id` and whose owner is still an admin; **403** `not_in_test_customer` otherwise. |
+
+A test customer is always test mode (`lib/testMode`: $0.50 charges tagged `test_mode=1`), its launch is forced to `validateOnly` (response adds `testCustomer: true`), its Google account / Mercury card / ops alerts are named `TEST · <name>`, Stripe gets no `customer_email`, and it is left out of revenue (`/metrics`, `/admin/ad-production`, `/admin/business`). `/auth/me` returns `isTestCustomer`. `/auth/refresh` keeps the claim, and refuses once the owner is no longer an admin.
+
 ### Account deletion
 
 Google Play requires it in-app (`lib/accountDeletion.ts`). Nothing blocks it.

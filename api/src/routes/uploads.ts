@@ -16,7 +16,8 @@ import {
   uploadLimitsFor,
 } from "../lib/uploads/policy.js";
 import { initialReviewStatus } from "../lib/uploads/review.js";
-import { customerFlowRole } from "../lib/testMode/index.js";
+import { billingIdentity, customerFlowRole } from "../lib/testMode/index.js";
+import { testLabel } from "../lib/testMode/policy.js";
 import { creativeVideoKey, deleteObject, headObject, presignUpload } from "../plugins/r2.js";
 import { enqueueYoutubeUpload } from "../render/youtubeJobs.js";
 
@@ -137,8 +138,10 @@ export async function uploadRoutes(app: FastifyInstance) {
         await queueOtherFormat(row.id);
       } else {
         // Same operator channel as platform billing (ntfy). Never throws.
+        // An admin's test customer (0030): say so, it is not a real review.
+        const testCustomer = (await billingIdentity(req.userId!)).testCustomer;
         await notifyOps({
-          title: `AdVault: video to review for ${campaign.businessName}`,
+          title: `AdVault: video to review for ${testLabel(campaign.businessName, testCustomer)}`,
           message: `${campaign.businessName} uploaded their own ${check.aspectRatio} video (${Math.round(body.durationSeconds)}s) for "${campaign.name}". Approve or reject it before they can launch.`,
           priority: 3,
           tags: ["movie_camera"],

@@ -27,6 +27,7 @@ import { actsAsAdmin } from "@/lib/testMode";
 import { ScriptProgress } from "../[campaignId]/render-progress";
 import { BeforeAfterEditor, completePairs, hasHalfPair, type DraftPair } from "@/components/BeforeAfterEditor";
 import { BEFORE_AFTER_ERRORS, beforeAfterAllowed } from "@/lib/beforeAfter";
+import { CHOSEN_PARAM, TestCustomerPicker } from "./test-customer-picker";
 
 import {
   AUDIENCE_FILTERS_ENABLED,
@@ -146,6 +147,9 @@ export default function NewCampaignPage() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
+  // Admin testing (test mode or inside a test customer): ask "Who are you
+  // testing as?" first. null = not asked (a customer) or already answered.
+  const [askWho, setAskWho] = useState<{ currentName: string | null } | null>(null);
   // Where the ad video comes from: photos (AdVault makes it) or a finished MP4
   // the advertiser uploads, in which case nothing is generated. A customer's
   // upload is reviewed by AdVault before it can be launched; an admin's is
@@ -216,6 +220,11 @@ export default function NewCampaignPage() {
     getMe()
       .then((me) => {
         setIsAdmin(actsAsAdmin(me));
+        const testing = me.isTestCustomer === true || (me.role === "admin" && me.testAsCustomer === true);
+        const answered = new URLSearchParams(window.location.search).has(CHOSEN_PARAM);
+        if (testing && !answered) {
+          setAskWho({ currentName: me.isTestCustomer ? (me.businessName ?? me.displayName ?? "this test customer") : null });
+        }
         const profileCategory = me.businessCategory ?? "";
         const preset = PRESET_CATEGORIES.includes(profileCategory) && profileCategory !== "Other";
         setCategoryChoice((c) => c || (preset ? profileCategory : profileCategory ? "Other" : ""));
@@ -495,6 +504,15 @@ export default function NewCampaignPage() {
     (housing ? addressValid && realtyValid : zipCodes.length > 0 && invalidZips.length === 0 && !mixedCountries) &&
     budgetCents !== null &&
     !budgetOutOfRange;
+
+  if (askWho) {
+    return (
+      <div>
+        <h1 className="mb-6 text-2xl font-semibold tracking-tight">New campaign</h1>
+        <TestCustomerPicker currentName={askWho.currentName} onContinue={() => setAskWho(null)} />
+      </div>
+    );
+  }
 
   return (
     <div>

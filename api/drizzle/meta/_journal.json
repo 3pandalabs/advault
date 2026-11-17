@@ -211,6 +211,13 @@
       "when": 1795504300000,
       "tag": "0029_before_after",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1795504400000,
+      "tag": "0030_test_customers",
+      "breakpoints": true
     }
   ]
 }

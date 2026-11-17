@@ -1,5 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
-import { billingExempt, effectiveMarginMode, effectiveRole, inTestMode, mayToggleTestMode } from "./policy.js";
+import {
+  billingExempt,
+  effectiveMarginMode,
+  effectiveRole,
+  inTestMode,
+  isUndeliverableEmail,
+  mayToggleTestMode,
+  maySwitchInto,
+  testLabel,
+} from "./policy.js";
 import { chargeMinor, SITE_OFFER_ADDON, TEST_PRICE_MINOR } from "../pricing/index.js";
 import { launchPlanBlock } from "../subscriptions/policy.js";
 import { siteOfferQuote } from "../siteOffer/policy.js";
@@ -133,5 +142,37 @@ describe("test price", () => {
     const sub = new URLSearchParams(bodies[1]);
     expect(sub.get("mode")).toBe("subscription");
     expect([...sub.keys()].some((k) => k.startsWith("payment_intent_data"))).toBe(false);
+  });
+});
+
+describe("admin test customers (0030)", () => {
+  const testCustomer = { role: "advertiser", testOwnerId: "admin-1", marginMode: "standard" };
+
+  it("is always in test mode, billed as a standard advertiser, never exempt", () => {
+    expect(inTestMode(testCustomer)).toBe(true);
+    expect(effectiveRole(testCustomer)).toBe("advertiser");
+    expect(billingExempt(testCustomer)).toBe(false);
+    expect(billingExempt({ ...testCustomer, marginMode: "at_cost" })).toBe(false);
+    expect(inTestMode({ ...testCustomer, testOwnerId: null })).toBe(false);
+  });
+
+  it("names say TEST, once", () => {
+    expect(testLabel("Lawn Pros", true)).toBe("TEST · Lawn Pros");
+    expect(testLabel("TEST · Lawn Pros", true)).toBe("TEST · Lawn Pros");
+    expect(testLabel("Lawn Pros", false)).toBe("Lawn Pros");
+  });
+
+  it("*.invalid addresses are undeliverable", () => {
+    expect(isUndeliverableEmail("test-ab12@test.advault.invalid")).toBe(true);
+    expect(isUndeliverableEmail("owner@example.com")).toBe(false);
+    expect(isUndeliverableEmail(undefined)).toBe(false);
+  });
+
+  it("only the owning admin may switch in", () => {
+    expect(maySwitchInto({ actorOwnerId: "a", target: { testOwnerId: "a" } })).toBe(true);
+    expect(maySwitchInto({ actorOwnerId: "b", target: { testOwnerId: "a" } })).toBe(false);
+    expect(maySwitchInto({ actorOwnerId: "a", target: { testOwnerId: null } })).toBe(false);
+    expect(maySwitchInto({ actorOwnerId: "a", target: { testOwnerId: "a", deletedAt: new Date() } })).toBe(false);
+    expect(maySwitchInto({ actorOwnerId: "a", target: null })).toBe(false);
   });
 });

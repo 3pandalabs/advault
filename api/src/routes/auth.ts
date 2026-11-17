@@ -2,13 +2,9 @@ import { eq } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { requireAuth } from "../auth/plugin.js";
-import {
-  generateRefreshSecret,
-  parseRefreshToken,
-  REFRESH_TOKEN_TTL_MS,
-  signAccessToken,
-} from "../auth/jwt.js";
+import { parseRefreshToken, signAccessToken } from "../auth/jwt.js";
 import { hashSecret, verifySecret } from "../auth/password.js";
+import { accessTokenFor, issueSession } from "../auth/session.js";
 import { db } from "../db/index.js";
 import { sessions, users } from "../db/schema.js";
 import { deleteAccount, deletionPreview } from "../lib/accountDeletion.js";
@@ -30,19 +26,6 @@ const loginCredentials = z.object({
   email: z.string().email().max(320),
   password: z.string().min(1).max(200),
 });
-
-async function issueSession(userId: string) {
-  const secret = generateRefreshSecret();
-  const [session] = await db
-    .insert(sessions)
-    .values({
-      userId,
-      refreshTokenHash: await hashSecret(secret),
-      expiresAt: new Date(Date.now() + REFRESH_TOKEN_TTL_MS),
-    })
-    .returning({ id: sessions.id });
-  return `${session.id}.${secret}`;
-}
 
 export async function authRoutes(app: FastifyInstance) {
   app.post(
@@ -93,7 +76,7 @@ export async function authRoutes(app: FastifyInstance) {
   app.post("/auth/login", { schema: { body: loginCredentials } }, async (req, reply) => {
     const { email, password } = req.body as z.infer<typeof loginCredentials>;
     const [user] = await db
-      .select({ id: users.id, passwordHash: users.passwordHash, role: users.role })
+      .select({ id: users.id, passwordHash: users.passwordHash, role: users.role, testOwnerId: users.testOwnerId })
       .from(users)
       .where(eq(users.email, email.toLowerCase()))
       .limit(1);
@@ -107,6 +90,9 @@ export async function authRoutes(app: FastifyInstance) {
     if (!(await verifySecret(password, user.passwordHash))) {
       return reply.code(401).send({ error: "invalid_credentials" });
     }
+    // An admin's test customer (0030) is only entered by switching from the
+    // admin. Its password is random and unknown; this is the belt to that.
+    if (user.testOwnerId) return reply.code(401).send({ error: "invalid_credentials" });
 
     return {
       accessToken: signAccessToken({ sub: user.id, role: user.role as "advertiser" | "admin" }),
@@ -136,11 +122,25 @@ export async function authRoutes(app: FastifyInstance) {
       }
 
       const [user] = await db
-        .select({ id: users.id, role: users.role })
+        .select({ id: users.id, role: users.role, testOwnerId: users.testOwnerId })
         .from(users)
         .where(eq(users.id, session.userId))
         .limit(1);
       if (!user) return reply.code(401).send({ error: "invalid_refresh_token" });
+
+      // A test customer's session (0030) lives only while its owner is still
+      // an admin: demoting or deleting the admin ends it.
+      if (user.testOwnerId) {
+        const [owner] = await db
+          .select({ role: users.role, deletedAt: users.deletedAt })
+          .from(users)
+          .where(eq(users.id, user.testOwnerId))
+          .limit(1);
+        if (!owner || owner.deletedAt || owner.role !== "admin") {
+          await db.delete(sessions).where(eq(sessions.id, session.id));
+          return reply.code(401).send({ error: "invalid_refresh_token" });
+        }
+      }
 
       // Rotate: the presented token is destroyed and a new one issued, so a
       // stolen refresh token is usable at most once and the theft shows up as
@@ -148,7 +148,8 @@ export async function authRoutes(app: FastifyInstance) {
       await db.delete(sessions).where(eq(sessions.id, session.id));
 
       return {
-        accessToken: signAccessToken({ sub: user.id, role: user.role as "advertiser" | "admin" }),
+        // Carries `testOwner` for a test customer, so "Back to admin" survives refreshes.
+        accessToken: accessTokenFor(user),
         refreshToken: await issueSession(user.id),
       };
     },
@@ -177,6 +178,8 @@ export async function authRoutes(app: FastifyInstance) {
         role: users.role,
         // Admin "Test as customer" (lib/testMode): billed like a customer, $0.50 charges.
         testAsCustomer: users.testAsCustomer,
+        // An admin's test customer (0030): the dashboard shows "Testing as …".
+        testOwnerId: users.testOwnerId,
         createdAt: users.createdAt,
         // Shared 3PandaLabs account: where it was made, and whether it has a
         // SiteVault website (the dashboard links one).
@@ -187,8 +190,8 @@ export async function authRoutes(app: FastifyInstance) {
       .where(eq(users.id, req.userId!))
       .limit(1);
     if (!user) return reply.code(404).send({ error: "not_found" });
-    const { sitevaultFirstUsedAt, ...rest } = user;
-    return { ...rest, usesSitevault: sitevaultFirstUsedAt !== null };
+    const { sitevaultFirstUsedAt, testOwnerId, ...rest } = user;
+    return { ...rest, usesSitevault: sitevaultFirstUsedAt !== null, isTestCustomer: testOwnerId !== null };
   });
 
   app.patch(

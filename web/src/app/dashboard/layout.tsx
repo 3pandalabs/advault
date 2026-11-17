@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { clearTokens, getMe, getTokens, setTestAsCustomer, type Me } from "@/lib/api/browser";
+import { backToAdmin, clearTokens, getMe, getTokens, setTestAsCustomer, type Me } from "@/lib/api/browser";
 import { TEST_PRICE_DISPLAY } from "@/lib/testMode";
 import { WordmarkName, WordmarkTag } from "@/components/Wordmark";
 import { Button } from "@/components/ui/button";
@@ -45,6 +45,17 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     try {
       await setTestAsCustomer(false);
       window.location.reload();
+    } catch {
+      setTurningOff(false);
+    }
+  }
+
+  // Inside an admin's test customer: swap the session back to the admin.
+  async function leaveTestCustomer() {
+    setTurningOff(true);
+    try {
+      await backToAdmin();
+      window.location.href = "/dashboard";
     } catch {
       setTurningOff(false);
     }
@@ -122,6 +133,19 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </div>
         )}
       </header>
+      {me?.isTestCustomer && (
+        <div className="border-b border-amber-400/30 bg-amber-400/10">
+          <div className="mx-auto flex w-full max-w-5xl flex-wrap items-center justify-between gap-2 px-6 py-2 text-sm text-amber-200">
+            <span>
+              Testing as {me.businessName ?? me.displayName ?? "a test customer"} (test customer). Charges are{" "}
+              {TEST_PRICE_DISPLAY}; launch is a dry run.
+            </span>
+            <Button variant="outline" size="sm" onClick={leaveTestCustomer} disabled={turningOff}>
+              {turningOff ? "Switching…" : "Back to admin"}
+            </Button>
+          </div>
+        </div>
+      )}
       {me?.testAsCustomer && me.role === "admin" && (
         <div className="border-b border-amber-400/30 bg-amber-400/10">
           <div className="mx-auto flex w-full max-w-5xl flex-wrap items-center justify-between gap-2 px-6 py-2 text-sm text-amber-200">

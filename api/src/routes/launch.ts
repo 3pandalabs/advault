@@ -94,11 +94,15 @@ export async function launchRoutes(app: FastifyInstance) {
       }
 
       const { campaignId } = req.params as { campaignId: string };
-      const { adAccountId, validateOnly = false, videoOnWebsite } = req.body as {
+      const { adAccountId, videoOnWebsite } = req.body as {
         adAccountId: string;
         validateOnly?: boolean;
         videoOnWebsite?: boolean;
       };
+      // An admin's test customer (0030) can only ever do a dry run: Google
+      // checks everything, nothing is created, $0 spent. Whatever the request says.
+      const testCustomer = (await billingIdentity(req.userId!)).testCustomer;
+      const validateOnly = testCustomer || (req.body as { validateOnly?: boolean }).validateOnly === true;
 
       const campaign = await loadOwnedCampaign(campaignId, req.userId!, reply);
       if (!campaign) return;
@@ -451,7 +455,15 @@ export async function launchRoutes(app: FastifyInstance) {
 
         if (validateOnly) {
           await launchDemandGen(ctx, plan, { validateOnly: true });
-          return { validateOnly: true, ok: true, ...zipCodes, adCopy: plan.copy, videos: videos.length };
+          return {
+            validateOnly: true,
+            ok: true,
+            // Forced for a test customer: the dashboard says "dry run, nothing went live".
+            ...(testCustomer ? { testCustomer: true } : {}),
+            ...zipCodes,
+            adCopy: plan.copy,
+            videos: videos.length,
+          };
         }
 
         // ONE atomic request: budget, campaign, ad group, locations, assets

@@ -539,6 +539,22 @@ rules in `policy.ts`, tested), and the web uses `actsAsAdmin(me)` from
 `web/src/lib/testMode.ts`. Admin pages and `requireAdmin` keep the REAL role so
 the admin can always switch back. `at_cost` customers are unchanged.
 
+**Test customers (2026-11-17, migration 0030, `routes/testCustomers.ts`).** The
+admin's own account gets "used up" (one website, one ad account and card, one
+plan), so a real admin can create separate customer accounts
+(`users.test_owner_id` = the admin) and switch into them: the new-campaign
+wizard asks "Who are you testing as?" when the admin is in test mode or inside
+one, and a banner offers "Back to admin". Switching issues a normal token pair
+for the other user; inside a test customer the access token carries
+`testOwner`, re-checked against `test_owner_id` (and the owner's real DB role)
+before "back" or a refresh is honoured. A test customer: role advertiser,
+`*.invalid` email (Stripe gets no `customer_email`, SiteVault no
+`ownerEmail`), random unknown password (login refused), always test mode in
+`lib/testMode` ($0.50, tagged), **launch forced to `validateOnly`** (Google
+checks, nothing created, $0), and "TEST · " on its Google account, Mercury card
+and ops alerts. Ad-account setup really runs (real MCC child + Mercury card):
+the owner accepted that. Excluded from revenue and `/admin/business`.
+
 ## Stripe: one org account, one AdVault endpoint
 
 The 3PandaLabs Stripe account is shared by every app. AdVault tags what it

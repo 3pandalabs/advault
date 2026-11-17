@@ -18,11 +18,44 @@ export type BillingSubject = {
   role: string | null | undefined;
   testAsCustomer?: boolean | null;
   marginMode?: string | null;
+  /** Admin test customer (0030): the owning admin. Non-null = always test mode. */
+  testOwnerId?: string | null;
 };
 
-/** An admin testing as a customer: billed as standard, at the test price. */
+/**
+ * An admin testing as a customer, or an admin's test customer (0030): billed
+ * as standard, at the test price.
+ */
 export function inTestMode(s: BillingSubject): boolean {
+  if (isTestCustomer(s)) return true;
   return s.role === "admin" && s.testAsCustomer === true;
+}
+
+/** A test customer an admin created (users.test_owner_id set). */
+export function isTestCustomer(s: Pick<BillingSubject, "testOwnerId">): boolean {
+  return typeof s.testOwnerId === "string" && s.testOwnerId.length > 0;
+}
+
+/** Name prefix on everything made for a test customer (Google account, Mercury card, ops alerts). */
+export const TEST_NAME_PREFIX = "TEST · ";
+
+/** "TEST · <name>" for a test customer, the name unchanged otherwise. */
+export function testLabel(name: string, testCustomer: boolean): string {
+  if (!testCustomer || name.startsWith(TEST_NAME_PREFIX)) return name;
+  return `${TEST_NAME_PREFIX}${name}`;
+}
+
+/** Test customers get a synthetic address under the reserved .invalid TLD (RFC 2606). */
+export function isUndeliverableEmail(email: string | null | undefined): boolean {
+  return !!email && /\.invalid$/i.test(email.trim());
+}
+
+/**
+ * The owner of a test customer may switch into it; nobody else (a customer
+ * cannot, nor can a different admin).
+ */
+export function maySwitchInto(args: { actorOwnerId: string; target: { testOwnerId: string | null; deletedAt?: Date | null } | null | undefined }): boolean {
+  return !!args.target && !args.target.deletedAt && args.target.testOwnerId === args.actorOwnerId;
 }
 
 /**

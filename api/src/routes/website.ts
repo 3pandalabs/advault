@@ -33,6 +33,7 @@ import { proPhotoKey } from "../render/enhance.js";
 import { isHousingCategory } from "../lib/audience/policy.js";
 import { fetchSiteOfferStatus, latestSiteOffer } from "../lib/siteOffer/index.js";
 import { billingIdentity } from "../lib/testMode/index.js";
+import { isUndeliverableEmail } from "../lib/testMode/policy.js";
 import { SITE_OFFER_MAX_ATTEMPTS } from "../lib/siteOffer/policy.js";
 import {
   WEBSITE_FEE_MAX_ATTEMPTS,
@@ -318,7 +319,8 @@ export async function websiteRoutes(app: FastifyInstance) {
           awaitingPayment: fee ? "1" : undefined,
           // Same login on SiteVault: the site goes to this AdVault user's account.
           ownerAdvaultUserId: req.userId!,
-          ownerEmail: owner?.email,
+          // Never a test customer's *.invalid address (0030).
+          ownerEmail: isUndeliverableEmail(owner?.email) ? undefined : owner?.email,
           // Admin test site on SiteVault: no one-per-phone rule, never claims the number.
           ownerAdmin: admin ? "1" : undefined,
         },

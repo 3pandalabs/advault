@@ -1,5 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { isCurrency } from "../../pricing/index.js";
+import { isUndeliverableEmail } from "../../testMode/policy.js";
 import type {
   SubscriptionCheckout,
   SubscriptionCheckoutRequest,
@@ -80,7 +81,8 @@ export const stripeSubscriptions: SubscriptionProvider = {
       mode: "subscription",
       ...stripeSubscriptionLine(req),
       "line_items[0][quantity]": "1",
-      customer_email: req.userEmail,
+      // A test customer's *.invalid address (0030) is left off; Stripe asks for one.
+      ...(isUndeliverableEmail(req.userEmail) ? {} : { customer_email: req.userEmail }),
       success_url: `${req.returnUrl}?subscribed=1`,
       cancel_url: req.returnUrl,
       // Set on the Checkout Session AND on the subscription it creates, so both
