@@ -476,7 +476,18 @@ export default function NewCampaignPage() {
         </p>
       )}
 
-      {step === 2 && (
+      {/* "Use my own video" is admin-only for launch (2026-11-16): every upload
+          needs a human review and skips the paid ad. Customers email us. */}
+      {step === 2 && !isAdmin && (
+        <p className="mb-4 text-sm text-zinc-400">
+          Already have a video ad? Email{" "}
+          <a href="mailto:3pandas@3pandalabs.com" className="text-amber-300 underline">
+            3pandas@3pandalabs.com
+          </a>{" "}
+          and we&apos;ll help.
+        </p>
+      )}
+      {step === 2 && isAdmin && (
         <div className="mb-4 flex flex-wrap gap-2" role="radiogroup" aria-label="Ad video source">
           {(
             [

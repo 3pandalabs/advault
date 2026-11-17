@@ -623,7 +623,7 @@ export default function CampaignDetailPage({
           (an order or an AdVault-made video exists) it is only noise. */}
       {/* Also hidden once a video is uploaded: one is enough (AdVault makes the
           other shape). To replace it, remove it first. */}
-      {!campaign.googleCampaignResourceName && !newAd?.order && campaign.creatives.length === 0 && (
+      {isAdmin && !campaign.googleCampaignResourceName && !newAd?.order && campaign.creatives.length === 0 && (
         <VideoUpload campaignId={campaignId} isAdmin={isAdmin} onUploaded={refresh} />
       )}
 
