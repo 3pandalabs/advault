@@ -123,6 +123,7 @@ export async function creativeRoutes(app: FastifyInstance) {
         aspectRatios,
         peopleAssetIds: (marks?.peopleIndexes ?? []).map(byIndex).filter((id): id is string => Boolean(id)),
         portraitAssetId: marks?.portraitIndex != null ? byIndex(marks.portraitIndex) ?? null : null,
+        version: (latest.version ?? 1) + 1,
         warn: (msg, err) => req.log.warn({ err, campaignId }, msg),
       });
       if (!result.ok) {

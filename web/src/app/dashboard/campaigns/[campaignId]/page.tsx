@@ -39,6 +39,27 @@ import { Button } from "@/components/ui/button";
 import { formatDuration, formatMoney } from "@/lib/utils";
 import { actsAsAdmin } from "@/lib/testMode";
 
+// "Writing the script" survives a refresh: sessionStorage, ignored after 2 min.
+const WRITING_MAX_MS = 120_000;
+const nowMs = () => Date.now();
+function readWriting(campaignId: string): number | null {
+  try {
+    const t = Number(window.sessionStorage.getItem(`advault:writing:${campaignId}`));
+    return t && nowMs() - t < WRITING_MAX_MS ? t : null;
+  } catch {
+    return null;
+  }
+}
+function saveWriting(campaignId: string, t: number | null) {
+  try {
+    const k = `advault:writing:${campaignId}`;
+    if (t === null) window.sessionStorage.removeItem(k);
+    else window.sessionStorage.setItem(k, String(t));
+  } catch {
+    /* private mode: progress just won't survive a refresh */
+  }
+}
+
 type Loaded = Campaign & { creatives: Creative[] };
 
 // Maps the API's error codes to something an advertiser can act on. Anything
@@ -147,7 +168,21 @@ export default function CampaignDetailPage({
   const [redoConfirm, setRedoConfirm] = useState(false);
   const generatingRef = useRef(false);
   // Set while the API writes the script (inside the generate/redo request).
-  const [writingSince, setWritingSince] = useState<number | null>(null);
+  // Kept in sessionStorage so a refresh mid-request still shows it (the
+  // server finishes the redo either way; without this the page showed the
+  // old video, 0 redos left and no sign anything was happening).
+  const [writingSince, setWritingState] = useState<number | null>(() => readWriting(campaignId));
+  const setWritingSince = useCallback(
+    (t: number | null) => {
+      saveWriting(campaignId, t);
+      setWritingState(t);
+    },
+    [campaignId],
+  );
+  // Hidden as soon as the new version's creatives exist.
+  const showWriting =
+    writingSince !== null &&
+    !(campaign?.creatives ?? []).some((c) => c.kind !== "upload" && Date.parse(c.createdAt) >= writingSince - 5000);
   // Offer combo: "Also put this offer on my website" on a new-ad purchase.
   // Pre-ticked when SiteVault's edit page sent them here (?siteOffer=1).
   const [siteOfferTicked, setSiteOfferTicked] = useState(false);
@@ -194,7 +229,7 @@ export default function CampaignDetailPage({
     }
     if (orderStatus === "paid" && !generatingRef.current) {
       generatingRef.current = true;
-      setWritingSince(Date.now());
+      setWritingSince(nowMs());
       generatePaidNewAd(newAd.order.id)
         .then(() => Promise.all([refresh(), getNewAdStatus(campaignId).then(setNewAd)]))
         .catch(() => setError("Your payment went through, but making the ad failed. Reload the page to try again."))
@@ -203,7 +238,7 @@ export default function CampaignDetailPage({
           setWritingSince(null);
         });
     }
-  }, [newAd, orderStatus, campaignId, refresh]);
+  }, [newAd, orderStatus, campaignId, refresh, setWritingSince]);
 
   // Poll while anything is still encoding. The API returns 202 from the
   // generate call and the renderer works through a queue on a separate
@@ -217,7 +252,7 @@ export default function CampaignDetailPage({
   // person, possibly for hours — so it is polled once a minute, not every 5s.
   // A rejected one is not waiting on anything.
   const awaitingReview = campaign?.creatives.some((c) => c.reviewStatus === "pending_review") ?? false;
-  const pending = campaign?.creatives.some(
+  const pending = showWriting || campaign?.creatives.some(
     (c) =>
       c.renderStatus === "queued" ||
       c.renderStatus === "rendering" ||
@@ -351,7 +386,7 @@ export default function CampaignDetailPage({
         </p>
       )}
 
-      {writingSince !== null && (
+      {showWriting && writingSince !== null && (
         <Card className="mb-4">
           <CardTitle>Making your new ad</CardTitle>
           <div className="mt-3">
@@ -409,7 +444,7 @@ export default function CampaignDetailPage({
         // "Make it again": only for an AdVault-made ad that is finished, not live.
         const made = campaign.creatives.filter((c) => c.kind !== "upload");
         const busyRendering = made.some((c) => c.renderStatus === "queued" || c.renderStatus === "rendering");
-        if (campaign.status === "live" || made.length === 0 || busyRendering || !newAd || writingSince !== null) return null;
+        if (campaign.status === "live" || made.length === 0 || busyRendering || !newAd || showWriting) return null;
         const left = newAd.redosLeft;
         const metered = newAd.required;
         const canRedo = !metered || (left ?? 0) > 0;
@@ -435,7 +470,7 @@ export default function CampaignDetailPage({
                     onClick={() => {
                       setBusy(true);
                       setError(null);
-                      if (canRedo) setWritingSince(Date.now());
+                      if (canRedo) setWritingSince(nowMs());
                       const go = canRedo
                         ? redoAd(campaign.id).then(() => Promise.all([refresh(), getNewAdStatus(campaignId).then(setNewAd)]))
                         : orderNewAd(campaign.id, orderSiteOffer ? { siteOffer: true } : undefined).then(({ checkout }) => {
@@ -484,6 +519,8 @@ export default function CampaignDetailPage({
                       ? "Made from your video, so your ad also fits this shape"
                       : "Uploaded video"
                     : (creative.script?.hook ?? "Writing the script…")}
+                  {creative.kind !== "upload" &&
+                    ` · Version ${creative.version ?? 1}${(creative.version ?? 1) > 1 ? ` (redo ${(creative.version ?? 1) - 1})` : " (first)"}`}
                   {creative.renderStatus === "ready" &&
                     ` · ${formatDuration(creative.durationSeconds)}`}
                 </CardDescription>

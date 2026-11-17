@@ -197,6 +197,8 @@ export type Creative = {
   id: string;
   campaignId: string;
   aspectRatio: "16:9" | "9:16";
+  /** 1 = first make of the campaign's ad, +1 per redo. */
+  version?: number;
   script: AdScript | null;
   scriptSource: "ai" | "fallback" | "manual" | null;
   renderStatus: "queued" | "rendering" | "ready" | "failed";
