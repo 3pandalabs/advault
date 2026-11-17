@@ -43,6 +43,15 @@ export async function generateForCampaign(args: {
 }): Promise<GenerateResult> {
   const { campaign, userId } = args;
 
+  // Next version of this campaign's ad: one more than the newest made one
+  // (uploads don't count). Every path that makes a new ad (first generate,
+  // paid new ad, redo) goes through here, so they all number the same way.
+  const [prev] = await db
+    .select({ v: sql<number | null>`max(${creatives.version})` })
+    .from(creatives)
+    .where(and(eq(creatives.campaignId, campaign.id), sql`${creatives.kind} <> 'upload'`));
+  const version = args.version ?? (prev?.v ?? 0) + 1;
+
   // Filtered by userId as well as by id: without it, an advertiser could
   // pass another advertiser's asset ids and have their photos rendered
   // into an ad. The ownership check is the whole point of this query.
@@ -143,7 +152,7 @@ export async function generateForCampaign(args: {
         script: finalScript,
         scriptSource: source,
         sourceAssetKeys: orderedKeys,
-        version: args.version ?? 1,
+        version,
       })
       .returning();
 
