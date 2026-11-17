@@ -1,3 +1,4 @@
+import { queueOtherFormat } from "../lib/uploads/otherFormat.js";
 import { and, desc, eq } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
@@ -104,7 +105,11 @@ export async function videoReviewRoutes(app: FastifyInstance) {
         .returning();
       if (!updated) return reply.code(409).send({ error: "already_reviewed" });
 
-      if (t.next === "approved") await enqueueYoutubeUpload(creativeId);
+      if (t.next === "approved") {
+        await enqueueYoutubeUpload(creativeId);
+        // One video is enough: AdVault makes the other shape from it.
+        await queueOtherFormat(creativeId);
+      }
 
       req.log.info({ creativeId, decision: t.next, reviewer: req.userId ?? "token" }, "video reviewed");
       return updated;

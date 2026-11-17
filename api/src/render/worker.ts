@@ -7,6 +7,8 @@
 // It deliberately does NOT run migrations — the API container owns that. Two
 // containers migrating on the same deploy race the drizzle bookkeeping table
 // and the loser crash-loops.
+import { isReformatCopy } from "../lib/uploads/reformatPolicy.js";
+import { reformatVideo } from "./reformat.js";
 import { hostname } from "node:os";
 import { createHash } from "node:crypto";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
@@ -325,6 +327,7 @@ async function synthesizeVoiceover(args: {
 async function processJob(job: RenderJob): Promise<void> {
   const creative = await loadCreativeForRender(job.creativeId);
   if (!creative) throw new Error(`Creative ${job.creativeId} no longer exists`);
+  if (creative.kind === "upload" && isReformatCopy(creative.renderInfo)) return processReformat(job, creative);
 
   const script = adScriptSchema.parse(creative.script);
   const workDir = await mkdtemp(join(WORK_ROOT, "job-"));
@@ -487,6 +490,42 @@ async function processJob(job: RenderJob): Promise<void> {
     await rm(workDir, { recursive: true, force: true }).catch((err) =>
       log("failed to clean scratch directory", String(err)),
     );
+  }
+}
+
+/**
+ * The other shape of an owner's approved upload: blurred backdrop, no AI, no
+ * vendor (render/reformat.ts). Then the normal YouTube upload, like any ad.
+ */
+async function processReformat(
+  job: RenderJob,
+  creative: NonNullable<Awaited<ReturnType<typeof loadCreativeForRender>>>,
+): Promise<void> {
+  const sourceKey = creative.sourceAssetKeys[0];
+  if (!sourceKey) throw new Error("Reformat copy has no source video");
+  const workDir = await mkdtemp(join(WORK_ROOT, "job-"));
+  try {
+    const inputPath = join(workDir, "source.mp4");
+    await writeFile(inputPath, await getObjectBytes(sourceKey));
+    const out = await reformatVideo({ inputPath, aspect: creative.aspectRatio as "16:9" | "9:16", workDir });
+    const videoKey = creativeVideoKey(creative.campaignId, creative.id);
+    const thumbnailKey = creativeThumbnailKey(creative.campaignId, creative.id);
+    const videoBytes = await readFile(out.videoPath);
+    await putObject(videoKey, videoBytes, "video/mp4");
+    await putObject(thumbnailKey, await readFile(out.thumbnailPath), "image/jpeg");
+    await completeJob(job, {
+      videoKey,
+      thumbnailKey,
+      durationSeconds: creative.durationSeconds ?? 0,
+      sizeBytes: videoBytes.byteLength,
+      renderInfo: { ...(creative.renderInfo ?? {}), at: new Date().toISOString() },
+    });
+    log("reformat complete", { creativeId: creative.id, aspect: creative.aspectRatio, sizeBytes: videoBytes.byteLength });
+    await enqueueYoutubeUpload(creative.id).catch((err) =>
+      log("failed to enqueue the youtube upload", { creativeId: creative.id, error: String(err) }),
+    );
+  } finally {
+    await rm(workDir, { recursive: true, force: true }).catch((err) => log("failed to clean scratch directory", String(err)));
   }
 }
 

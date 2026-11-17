@@ -18,6 +18,7 @@ import {
   type SiteOfferOutcome,
   type SiteOfferQuote,
   type SiteOfferStatus,
+  sameOffer,
 } from "./policy.js";
 
 export type SiteOfferStatusWithSlug = SiteOfferStatus & { slug: string; offer: string | null };
@@ -67,6 +68,8 @@ export async function quoteCampaignSiteOffer(args: {
     exempt: args.exempt,
     currency: args.currency,
     ticked: args.ticked,
+    // A website made from this campaign already carries its offer.
+    alreadyOnSite: sameOffer(status?.offer, offer),
   });
   return { ...quote, offer, slug: status?.slug ?? null, credits: status?.credits ?? null };
 }

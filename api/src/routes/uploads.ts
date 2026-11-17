@@ -1,3 +1,4 @@
+import { queueOtherFormat } from "../lib/uploads/otherFormat.js";
 import { eq } from "drizzle-orm";
 import crypto from "node:crypto";
 import type { FastifyInstance } from "fastify";
@@ -121,6 +122,8 @@ export async function uploadRoutes(app: FastifyInstance) {
 
       if (reviewStatus === "approved") {
         await enqueueYoutubeUpload(row.id);
+        // One video is enough: AdVault makes the other shape from it.
+        await queueOtherFormat(row.id);
       } else {
         // Same operator channel as platform billing (ntfy). Never throws.
         await notifyOps({
