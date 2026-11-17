@@ -14,6 +14,14 @@ const API = "https://api.stripe.com/v1";
 const TOLERANCE_SECONDS = 300;
 
 /**
+ * Appended to the shared account's `3PANDALABS` prefix so card statements
+ * read `3PANDALABS* ADVAULT`. Stripe caps prefix + "* " + suffix at 22 chars
+ * (so 10 here), letters/digits/spaces only. One-off payments only: Stripe
+ * rejects `payment_intent_data` on subscription-mode Checkout.
+ */
+export const STATEMENT_DESCRIPTOR_SUFFIX = "ADVAULT";
+
+/**
  * Checkout line items as Stripe form fields. One line for the whole amount,
  * or the caller's breakdown (new ad + "Offer on your website") when it sums
  * to the amount; a breakdown that doesn't is ignored rather than trusted.
@@ -49,6 +57,7 @@ export const stripe: PaymentProvider = {
       cancel_url: `${req.returnUrl}?status=cancelled`,
       customer_email: req.userEmail,
       ...stripeLineItems(req),
+      "payment_intent_data[statement_descriptor_suffix]": STATEMENT_DESCRIPTOR_SUFFIX,
       // Round-trips to the webhook. Same reasoning as Razorpay's notes: this is
       // the only reliable link back to our payments row.
       "metadata[payment_id]": req.paymentId,
