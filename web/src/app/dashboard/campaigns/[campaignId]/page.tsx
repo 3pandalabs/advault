@@ -1,5 +1,6 @@
 "use client";
 
+import { siteVaultSlug } from "@/lib/sitevault";
 import Link from "next/link";
 import { use, useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -129,6 +130,9 @@ export default function CampaignDetailPage({
   } | null>(null);
   const [settingUp, setSettingUp] = useState(false);
   const [previews, setPreviews] = useState<Record<string, string>>({});
+  // SiteVault site: the ad video joins the website at launch (box ticked by default).
+  const [videoOnSite, setVideoOnSite] = useState(true);
+  const onSite = Boolean(siteVaultSlug(campaign?.landingUrl));
   const [launchNote, setLaunchNote] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -265,7 +269,7 @@ export default function CampaignDetailPage({
     setError(null);
     setLaunchNote(null);
     try {
-      const result = await launchCampaign(campaignId, adAccountId);
+      const result = await launchCampaign(campaignId, adAccountId, onSite ? videoOnSite : undefined);
       setLaunchNote(
         result.radiusMilesAroundAddress !== null
           ? `${result.note} Targeted ${result.radiusMilesAroundAddress} miles around your listing.`
@@ -741,6 +745,17 @@ export default function CampaignDetailPage({
                 : `This creates a paused campaign in your Google Ads account with a ${formatMoney(campaign.dailyBudgetCents, campaign.currencyCode)} daily budget. It does not start spending until you enable it there.`}
             </CardDescription>
             <SquareLogo onChange={setLogo} />
+            {onSite && (
+              <label className="mt-4 flex items-start gap-2 text-sm text-zinc-300">
+                <input
+                  type="checkbox"
+                  className="mt-0.5 h-4 w-4 accent-amber-400"
+                  checked={videoOnSite}
+                  onChange={(e) => setVideoOnSite(e.target.checked)}
+                />
+                <span>Also show this ad on my website</span>
+              </label>
+            )}
             <div className="mt-4 flex flex-wrap gap-2">
               {launchableAccounts.map((account) => (
                 <Button

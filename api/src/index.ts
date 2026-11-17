@@ -20,6 +20,7 @@ import { adminUserRoutes } from "./routes/adminUsers.js";
 import { newAdRoutes } from "./routes/newAds.js";
 import { startSiteOfferSweep } from "./lib/siteOffer/index.js";
 import { startWebsiteSweep } from "./lib/websiteFee/index.js";
+import { startSiteVideoSweep } from "./lib/siteVideo/index.js";
 import { launchRoutes } from "./routes/launch.js";
 import { metricsRoutes } from "./routes/metrics.js";
 import { subscriptionRoutes } from "./routes/subscriptions.js";
@@ -77,6 +78,7 @@ startCpuSampler();
 // a second replica would only repeat pushes SiteVault dedupes by purchase id.
 startSiteOfferSweep();
 startWebsiteSweep();
+startSiteVideoSweep();
 app.addHook("onResponse", async (req) => {
   if (req.url !== "/metrics" && req.url !== "/health") recordRequest();
 });

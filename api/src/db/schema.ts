@@ -460,6 +460,12 @@ export const campaigns = pgTable(
     // A made but unpaid SiteVault site (0024, $10 website fee). It becomes
     // landing_url once the fee is paid and SiteVault has published it.
     sitevaultPendingUrl: text("sitevault_pending_url"),
+    // The ad video goes on the SiteVault site at launch, not when the site is
+    // made (0026, lib/siteVideo). Wanted = launch asked for it.
+    siteVideoWanted: boolean("site_video_wanted").notNull().default(false),
+    siteVideoPushedAt: timestamp("site_video_pushed_at", { withTimezone: true }),
+    siteVideoAttempts: integer("site_video_attempts").notNull().default(0),
+    siteVideoError: text("site_video_error"),
     // Free-text context fed to the script generator ("family-run since 1998,
     // same-day emergency callouts"). Not shown to viewers directly.
     offerDetails: text("offer_details"),

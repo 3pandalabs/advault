@@ -18,7 +18,6 @@ import {
   taglineFromSticker,
   type Photo,
   type StickerLike,
-  type Video,
 } from "../lib/sitevault/index.js";
 import { stickerSchema } from "../lib/script/schema.js";
 import { markAppUsed } from "../lib/sharedAccount/index.js";
@@ -76,35 +75,20 @@ async function campaignPhotos(campaignId: string): Promise<Photo[]> {
   return photos;
 }
 
-const MAX_VIDEO_BYTES = 40 * 1024 * 1024;
-
 /**
- * The finished ad to show on the site, and its offer sticker. Widescreen
- * first (it sits in a page column); the vertical one when that is all there is.
+ * The ad's offer sticker (services and one-liner for the site). The ad VIDEO
+ * is not sent here any more: it goes on the site at launch (lib/siteVideo).
  */
-async function campaignAd(campaignId: string): Promise<{ video: Video | null; sticker: StickerLike | null }> {
+async function campaignAd(campaignId: string): Promise<{ sticker: StickerLike | null }> {
   const rows = await db
-    .select({
-      aspectRatio: creatives.aspectRatio,
-      videoKey: creatives.videoKey,
-      sizeBytes: creatives.sizeBytes,
-      script: creatives.script,
-    })
+    .select({ script: creatives.script })
     .from(creatives)
     .where(
       and(eq(creatives.campaignId, campaignId), ne(creatives.kind, "upload"), eq(creatives.renderStatus, "ready")),
     )
     .orderBy(desc(creatives.createdAt));
-  const ad = rows.find((r) => r.aspectRatio === "16:9" && r.videoKey) ?? rows.find((r) => r.videoKey) ?? null;
   const parsed = stickerSchema.safeParse((rows[0]?.script as { sticker?: unknown } | null)?.sticker);
-  const sticker = parsed.success ? parsed.data : null;
-  if (!ad?.videoKey || (ad.sizeBytes ?? 0) > MAX_VIDEO_BYTES) return { video: null, sticker };
-  try {
-    const bytes = await getObjectBytes(ad.videoKey);
-    return { video: bytes.length <= MAX_VIDEO_BYTES ? { bytes } : null, sticker };
-  } catch {
-    return { video: null, sticker };
-  }
+  return { sticker: parsed.success ? parsed.data : null };
 }
 
 // One SiteVault website per AdVault account (one account = one business).
@@ -202,7 +186,7 @@ export async function websiteRoutes(app: FastifyInstance) {
 
       const [owner] = await db.select({ email: users.email }).from(users).where(eq(users.id, req.userId!)).limit(1);
       const housing = isHousingCategory(campaign.businessCategory);
-      const { video, sticker } = await campaignAd(campaign.id);
+      const { sticker } = await campaignAd(campaign.id);
       const result = await createSitevaultSite(
         {
           businessName: campaign.businessName,
@@ -223,7 +207,6 @@ export async function websiteRoutes(app: FastifyInstance) {
           ownerAdmin: admin ? "1" : undefined,
         },
         await campaignPhotos(campaign.id),
-        video,
       );
       if (!result.ok) {
         req.log.warn({ campaignId, status: result.status, errors: result.errors }, "sitevault create failed");

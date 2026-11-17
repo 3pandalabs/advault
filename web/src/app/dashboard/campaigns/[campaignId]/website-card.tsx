@@ -288,6 +288,16 @@ export function WebsiteCard({
         </p>
       )}
 
+      {siteVaultSlug(campaign.landingUrl) && mode === "view" && (campaign.siteVideoPushedAt || campaign.siteVideoWanted || !locked) && (
+        <p className="mt-3 text-sm text-zinc-300">
+          {campaign.siteVideoPushedAt
+            ? "Your ad is playing on your website."
+            : campaign.siteVideoWanted
+              ? "Adding your ad to your website…"
+              : "Launch your ad and it plays on your website too."}
+        </p>
+      )}
+
       {siteOffer && campaign.landingUrl && mode === "view" && (
         <p className={`mt-3 text-sm ${siteOffer.outcome === "updated" ? "text-emerald-300" : siteOffer.outcome === "pending" ? "text-zinc-300" : "text-amber-300"}`}>
           Offer on your website: {SITE_OFFER_TEXT[siteOffer.outcome]}
