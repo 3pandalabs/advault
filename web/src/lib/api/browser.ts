@@ -203,6 +203,8 @@ export type Creative = {
   // 'upload' = a finished MP4 the advertiser (or an admin) uploaded; it has no
   // script and cannot be edited or re-rendered.
   kind: "standard" | "cinematic" | "upload";
+  /** engine "reformat" = AdVault made this shape from the owner's other-shape video. */
+  renderInfo?: { engine?: string } | null;
   googleAdResourceName: string | null;
   // AdVault's review of an uploaded video; null for everything AdVault made.
   reviewStatus: VideoReviewStatus | null;

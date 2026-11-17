@@ -303,6 +303,14 @@ happens to it** (`creatives.review_status`: NULL for generated creatives,
 - The queue is `/dashboard/admin/reviews` (`/admin/video-reviews`, admin
   session or `ADMIN_ANALYTICS_TOKEN`), and a new upload pings ops via ntfy.
 - An admin's own upload is approved on insert.
+- **One video is enough (2026-11-16, `lib/uploads/otherFormat.ts`):** when an
+  upload is approved, AdVault queues the OTHER shape (16:9 <-> 9:16) as a
+  `kind = 'upload'` creative, `renderStatus` queued, source = the upload's
+  `video_key`, `render_info.engine = 'reformat'`, already approved (same
+  footage). The renderer (`render/reformat.ts`) makes it with ffmpeg only:
+  the video sharp in the middle over a blurred, darkened copy of itself. No
+  vendor, $0. Skipped when the campaign already has an upload in that shape.
+  The campaign page labels it "Made from your video".
 - No automated scanning. Google Video Intelligence explicit-content detection
   (~5¢/video) is the noted future option; it would not replace the human check.
 

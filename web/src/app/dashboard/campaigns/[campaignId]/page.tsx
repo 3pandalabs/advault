@@ -463,7 +463,9 @@ export default function CampaignDetailPage({
                 </CardTitle>
                 <CardDescription>
                   {creative.kind === "upload"
-                    ? "Uploaded video"
+                    ? creative.renderInfo?.engine === "reformat"
+                      ? "Made from your video, so your ad also fits this shape"
+                      : "Uploaded video"
                     : (creative.script?.hook ?? "Writing the script…")}
                   {creative.renderStatus === "ready" &&
                     ` · ${formatDuration(creative.durationSeconds)}`}
@@ -542,7 +544,7 @@ export default function CampaignDetailPage({
                 upload a new video, or launch with the video AdVault made.
               </p>
             )}
-            {creative.kind === "upload" && creative.reviewStatus === "approved" && !creative.youtubeVideoId && (
+            {creative.kind === "upload" && creative.reviewStatus === "approved" && !creative.youtubeVideoId && creative.renderInfo?.engine !== "reformat" && (
               <p className="mt-3 text-xs text-emerald-300">Approved by AdVault.</p>
             )}
 
@@ -627,9 +629,9 @@ export default function CampaignDetailPage({
         <Card className="mb-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="min-w-0">
-              <CardTitle>Offer on your website</CardTitle>
+              <CardTitle>Update the offer on your website</CardTitle>
               <CardDescription className="break-words">
-                Put “{newAd.siteOffer.offer}” on your SiteVault website. Free for your account.
+                Your website shows a different offer. Change it to this ad&apos;s: “{newAd.siteOffer.offer}”
               </CardDescription>
             </div>
             <Button
@@ -645,7 +647,7 @@ export default function CampaignDetailPage({
                   .finally(() => setBusy(false));
               }}
             >
-              Put it on my website
+              Update my website
             </Button>
           </div>
         </Card>

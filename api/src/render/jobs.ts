@@ -182,6 +182,10 @@ export async function loadCreativeForRender(creativeId: string) {
       aspectRatio: creatives.aspectRatio,
       script: creatives.script,
       sourceAssetKeys: creatives.sourceAssetKeys,
+      // An owner's upload re-shaped to the other format (lib/uploads/otherFormat).
+      kind: creatives.kind,
+      renderInfo: creatives.renderInfo,
+      durationSeconds: creatives.durationSeconds,
       currencyCode: users.currencyCode,
       // For the template ad's end card and colours (render/template.ts).
       businessName: campaigns.businessName,

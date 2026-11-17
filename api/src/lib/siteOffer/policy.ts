@@ -29,6 +29,8 @@ export type SiteOfferQuoteInput = {
   currency: Currency;
   /** The customer ticked "Also put this offer on my website". */
   ticked: boolean;
+  /** The site already shows exactly this offer: nothing to sell or push. */
+  alreadyOnSite?: boolean;
 };
 
 export type SiteOfferQuote = {
@@ -45,7 +47,7 @@ export type SiteOfferQuote = {
 const NONE: SiteOfferQuote = { available: false, offered: null, mode: null, addonMinor: 0 };
 
 export function siteOfferQuote(i: SiteOfferQuoteInput): SiteOfferQuote {
-  if (!i.isSiteVaultSite || !i.hasOffer || !i.status) return NONE;
+  if (!i.isSiteVaultSite || !i.hasOffer || !i.status || i.alreadyOnSite) return NONE;
   // A paused or unpublished site shows nobody the offer: don't sell it.
   if (i.status.siteState !== "live" && i.status.siteState !== "grace") return NONE;
   let offered: SiteOfferMode;
@@ -61,6 +63,12 @@ export function siteOfferQuote(i: SiteOfferQuoteInput): SiteOfferQuote {
   return i.ticked
     ? { available: true, offered, mode: offered, addonMinor: price }
     : { available: true, offered, mode: null, addonMinor: 0 };
+}
+
+/** Same offer text, ignoring case, spacing and a trailing full stop. */
+export function sameOffer(a: string | null | undefined, b: string | null | undefined): boolean {
+  const n = (s: string | null | undefined) => (s ?? "").replace(/\s+/g, " ").trim().replace(/\.$/, "").toLowerCase();
+  return n(a) !== "" && n(a) === n(b);
 }
 
 /** The `payment` SiteVault is told: only a credit-mode push spends a SiteVault credit. */

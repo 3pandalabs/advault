@@ -126,3 +126,26 @@ describe("stripeLineItems", () => {
     expect(f["line_items[1][quantity]"]).toBeUndefined();
   });
 });
+
+describe("sameOffer / alreadyOnSite", () => {
+  it("matches ignoring case, spacing and a final full stop", async () => {
+    const { sameOffer } = await import("./policy.js");
+    expect(sameOffer("AC tune-up $79.  24/7 repairs.", "ac tune-up $79. 24/7 repairs")).toBe(true);
+    expect(sameOffer("AC tune-up $79", "AC tune-up $89")).toBe(false);
+    expect(sameOffer("", "")).toBe(false);
+    expect(sameOffer(null, "x")).toBe(false);
+  });
+  it("offers nothing when the site already shows the offer", async () => {
+    const { siteOfferQuote } = await import("./policy.js");
+    const q = siteOfferQuote({
+      isSiteVaultSite: true,
+      hasOffer: true,
+      status: { billing: "off", credits: 2, siteState: "live" },
+      exempt: false,
+      currency: "USD",
+      ticked: true,
+      alreadyOnSite: true,
+    });
+    expect(q.available).toBe(false);
+  });
+});
