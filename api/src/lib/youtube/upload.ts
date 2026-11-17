@@ -7,6 +7,12 @@ export class YouTubeUploadError extends Error {
     /** Whether retrying this exact request could ever succeed. */
     readonly retryable: boolean,
     readonly details?: unknown,
+    /**
+     * YouTube's per-channel daily upload cap (`uploadLimitExceeded`, ~6/day
+     * on an unverified channel). Not the video's fault and not permanent:
+     * the job waits hours and tries again (youtubeJobs.ts UPLOAD_LIMIT_WAIT).
+     */
+    readonly uploadLimit = false,
   ) {
     super(message);
   }
@@ -84,8 +90,9 @@ export async function uploadVideo(args: UploadVideoArgs): Promise<string> {
       // to be hit: a fresh channel's default is ~6 uploads a day until it is
       // verified, which MAX_CREATIVES_PER_DAY (20) does not respect. It is
       // retryable, but not for hours — the caller's backoff handles the wait.
-      isRetryableStatus(initiate.status) || reason === "quotaExceeded",
+      isRetryableStatus(initiate.status) || reason === "quotaExceeded" || reason === "uploadLimitExceeded",
       body?.error,
+      reason === "uploadLimitExceeded" || /exceeded the number of videos/i.test(body?.error?.message ?? ""),
     );
   }
 

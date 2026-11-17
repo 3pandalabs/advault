@@ -98,12 +98,40 @@ export async function completeUploadJob(
 // rejected — wrong format, a copyright claim on the audio, a disabled channel —
 // will be rejected identically on every retry, and retrying burns a daily
 // upload quota that is as low as ~6 on an unverified channel.
+export const UPLOAD_LIMIT_WAIT_SECONDS = 4 * 3600;
+// Shown on the campaign page while the job waits (creatives.youtube_upload_error).
+export const UPLOAD_LIMIT_NOTE =
+  "YouTube's daily upload limit was reached. Your video is ready and will publish automatically within a day.";
+
 export async function failUploadJob(
   job: YouTubeUploadJob,
   error: unknown,
-  opts: { retryable?: boolean } = {},
+  opts: { retryable?: boolean; uploadLimit?: boolean } = {},
 ): Promise<void> {
   const message = error instanceof Error ? error.message : String(error);
+
+  // The channel's daily upload cap: wait it out without spending an attempt,
+  // however many days it takes (a verified channel's cap is far higher). One
+  // try every UPLOAD_LIMIT_WAIT keeps API quota use negligible.
+  if (opts.uploadLimit) {
+    await db
+      .update(youtubeUploadJobs)
+      .set({
+        status: "queued",
+        lastError: message,
+        attempts: sql`greatest(${youtubeUploadJobs.attempts} - 1, 0)`,
+        claimedBy: null,
+        claimedAt: null,
+        runAfter: sql`now() + ${`${UPLOAD_LIMIT_WAIT_SECONDS} seconds`}::interval`,
+        updatedAt: new Date(),
+      })
+      .where(eq(youtubeUploadJobs.id, job.id));
+    await db
+      .update(creatives)
+      .set({ youtubeUploadStatus: "pending", youtubeUploadError: UPLOAD_LIMIT_NOTE })
+      .where(eq(creatives.id, job.creativeId));
+    return;
+  }
   const exhausted = opts.retryable === false || job.attempts >= job.maxAttempts;
 
   if (exhausted) {

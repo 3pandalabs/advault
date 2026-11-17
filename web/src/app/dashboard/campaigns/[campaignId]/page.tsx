@@ -618,6 +618,13 @@ export default function CampaignDetailPage({
             {/* The publish step, surfaced only when it is the thing standing
                 between a finished video and a runnable ad. A successful
                 publish needs no mention — the badge already says Ready. */}
+            {/* Waiting on YouTube's daily upload cap: retried automatically. */}
+            {creative.renderStatus === "ready" &&
+              creative.youtubeUploadStatus === "pending" &&
+              creative.youtubeUploadError && (
+                <p className="mt-4 text-sm text-amber-300">{creative.youtubeUploadError}</p>
+              )}
+
             {creative.renderStatus === "ready" && creative.youtubeUploadStatus === "failed" && (
               <div className="mt-4 flex flex-wrap items-center gap-3">
                 <p className="text-sm text-red-300">
