@@ -1,15 +1,16 @@
 import { ownVideoForNewSite } from "../lib/siteVideo/index.js";
-import { and, desc, eq, inArray, isNotNull, ne } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, isNull, ne } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { requireAuth } from "../auth/plugin.js";
+import { requireAdmin, requireAuth } from "../auth/plugin.js";
 import { db } from "../db/index.js";
-import { assets, campaigns, creatives, users } from "../db/schema.js";
+import { assets, campaigns, creatives, purchases, users } from "../db/schema.js";
 import { beforeAfterAllowed, pairAssetIds } from "../lib/beforeAfter/policy.js";
 import { decryptToken, encryptToken } from "../lib/crypto.js";
 import { loadOwnedCampaign } from "../lib/ownership.js";
 import {
   createSitevaultSite,
+  deleteSitevaultSite,
   fetchAccountSitevaultSite,
   offerBanner,
   sitevaultSignInEditUrl,
@@ -32,7 +33,9 @@ import { proPhotoKey } from "../render/enhance.js";
 import { isHousingCategory } from "../lib/audience/policy.js";
 import { fetchSiteOfferStatus, latestSiteOffer } from "../lib/siteOffer/index.js";
 import { billingIdentity } from "../lib/testMode/index.js";
+import { SITE_OFFER_MAX_ATTEMPTS } from "../lib/siteOffer/policy.js";
 import {
+  WEBSITE_FEE_MAX_ATTEMPTS,
   feeDisplay,
   isPaidStatus,
   latestWebsitePurchase,
@@ -142,6 +145,15 @@ async function isAdminUser(userId: string): Promise<boolean> {
   return (await billingIdentity(userId)).role === "admin";
 }
 
+/**
+ * The REAL role (users.role), never the test-mode one: "Delete it and make a
+ * new one" is an admin tool, so "Test as customer" must not hide it.
+ */
+async function isRealAdmin(userId: string): Promise<boolean> {
+  const [u] = await db.select({ role: users.role }).from(users).where(eq(users.id, userId)).limit(1);
+  return u?.role === "admin";
+}
+
 type AccountSite = {
   siteUrl: string;
   /** The encrypted edit link when AdVault made the site; null for one built on SiteVault. */
@@ -211,6 +223,25 @@ async function accountPendingSite(userId: string, exceptCampaignId: string): Pro
     .limit(1);
   return row?.url ?? null;
 }
+
+/**
+ * The site an admin's "Delete it and make a new one" removes: the account's
+ * website (the one the card offers), else a made-but-unpaid one on another
+ * campaign (which blocks a new site just the same). Null = nothing to delete.
+ */
+async function adminDeletableSite(userId: string, exceptCampaignId: string): Promise<{ siteUrl: string; state: string | null } | null> {
+  const existing = await accountSite(userId, exceptCampaignId);
+  if (existing) return { siteUrl: existing.siteUrl, state: existing.state };
+  const pending = await accountPendingSite(userId, exceptCampaignId);
+  return pending ? { siteUrl: pending, state: "pending" } : null;
+}
+
+const deleteAccountSiteInput = z
+  .object({
+    // The link the card showed: refuse if the account's site changed meanwhile.
+    siteUrl: z.string().trim().max(500).optional(),
+  })
+  .optional();
 
 export async function websiteRoutes(app: FastifyInstance) {
   app.addHook("onRequest", requireAuth);
@@ -372,6 +403,114 @@ export async function websiteRoutes(app: FastifyInstance) {
     },
   );
 
+  // Admin "Delete it and make a new one" (2026-11-17): deletes the account's
+  // website on SiteVault for good (files, address, phone, account link) and
+  // unlinks it here, so "Make me a website" builds a brand-new one. REAL
+  // admins only (requireAdmin = JWT role, plus users.role), so "Test as
+  // customer" can't hide it and customers can never call it. Refused while a
+  // launched campaign links the site (Google's ad points at it).
+  app.post(
+    "/campaigns/:campaignId/website/account-site/delete",
+    {
+      preHandler: requireAdmin,
+      schema: { params: z.object({ campaignId: z.string().uuid() }), body: deleteAccountSiteInput },
+    },
+    async (req, reply) => {
+      if (!(await isRealAdmin(req.userId!))) return reply.code(403).send({ error: "admin_role_required" });
+      const { campaignId } = req.params as { campaignId: string };
+      const body = (req.body ?? {}) as NonNullable<z.infer<typeof deleteAccountSiteInput>>;
+      const campaign = await loadOwnedCampaign(campaignId, req.userId!, reply);
+      if (!campaign) return;
+      if (campaign.status === "live" || campaign.googleCampaignResourceName) {
+        return reply.code(409).send({ error: "campaign_is_live" });
+      }
+      const target = await adminDeletableSite(req.userId!, campaign.id);
+      const slug = slugFromSiteUrl(target?.siteUrl);
+      if (!target || !slug) return reply.code(404).send({ error: "no_account_website" });
+      if (body.siteUrl && slugFromSiteUrl(body.siteUrl) !== slug) {
+        return reply.code(409).send({ error: "account_website_changed", detail: target.siteUrl });
+      }
+
+      // Every address of this site our campaigns hold: its current one, plus
+      // older ones (a rename on SiteVault) that resolve to it.
+      const rows = await db
+        .select({
+          id: campaigns.id,
+          name: campaigns.name,
+          status: campaigns.status,
+          googleCampaignResourceName: campaigns.googleCampaignResourceName,
+          landingUrl: campaigns.landingUrl,
+          sitevaultPendingUrl: campaigns.sitevaultPendingUrl,
+        })
+        .from(campaigns)
+        .where(eq(campaigns.userId, req.userId!));
+      const slugs = new Set([slug]);
+      const others = new Set(
+        rows
+          .flatMap((r) => [slugFromSiteUrl(r.landingUrl), slugFromSiteUrl(r.sitevaultPendingUrl)])
+          .filter((s): s is string => Boolean(s) && s !== slug),
+      );
+      for (const other of others) {
+        const current = await resolveSitevaultSite(other);
+        if (current && slugFromSiteUrl(current) === slug) slugs.add(other);
+      }
+      const links = (url: string | null) => {
+        const s = slugFromSiteUrl(url);
+        return Boolean(s && slugs.has(s));
+      };
+      const launched = rows.find((r) => (r.status === "live" || r.googleCampaignResourceName) && links(r.landingUrl));
+      if (launched) return reply.code(409).send({ error: "website_in_use_by_launched_campaign", detail: launched.name });
+
+      const [owner] = await db.select({ email: users.email }).from(users).where(eq(users.id, req.userId!)).limit(1);
+      const result = await deleteSitevaultSite(slug, { advaultUserId: req.userId!, email: owner?.email });
+      if (!result.ok) {
+        req.log.warn({ campaignId, slug, error: result.error }, "sitevault delete failed");
+        const known = result.error === "not_your_site" || result.error === "has_subscription";
+        return reply
+          .code(known ? 409 : 502)
+          .send({ error: known ? `website_${result.error}` : "website_delete_failed", detail: result.error });
+      }
+
+      // Unlink it everywhere on this account (none of these is launched).
+      const now = new Date();
+      const linked = rows.filter((r) => links(r.landingUrl)).map((r) => r.id);
+      const pending = rows.filter((r) => links(r.sitevaultPendingUrl)).map((r) => r.id);
+      if (linked.length) {
+        await db
+          .update(campaigns)
+          .set({
+            landingUrl: null,
+            sitevaultEditEnc: null,
+            siteVideoWanted: false,
+            siteVideoPushedAt: null,
+            siteVideoAttempts: 0,
+            siteVideoError: null,
+            updatedAt: now,
+          })
+          .where(inArray(campaigns.id, linked));
+      }
+      if (pending.length) {
+        await db
+          .update(campaigns)
+          .set({ sitevaultPendingUrl: null, sitevaultEditEnc: null, updatedAt: now })
+          .where(inArray(campaigns.id, pending));
+      }
+      // Stop sweeps that would push to the deleted address (a new site may
+      // reuse it): an unpublished website fee and unpushed website offers.
+      const gone = [...slugs];
+      await db
+        .update(purchases)
+        .set({ websiteAttempts: WEBSITE_FEE_MAX_ATTEMPTS, websiteError: "site_deleted_by_admin", updatedAt: now })
+        .where(and(eq(purchases.userId, req.userId!), inArray(purchases.websiteSlug, gone), isNull(purchases.websitePublishedAt)));
+      await db
+        .update(purchases)
+        .set({ siteOfferAttempts: SITE_OFFER_MAX_ATTEMPTS, siteOfferError: "site_deleted_by_admin", updatedAt: now })
+        .where(and(eq(purchases.userId, req.userId!), inArray(purchases.siteOfferSlug, gone), isNull(purchases.siteOfferPushedAt)));
+      req.log.info({ campaignId, slug, addresses: gone.length, unlinked: linked.length + pending.length }, "admin deleted account website");
+      return { deleted: result.deleted, slug: result.slug, unlinkedCampaigns: new Set([...linked, ...pending]).size };
+    },
+  );
+
   // Is the campaign's website actually up? The card shows a "building your
   // website" bar until it is, so the owner never opens a link that isn't
   // live yet. SiteVault must say live (or in grace) AND the page must load.
@@ -454,9 +593,26 @@ export async function websiteRoutes(app: FastifyInstance) {
       // another campaign, or built on SiteVault): offer that instead of making
       // a second site for the same business, and never quote the $10.
       if (!campaign.landingUrl && !locked) {
-        // Admins always get "Make me a website" (they may have many).
-        const existing = (await isAdminUser(req.userId!)) ? null : await accountSite(req.userId!, campaign.id);
-        if (existing) return { siteUrl: null, editUrl, accountSite: { siteUrl: existing.siteUrl, state: existing.state } };
+        // Admins (REAL role, test mode or not) also see the account's site,
+        // with "Delete it and make a new one" (adminCanDelete). Outside test
+        // mode they may still make another without deleting (adminCanMakeAnother).
+        if (await isRealAdmin(req.userId!)) {
+          const target = await adminDeletableSite(req.userId!, campaign.id);
+          const actsAsAdmin = await isAdminUser(req.userId!);
+          if (target) {
+            return {
+              siteUrl: null,
+              editUrl,
+              accountSite: target,
+              adminCanDelete: true,
+              adminCanMakeAnother: actsAsAdmin,
+              ...(actsAsAdmin ? { websiteFee: null } : {}),
+            };
+          }
+        } else {
+          const existing = await accountSite(req.userId!, campaign.id);
+          if (existing) return { siteUrl: null, editUrl, accountSite: { siteUrl: existing.siteUrl, state: existing.state } };
+        }
         // What "Make me a website" costs (null = free: admins, at_cost).
         const fee = await websiteFeeFor(req.userId!);
         return { siteUrl: null, editUrl, websiteFee: fee ? feeDisplay(fee) : null };

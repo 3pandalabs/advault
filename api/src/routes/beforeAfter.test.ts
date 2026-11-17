@@ -37,6 +37,8 @@ vi.mock("../auth/plugin.js", () => ({
     if (typeof id !== "string") return reply.code(401).send({ error: "unauthorized" });
     (req as FastifyRequest & { userId?: string }).userId = id;
   },
+  // website.ts imports it (admin "Delete it and make a new one"); unused here.
+  requireAdmin: async (_req: FastifyRequest, reply: FastifyReply) => reply.code(403).send({ error: "admin_role_required" }),
 }));
 // Every stored photo is a small JPEG; no polished (pro) copies exist.
 vi.mock("../plugins/r2.js", () => ({
