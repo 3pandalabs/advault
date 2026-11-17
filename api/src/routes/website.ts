@@ -9,7 +9,10 @@ import { decryptToken, encryptToken } from "../lib/crypto.js";
 import { loadOwnedCampaign } from "../lib/ownership.js";
 import {
   createSitevaultSite,
+  fetchAccountSitevaultSite,
   offerBanner,
+  sitevaultSignInEditUrl,
+  sitevaultStateIsLive,
   sitevaultCategory,
   resolveSitevaultSite,
   setSitevaultOwner,
@@ -94,16 +97,48 @@ async function campaignAd(campaignId: string): Promise<{ sticker: StickerLike | 
 
 // One SiteVault website per AdVault account (one account = one business).
 // A second campaign reuses the account's site instead of making another;
-// SiteVault separately refuses a second live site for the same phone.
+// SiteVault separately refuses a second live site for the same phone, and a
+// second site for the same shared account (409 account_has_site).
 
-/** The account's existing SiteVault site (from any other campaign), or null. */
 /** Admins may make any number of websites (testing); everyone else gets one per account. */
 async function isAdminUser(userId: string): Promise<boolean> {
   const [u] = await db.select({ role: users.role }).from(users).where(eq(users.id, userId)).limit(1);
   return u?.role === "admin";
 }
 
-async function accountSite(userId: string, exceptCampaignId: string) {
+type AccountSite = {
+  siteUrl: string;
+  /** The encrypted edit link when AdVault made the site; null for one built on SiteVault. */
+  sitevaultEditEnc: string | null;
+  /** SiteVault's state for a site found there (null = from our own campaigns). */
+  state: string | null;
+};
+
+/**
+ * The account's existing SiteVault site, or null: first from its other
+ * campaigns (AdVault made it), else from SiteVault itself, because the shared
+ * 3PandaLabs account may have built one there (QA 2026-11-16). SiteVault down
+ * or an older Worker without the lookup = null, i.e. the behaviour before it.
+ */
+async function accountSite(userId: string, exceptCampaignId: string): Promise<AccountSite | null> {
+  return (await accountSiteFromCampaigns(userId, exceptCampaignId)) ?? (await accountSiteFromSitevault(userId));
+}
+
+async function accountSiteFromSitevault(userId: string): Promise<AccountSite | null> {
+  const [u] = await db.select({ email: users.email }).from(users).where(eq(users.id, userId)).limit(1);
+  const found = await fetchAccountSitevaultSite({ advaultUserId: userId, email: u?.email });
+  if (!found) return null;
+  // A site we made and are still waiting on the $10 for belongs to the
+  // pending flow (pendingSite / accountPendingSite), not to "use existing".
+  const pending = await db
+    .select({ url: campaigns.sitevaultPendingUrl })
+    .from(campaigns)
+    .where(and(eq(campaigns.userId, userId), isNotNull(campaigns.sitevaultPendingUrl)));
+  if (pending.some((p) => slugFromSiteUrl(p.url) === found.slug)) return null;
+  return { siteUrl: found.siteUrl, sitevaultEditEnc: null, state: found.state };
+}
+
+async function accountSiteFromCampaigns(userId: string, exceptCampaignId: string): Promise<AccountSite | null> {
   const [row] = await db
     .select({ landingUrl: campaigns.landingUrl, sitevaultEditEnc: campaigns.sitevaultEditEnc })
     .from(campaigns)
@@ -121,7 +156,14 @@ async function accountSite(userId: string, exceptCampaignId: string) {
   // (A made-but-unpaid site elsewhere is caught by accountPendingSite.)
   // Its current address (it may have been renamed since).
   const current = (await resolveSitevaultSite(slugFromSiteUrl(row.landingUrl)!)) ?? row.landingUrl;
-  return { siteUrl: current, sitevaultEditEnc: row.sitevaultEditEnc };
+  return { siteUrl: current, sitevaultEditEnc: row.sitevaultEditEnc, state: null };
+}
+
+/** The edit link the card shows: the stored one, else SiteVault's sign-in edit page for a SiteVault link. */
+function editLinkFor(stored: string | null, landingUrl: string | null | undefined): string | null {
+  if (stored) return stored;
+  const slug = slugFromSiteUrl(landingUrl);
+  return slug ? sitevaultSignInEditUrl(slug) : null;
 }
 
 /** Another campaign of the account has a made-but-unpaid site (the $10 fee). */
@@ -150,6 +192,11 @@ export async function websiteRoutes(app: FastifyInstance) {
       }
       const existing = await accountSite(req.userId!, campaign.id);
       if (!existing) return reply.code(404).send({ error: "no_account_website" });
+      // Built on SiteVault but not published there (unpaid plan, paused): an
+      // ad must not send people to a hold page.
+      if (existing.state !== null && !sitevaultStateIsLive(existing.state)) {
+        return reply.code(409).send({ error: "account_website_not_live", detail: existing.siteUrl });
+      }
       const [updated] = await db
         .update(campaigns)
         .set({ landingUrl: existing.siteUrl, sitevaultEditEnc: existing.sitevaultEditEnc, updatedAt: new Date() })
@@ -213,6 +260,12 @@ export async function websiteRoutes(app: FastifyInstance) {
         // (approved uploads only). Generated ads still wait for launch.
         photos.length === 0 ? await ownVideoForNewSite(campaign.id) : null,
       );
+      if (!result.ok && result.status === 409 && result.code === "account_has_site") {
+        // SiteVault says the account already owns a site (our lookup missed
+        // it, e.g. SiteVault was briefly unreachable). Nothing was made and
+        // no $10 checkout is opened.
+        return reply.code(409).send({ error: "website_exists_for_account", detail: result.siteUrl });
+      }
       if (!result.ok) {
         req.log.warn({ campaignId, status: result.status, errors: result.errors }, "sitevault create failed");
         return reply
@@ -356,21 +409,22 @@ export async function websiteRoutes(app: FastifyInstance) {
             .where(eq(campaigns.id, campaign.id))
             .returning();
           req.log.info({ campaignId, from: campaign.landingUrl, to: current }, "website link followed sitevault rename");
-          return { siteUrl: current, editUrl, campaign: updated, siteOffer: await latestSiteOffer(campaign.id) };
+          return { siteUrl: current, editUrl: editLinkFor(editUrl, current), campaign: updated, siteOffer: await latestSiteOffer(campaign.id) };
         }
       }
-      // No website yet, but the account already has one: offer that instead
-      // of making a second site for the same business.
+      // No website yet, but the account already has one (made here for
+      // another campaign, or built on SiteVault): offer that instead of making
+      // a second site for the same business, and never quote the $10.
       if (!campaign.landingUrl && !locked) {
         // Admins always get "Make me a website" (they may have many).
         const existing = (await isAdminUser(req.userId!)) ? null : await accountSite(req.userId!, campaign.id);
-        if (existing) return { siteUrl: null, editUrl, accountSite: { siteUrl: existing.siteUrl } };
+        if (existing) return { siteUrl: null, editUrl, accountSite: { siteUrl: existing.siteUrl, state: existing.state } };
         // What "Make me a website" costs (null = free: admins, at_cost).
         const fee = await websiteFeeFor(req.userId!);
         return { siteUrl: null, editUrl, websiteFee: fee ? feeDisplay(fee) : null };
       }
       // Offer combo: did the latest paid website offer reach the site?
-      return { siteUrl: campaign.landingUrl, editUrl, siteOffer: await latestSiteOffer(campaign.id) };
+      return { siteUrl: campaign.landingUrl, editUrl: editLinkFor(editUrl, campaign.landingUrl), siteOffer: await latestSiteOffer(campaign.id) };
     },
   );
 }
