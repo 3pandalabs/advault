@@ -23,6 +23,8 @@ import { SuggestionChips } from "@/components/SuggestionChips";
 import { callToActionSuggestions, campaignNameSuggestions } from "@/lib/suggestions";
 import { AudienceFiltersEditor, HOUSING_NOTICE } from "@/components/AudienceFiltersEditor";
 import { actsAsAdmin } from "@/lib/testMode";
+import { ScriptProgress } from "../[campaignId]/render-progress";
+
 import {
   AUDIENCE_FILTERS_ENABLED,
   CATEGORIES,
@@ -30,6 +32,9 @@ import {
   isHousingCategory,
   type AudienceFilters,
 } from "@/lib/audience";
+
+// Called from the submit handler only (not during render).
+const startedNow = () => Date.now();
 
 // The three-step wizard. Steps are local state rather than routes: the whole
 // flow is one create-then-generate transaction, and a per-step URL would let a
@@ -122,6 +127,8 @@ function offerPlaceholder(category: string, isListing: boolean): string {
 export default function NewCampaignPage() {
   const router = useRouter();
   const [step, setStep] = useState(1);
+  // Set while the API writes the script for a free/admin ad (~20 s).
+  const [writingSince, setWritingSince] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
@@ -364,6 +371,7 @@ export default function NewCampaignPage() {
           return;
         }
       } else {
+        setWritingSince(startedNow());
         await generateCreatives(campaign.id, adChoices());
       }
       router.push(`/dashboard/campaigns/${campaign.id}`);
@@ -383,6 +391,7 @@ export default function NewCampaignPage() {
         setError("Could not create the campaign. Please try again.");
       }
       setBusy(false);
+      setWritingSince(null);
     }
   }
 
@@ -1163,6 +1172,12 @@ export default function NewCampaignPage() {
               until you connect Google Ads and launch — and even then the campaign is created
               paused.
             </p>
+          )}
+
+          {writingSince !== null && (
+            <div className="mt-6">
+              <ScriptProgress startedAt={writingSince} />
+            </div>
           )}
 
           <div className="mt-6 flex justify-between">

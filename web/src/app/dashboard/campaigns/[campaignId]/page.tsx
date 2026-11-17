@@ -32,7 +32,7 @@ import { PerformanceCard } from "./performance-card";
 import { AudienceCard } from "./audience-card";
 import { WebsiteCard } from "./website-card";
 import { SiteOfferOption, payLabel } from "./site-offer-option";
-import { RenderProgress } from "./render-progress";
+import { RenderProgress, ScriptProgress } from "./render-progress";
 import { AUDIENCE_FILTERS_ENABLED } from "@/lib/audience";
 import { Badge, Card, CardDescription, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -146,6 +146,8 @@ export default function CampaignDetailPage({
   const [newAd, setNewAd] = useState<NewAdStatus | null>(null);
   const [redoConfirm, setRedoConfirm] = useState(false);
   const generatingRef = useRef(false);
+  // Set while the API writes the script (inside the generate/redo request).
+  const [writingSince, setWritingSince] = useState<number | null>(null);
   // Offer combo: "Also put this offer on my website" on a new-ad purchase.
   // Pre-ticked when SiteVault's edit page sent them here (?siteOffer=1).
   const [siteOfferTicked, setSiteOfferTicked] = useState(false);
@@ -192,11 +194,13 @@ export default function CampaignDetailPage({
     }
     if (orderStatus === "paid" && !generatingRef.current) {
       generatingRef.current = true;
+      setWritingSince(Date.now());
       generatePaidNewAd(newAd.order.id)
         .then(() => Promise.all([refresh(), getNewAdStatus(campaignId).then(setNewAd)]))
         .catch(() => setError("Your payment went through, but making the ad failed. Reload the page to try again."))
         .finally(() => {
           generatingRef.current = false;
+          setWritingSince(null);
         });
     }
   }, [newAd, orderStatus, campaignId, refresh]);
@@ -347,6 +351,15 @@ export default function CampaignDetailPage({
         </p>
       )}
 
+      {writingSince !== null && (
+        <Card className="mb-4">
+          <CardTitle>Making your new ad</CardTitle>
+          <div className="mt-3">
+            <ScriptProgress startedAt={writingSince} />
+          </div>
+        </Card>
+      )}
+
       {newAd?.required && campaign.creatives.length === 0 && (
         <Card className="mb-4">
           {orderStatus === "pending" ? (
@@ -396,7 +409,7 @@ export default function CampaignDetailPage({
         // "Make it again": only for an AdVault-made ad that is finished, not live.
         const made = campaign.creatives.filter((c) => c.kind !== "upload");
         const busyRendering = made.some((c) => c.renderStatus === "queued" || c.renderStatus === "rendering");
-        if (campaign.status === "live" || made.length === 0 || busyRendering || !newAd) return null;
+        if (campaign.status === "live" || made.length === 0 || busyRendering || !newAd || writingSince !== null) return null;
         const left = newAd.redosLeft;
         const metered = newAd.required;
         const canRedo = !metered || (left ?? 0) > 0;
@@ -422,6 +435,7 @@ export default function CampaignDetailPage({
                     onClick={() => {
                       setBusy(true);
                       setError(null);
+                      if (canRedo) setWritingSince(Date.now());
                       const go = canRedo
                         ? redoAd(campaign.id).then(() => Promise.all([refresh(), getNewAdStatus(campaignId).then(setNewAd)]))
                         : orderNewAd(campaign.id, orderSiteOffer ? { siteOffer: true } : undefined).then(({ checkout }) => {
@@ -431,6 +445,7 @@ export default function CampaignDetailPage({
                         .finally(() => {
                           setBusy(false);
                           setRedoConfirm(false);
+                          setWritingSince(null);
                         });
                     }}
                   >
