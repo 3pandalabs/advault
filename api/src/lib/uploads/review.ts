@@ -24,6 +24,16 @@ export function initialReviewStatus(role: string | undefined): ReviewStatus {
   return role === "admin" ? "approved" : "pending_review";
 }
 
+/**
+ * "Use my own video" is admins-only for launch (2026-11-16): every customer
+ * upload needs a human review and skips the paid ad. OWN_VIDEO_UPLOADS=on on
+ * advault-api opens it to everyone again. Internal accounts (3PandaLabs' own
+ * apps, migration 0032) may upload too; their uploads still wait for review.
+ */
+export function ownVideoAllowed(role: string | undefined, internal = false, env: Record<string, string | undefined> = process.env): boolean {
+  return role === "admin" || internal || env.OWN_VIDEO_UPLOADS === "on";
+}
+
 export type ReviewDecision = { decision: "approve" } | { decision: "reject"; reason: string };
 
 export type ReviewTransition =
