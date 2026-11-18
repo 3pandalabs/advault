@@ -3,7 +3,7 @@ import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { markUserDeleted } from "../auth/deleted.js";
 import { hashSecret } from "../auth/password.js";
 import { db } from "../db/index.js";
-import { adAccounts, assets, campaigns, sessions, subscriptions, users, wallets, youtubeChannels } from "../db/schema.js";
+import { adAccounts, assets, campaigns, passwordResetTokens, sessions, subscriptions, users, wallets, youtubeChannels } from "../db/schema.js";
 import { deleteObject } from "../plugins/r2.js";
 import { isMccConfigured, mccAccessToken, pauseCampaign } from "./googleAds/mcc.js";
 import { notifyOps } from "./ops/notify.js";
@@ -116,6 +116,7 @@ export async function deleteAccount(userId: string): Promise<DeleteResult> {
       .where(and(eq(subscriptions.userId, userId), inArray(subscriptions.status, ["pending", "active", "past_due"])));
 
     await tx.delete(sessions).where(eq(sessions.userId, userId));
+    await tx.delete(passwordResetTokens).where(eq(passwordResetTokens.userId, userId));
     await tx.delete(youtubeChannels).where(eq(youtubeChannels.userId, userId));
     await tx.delete(adAccounts).where(and(eq(adAccounts.userId, userId), eq(adAccounts.isManaged, false)));
     const managed = await tx

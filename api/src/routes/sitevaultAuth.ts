@@ -5,6 +5,7 @@ import { z } from "zod";
 import { users } from "../db/schema.js";
 import { verifySecret } from "../auth/password.js";
 import { createSitevaultAccount, markAppUsed, type Db } from "../lib/sharedAccount/index.js";
+import { changePassword, confirmPasswordReset, requestPasswordReset } from "../lib/passwordReset/index.js";
 
 // SiteVault's server-to-server window onto the shared 3PandaLabs account
 // (AdVault's users table is the one account store for AdVault and SiteVault;
@@ -92,6 +93,71 @@ export async function sitevaultAuthRoutes(app: FastifyInstance, opts: { db: Db }
       if (!bearerOk(req.headers.authorization)) return reply.code(401).send({ ok: false, error: "unauthorized" });
       const { userId, at } = req.body as { userId: string; at?: string };
       if (!(await markAppUsed(db, userId, "sitevault", at))) return reply.code(404).send({ ok: false, error: "not_found" });
+      return { ok: true };
+    },
+  );
+
+  // Password reset, proxied from SiteVault's own /forgot-password and
+  // /reset-password pages (the password lives here, so only AdVault can mint
+  // the token and set the new one). SiteVault does the per-IP rate limiting on
+  // its public pages; it passes the product name, the From display name and the
+  // reset-link base so the email is SiteVault-branded. Enumeration-safe: request
+  // always answers 204, whether or not the email has an account.
+  app.post(
+    "/internal/sitevault/password-reset/request",
+    {
+      schema: {
+        body: z.object({
+          email: z.string().trim().email().max(254),
+          resetUrlBase: z.string().url().max(300),
+          productName: z.string().trim().min(1).max(40),
+          fromName: z.string().trim().min(1).max(60),
+        }),
+      },
+    },
+    async (req, reply) => {
+      if (!bearerOk(req.headers.authorization)) return reply.code(401).send({ ok: false, error: "unauthorized" });
+      const b = req.body as { email: string; resetUrlBase: string; productName: string; fromName: string };
+      await requestPasswordReset(db, b.email, { resetUrlBase: b.resetUrlBase, productName: b.productName, fromName: b.fromName }, (m) =>
+        req.log.info(m),
+      );
+      return reply.code(204).send();
+    },
+  );
+
+  // Finish the reset: the single-use token plus the new password. 400 for a
+  // bad, used or expired token. New password is 8+, matching the internal
+  // account create (SiteVault's older accounts were made with 8).
+  app.post(
+    "/internal/sitevault/password-reset/confirm",
+    { schema: { body: z.object({ token: z.string().min(1).max(500), password: z.string().min(8).max(200) }) } },
+    async (req, reply) => {
+      if (!bearerOk(req.headers.authorization)) return reply.code(401).send({ ok: false, error: "unauthorized" });
+      const b = req.body as { token: string; password: string };
+      const r = await confirmPasswordReset(db, b.token, b.password);
+      if (!r.ok) return reply.code(400).send({ ok: false, error: "invalid_or_expired_token" });
+      return { ok: true };
+    },
+  );
+
+  // Change password for a signed-in SiteVault user: verify the current one here,
+  // set the new one. 401 when the current password is wrong.
+  app.post(
+    "/internal/sitevault/change-password",
+    {
+      schema: {
+        body: z.object({
+          email: z.string().trim().email().max(254),
+          currentPassword: z.string().min(1).max(200),
+          newPassword: z.string().min(8).max(200),
+        }),
+      },
+    },
+    async (req, reply) => {
+      if (!bearerOk(req.headers.authorization)) return reply.code(401).send({ ok: false, error: "unauthorized" });
+      const b = req.body as { email: string; currentPassword: string; newPassword: string };
+      const r = await changePassword(db, b.email, b.currentPassword, b.newPassword);
+      if (!r.ok) return reply.code(401).send({ ok: false, error: "invalid_credentials" });
       return { ok: true };
     },
   );

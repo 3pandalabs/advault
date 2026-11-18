@@ -84,3 +84,44 @@ describe("internal SiteVault account routes", () => {
     expect((await post("/internal/sitevault/usage", { userId: "not-a-uuid" })).statusCode).toBe(400);
   });
 });
+
+describe("internal SiteVault password reset routes", () => {
+  const reqBody = { email: "a@x.test", resetUrlBase: "https://s.test/reset-password", productName: "SiteVault", fromName: "SiteVault" };
+
+  it("refuse a missing or wrong bearer", async () => {
+    const cases: [string, object][] = [
+      ["/internal/sitevault/password-reset/request", reqBody],
+      ["/internal/sitevault/password-reset/confirm", { token: "x.y", password: "password123" }],
+      ["/internal/sitevault/change-password", { email: "a@x.test", currentPassword: "x", newPassword: "password123" }],
+    ];
+    for (const [url, body] of cases) {
+      expect((await post(url, body, {})).statusCode).toBe(401);
+      expect((await post(url, body, { authorization: "Bearer nope" })).statusCode).toBe(401);
+    }
+  });
+
+  it("request is enumeration-safe 204 for known and unknown emails, and validates the body", async () => {
+    await post("/internal/sitevault/accounts", { email: "reset-http@x.test", password: "password123" });
+    expect((await post("/internal/sitevault/password-reset/request", { ...reqBody, email: "reset-http@x.test" })).statusCode).toBe(204);
+    expect((await post("/internal/sitevault/password-reset/request", { ...reqBody, email: "ghost@x.test" })).statusCode).toBe(204);
+    const { resetUrlBase: _omit, ...noBase } = reqBody;
+    expect((await post("/internal/sitevault/password-reset/request", noBase)).statusCode).toBe(400);
+    expect((await post("/internal/sitevault/password-reset/request", { ...reqBody, resetUrlBase: "not-a-url" })).statusCode).toBe(400);
+  });
+
+  it("confirm rejects a bad or unknown token and a too-short password", async () => {
+    expect((await post("/internal/sitevault/password-reset/confirm", { token: "nope", password: "password123" })).statusCode).toBe(400);
+    expect(
+      (await post("/internal/sitevault/password-reset/confirm", { token: "00000000-0000-0000-0000-000000000000.x", password: "password123" })).statusCode,
+    ).toBe(400);
+    expect((await post("/internal/sitevault/password-reset/confirm", { token: "x.y", password: "short" })).statusCode).toBe(400);
+  });
+
+  it("change-password verifies the current password, then the new one signs in", async () => {
+    await post("/internal/sitevault/accounts", { email: "chg-http@x.test", password: "eightchr" });
+    expect((await post("/internal/sitevault/change-password", { email: "chg-http@x.test", currentPassword: "wrong-pass", newPassword: "newpass12" })).statusCode).toBe(401);
+    expect((await post("/internal/sitevault/change-password", { email: "chg-http@x.test", currentPassword: "eightchr", newPassword: "newpass12" })).statusCode).toBe(200);
+    expect((await post("/internal/sitevault/verify-login", { email: "chg-http@x.test", password: "newpass12" })).statusCode).toBe(200);
+    expect((await post("/internal/sitevault/verify-login", { email: "chg-http@x.test", password: "eightchr" })).statusCode).toBe(401);
+  });
+});

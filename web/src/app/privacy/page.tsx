@@ -358,6 +358,14 @@ export default function PrivacyPage() {
             <td>To take payment. They, not we, handle your card</td>
           </tr>
           <tr>
+            <td>Resend (through our 3PandaLabs mailer)</td>
+            <td>Your email address, and a one-time link</td>
+            <td>
+              To send a password-reset email when you ask for one, from
+              passwordReset@3pandalabs.com. We send no marketing email
+            </td>
+          </tr>
+          <tr>
             <td>Meta (WhatsApp)</td>
             <td>Your phone number and message text</td>
             <td>Only if you turn on monthly offer prompts</td>
