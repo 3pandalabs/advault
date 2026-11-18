@@ -218,6 +218,13 @@
       "when": 1795504400000,
       "tag": "0030_test_customers",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1795504500000,
+      "tag": "0031_password_reset_tokens",
+      "breakpoints": true
     }
   ]
 }

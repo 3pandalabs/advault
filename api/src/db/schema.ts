@@ -99,6 +99,25 @@ export const sessions = pgTable(
   (t) => [index("idx_sessions_user").on(t.userId)],
 );
 
+// Single-use password-reset tokens (0031). Only the bcrypt hash is stored; the
+// token handed out is `${id}.${secret}`, 30-minute TTL, consumed once, deleted
+// with the account (lib/accountDeletion.ts). Used by lib/passwordReset for
+// AdVault's own reset and the SiteVault-proxied one (routes/sitevaultAuth.ts).
+export const passwordResetTokens = pgTable(
+  "password_reset_tokens",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    tokenHash: text("token_hash").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    usedAt: timestamp("used_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("idx_password_reset_tokens_user").on(t.userId)],
+);
+
 // ---------------------------------------------------------------------------
 // Google Ads accounts. Two shapes live in this table, distinguished by
 // `isManaged`:

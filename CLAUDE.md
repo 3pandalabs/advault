@@ -660,12 +660,24 @@ honour, and nothing at Google expires an ad for us. The sweep in
 No Temporal (the DB job queue covers the only async work), no mobile app, no
 Supabase.
 
-**No outbound email**, deliberately. The shared `3pandalabs/mailer` gateway
-sends through Resend, and only `rsvpvault.3pandalabs.com` is a verified sender
-domain — adding a second one evicts it. So there is no password-reset flow and
-no render-complete notification yet; the dashboard polls instead. When a second
-Resend domain becomes available, add `MAILER_URL`/`MAILER_TOKEN` and copy
-RsvpVault's `lib/mailer.ts` verbatim rather than writing a new one.
+**Outbound email: password reset only** (2026-11-18). The shared
+`3pandalabs/mailer` gateway sends through Resend. Under "Option A", the one
+verified sender domain is now the neutral `3pandalabs.com`, so reset mail goes
+from `passwordReset@3pandalabs.com` with a per-product `fromName` — a reset from
+the parent brand is legitimate for AdVault and SiteVault alike (a reset from the
+old `@rsvpvault` would read as phishing). Wired via `MAILER_URL`/`MAILER_TOKEN`
++ `lib/mailer.ts` (a thin gateway client, NOT a copy of RsvpVault's; it posts to
+the gateway so no Resend/Cloudflare key is ever in this app's env). Fail-soft:
+unset = no mail is sent and the API still boots. The reset core is
+`lib/passwordReset` (single-use token in `password_reset_tokens`, bcrypt, 30-min
+TTL, enumeration-safe), reached today by the **SiteVault-proxied** routes
+`POST /internal/sitevault/password-reset/{request,confirm}` and
+`/change-password` (`routes/sitevaultAuth.ts`, bearer `SITEVAULT_INTERNAL_TOKEN`)
+— the shared password lives here, so SiteVault owns the UI and AdVault changes
+the credential. AdVault's OWN `/auth` reset pages are a fast follow that can
+reuse `lib/passwordReset` unchanged. Still no render-complete notification; the
+dashboard polls. Reset tokens are personal data: `lib/accountDeletion.ts`
+deletes them with the account.
 
 ## The privacy policy is a factual document, not boilerplate
 

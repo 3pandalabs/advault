@@ -52,3 +52,9 @@ export const env = {
   // businesses and their spend. Unset = admin user sessions only.
   ADMIN_ANALYTICS_TOKEN: process.env.ADMIN_ANALYTICS_TOKEN ?? "",
 };
+
+// MAILER_URL / MAILER_TOKEN (the shared 3PandaLabs mailer gateway, used for the
+// password-reset email) are intentionally NOT listed here. lib/mailer.ts reads
+// them from process.env directly so the reset code stays reachable in tests
+// without the required vars above — same reason SITEVAULT_INTERNAL_TOKEN lives
+// in routes/sitevaultAuth.ts, not here.
