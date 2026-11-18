@@ -448,6 +448,22 @@ export function register(input: {
   });
 }
 
+// Password reset. request is enumeration-safe (always resolves); confirm throws
+// ApiError("invalid_or_expired_token") on a bad or spent link.
+export function requestPasswordReset(email: string) {
+  return api<void>("/auth/password-reset/request", {
+    method: "POST",
+    body: JSON.stringify({ email }),
+  });
+}
+
+export function confirmPasswordReset(token: string, password: string) {
+  return api<void>("/auth/password-reset/confirm", {
+    method: "POST",
+    body: JSON.stringify({ token, password }),
+  });
+}
+
 export function createCampaign(input: {
   name: string;
   businessName: string;

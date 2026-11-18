@@ -62,7 +62,12 @@ export default function LoginPage() {
             />
           </div>
           <div>
-            <Label htmlFor="password">Password</Label>
+            <div className="flex items-center justify-between">
+              <Label htmlFor="password">Password</Label>
+              <Link href="/forgot-password" className="text-sm text-amber-300 hover:underline">
+                Forgot password?
+              </Link>
+            </div>
             <Input
               id="password"
               type="password"
@@ -87,9 +92,6 @@ export default function LoginPage() {
           Create one
         </Link>
       </p>
-      {/* No "forgot password" link, because there is no reset flow — the shared
-          mailer has no verified sender domain for this app yet. See CLAUDE.md.
-          A dead link here would be worse than its absence. */}
     </main>
   );
 }
