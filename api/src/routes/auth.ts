@@ -8,14 +8,15 @@ import { accessTokenFor, issueSession } from "../auth/session.js";
 import { db } from "../db/index.js";
 import { sessions, users } from "../db/schema.js";
 import { deleteAccount, deletionPreview } from "../lib/accountDeletion.js";
+import { confirmPasswordReset, requestPasswordReset } from "../lib/passwordReset/index.js";
 import { mayToggleTestMode } from "../lib/testMode/policy.js";
+import { env } from "../env.js";
 
-// No password-reset flow here, deliberately — unlike RsvpVault, which has one.
-// The shared 3pandalabs/mailer gateway sends through Resend, and only
-// rsvpvault.3pandalabs.com is a verified sender domain; adding a second one
-// evicts it. A reset flow with no way to deliver the email is worse than no
-// reset flow, so this ships without one. When a second Resend domain is
-// available, copy RsvpVault's auth.ts reset routes and lib/mailer.ts verbatim.
+// Password reset (2026-11-18): email a single-use, 30-minute link, then set a
+// new password. Reuses lib/passwordReset — the same core the SiteVault-proxied
+// routes use (routes/sitevaultAuth.ts) — and sends through the shared gateway
+// from passwordReset@3pandalabs.com (Option A verified 3pandalabs.com in Resend,
+// which unblocked this). Enumeration-safe: request always answers 204.
 
 const credentials = z.object({
   email: z.string().email().max(320),
@@ -99,6 +100,36 @@ export async function authRoutes(app: FastifyInstance) {
       refreshToken: await issueSession(user.id),
     };
   });
+
+  // Password reset. `request` always answers 204 (enumeration-safe); `confirm`
+  // sets the new password from a single-use token. The abuse backstop is the
+  // gateway's per-app daily quota — there is no per-IP limiter here, matching
+  // login/register (Cloudflare sits in front of the public host).
+  app.post(
+    "/auth/password-reset/request",
+    { schema: { body: z.object({ email: z.string().email().max(320) }) } },
+    async (req, reply) => {
+      const { email } = req.body as { email: string };
+      await requestPasswordReset(
+        db,
+        email,
+        { productName: "AdVault", fromName: "AdVault", resetUrlBase: `${env.WEB_ORIGIN}/reset-password` },
+        (m) => req.log.info(m),
+      );
+      return reply.code(204).send();
+    },
+  );
+
+  app.post(
+    "/auth/password-reset/confirm",
+    { schema: { body: z.object({ token: z.string().min(1).max(500), password: z.string().min(10).max(200) }) } },
+    async (req, reply) => {
+      const { token, password } = req.body as { token: string; password: string };
+      const r = await confirmPasswordReset(db, token, password);
+      if (!r.ok) return reply.code(400).send({ error: "invalid_or_expired_token" });
+      return reply.code(204).send();
+    },
+  );
 
   app.post(
     "/auth/refresh",
