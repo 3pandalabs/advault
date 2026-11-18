@@ -1,10 +1,12 @@
 import type { FastifyInstance } from "fastify";
 import { sql } from "drizzle-orm";
+import { z } from "zod";
 import { db } from "../db/index.js";
 import { requireAdminOrAnalyticsToken } from "../auth/adminAccess.js";
 import { SEGMENTS, segmentOf, type Segment } from "../lib/insights/policy.js";
 import { formatMinor, type Currency } from "../lib/pricing/index.js";
 import { WINDOW_DAYS, assess, dailyBurn } from "../lib/vendors/balancePolicy.js";
+import { microsToMinor } from "../lib/adMetrics/policy.js";
 
 // The admin Business page (web /dashboard/admin/business): customers, the
 // signup -> launch funnel, customer groups, categories, revenue and top ads.
@@ -270,4 +272,114 @@ export async function adminInsightsRoutes(app: FastifyInstance) {
       internal,
     };
   });
+
+  // 3PandaLabs' own accounts (0032) in a date range, for the org admin site's
+  // "Internal" tab: what each internal account paid AdVault and what Google
+  // actually spent on its campaigns. Aggregates only. `until` is exclusive.
+  //   paid.adBudgetMinor  wallet top-ups (payments purpose topup), by paid time
+  //   paid.adsMinor / websiteMinor / siteOfferMinor / videoBundleMinor
+  //                       paid purchases by sku (paid_at)
+  //   paid.planMinor      plan invoices paid with their own charge (an external
+  //                       'subinv:<id>' top-up credit exists)
+  //   paid.otherMinor     creation_fee payments
+  //   planFromWalletMinor plan invoices drawn from the ad budget (platform
+  //                       billing): no separate charge, already in adBudget
+  //   adSpendMinor        Google-reported cost (campaign_daily_metrics, synced
+  //                       hourly) on campaign days in the range, any billing mode
+  app.get(
+    "/admin/internal-spend",
+    {
+      preHandler: requireAdminOrAnalyticsToken,
+      schema: {
+        querystring: z.object({
+          since: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+          until: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        }),
+      },
+    },
+    async (req) => {
+      const { since, until } = req.query as { since: string; until: string };
+      const from = `${since}T00:00:00Z`;
+      const to = `${until}T00:00:00Z`;
+      const inRange = (col: ReturnType<typeof sql>) => sql`${col} >= ${from}::timestamptz and ${col} < ${to}::timestamptz`;
+      const purchased = (skus: string[]) => sql`coalesce((select sum(p.amount_minor) from purchases p
+          where p.user_id = u.id and ${PAID_PURCHASE} and p.sku in (${sql.join(skus.map((k) => sql`${k}`), sql`, `)})
+          and ${inRange(sql`coalesce(p.paid_at, p.created_at)`)}), 0)::int`;
+      const paidPayments = (purpose: string) => sql`coalesce((select sum(p.amount_minor) from payments p
+          where p.user_id = u.id and p.status = 'paid' and p.purpose = ${purpose} and ${inRange(sql`p.updated_at`)}), 0)::int`;
+      const invoices = (external: boolean) => sql`coalesce((select sum(i.amount_minor) from subscription_invoices i
+          where i.user_id = u.id and i.status = 'paid' and ${inRange(sql`i.paid_at`)}
+          and ${external ? sql`` : sql`not`} exists (select 1 from ledger_entries le
+            where le.type = 'topup' and le.external_ref = 'subinv:' || i.id::text)), 0)::int`;
+
+      const rows = (
+        await db.execute<{
+          email: string;
+          label: string | null;
+          currency_code: string;
+          ad_budget: number;
+          ads: number;
+          website: number;
+          site_offer: number;
+          video_bundle: number;
+          plan: number;
+          plan_wallet: number;
+          other: number;
+          spend_micros: number | string;
+          campaigns_with_spend: number;
+          launched: number;
+          ads_made: number;
+        }>(sql`
+          select u.email, u.internal_label as label, u.currency_code,
+            ${paidPayments("topup")} as ad_budget,
+            ${purchased(["new_ad"])} as ads,
+            ${purchased(["website"])} as website,
+            ${purchased(["site_offer"])} as site_offer,
+            ${purchased(["cinematic", "cinematic_pack"])} as video_bundle,
+            ${invoices(true)} as plan,
+            ${invoices(false)} as plan_wallet,
+            ${paidPayments("creation_fee")} as other,
+            coalesce((select sum(m.cost_micros) from campaign_daily_metrics m join campaigns c on c.id = m.campaign_id
+              where c.user_id = u.id and m.date >= ${since}::date and m.date < ${until}::date), 0)::bigint as spend_micros,
+            (select count(distinct m.campaign_id)::int from campaign_daily_metrics m join campaigns c on c.id = m.campaign_id
+              where c.user_id = u.id and m.cost_micros > 0 and m.date >= ${since}::date and m.date < ${until}::date) as campaigns_with_spend,
+            (select count(*)::int from campaigns c where c.user_id = u.id and c.launched_at is not null) as launched,
+            (select count(distinct (cr.campaign_id, date_trunc('minute', cr.created_at)))::int from creatives cr
+              join campaigns c on c.id = cr.campaign_id
+              where c.user_id = u.id and cr.kind <> 'upload' and ${inRange(sql`cr.created_at`)}) as ads_made
+          from users u
+          where u.is_internal
+          order by u.internal_label nulls last, u.email
+        `)
+      ).rows;
+
+      return {
+        since,
+        until,
+        accounts: rows.map((r) => {
+          const paid = {
+            adBudgetMinor: r.ad_budget,
+            adsMinor: r.ads,
+            websiteMinor: r.website,
+            siteOfferMinor: r.site_offer,
+            videoBundleMinor: r.video_bundle,
+            planMinor: r.plan,
+            otherMinor: r.other,
+          };
+          const feesMinor = paid.adsMinor + paid.websiteMinor + paid.siteOfferMinor + paid.videoBundleMinor + paid.planMinor + paid.otherMinor;
+          return {
+            label: r.label,
+            email: r.email,
+            currency: r.currency_code,
+            paid: { ...paid, feesMinor, totalMinor: paid.adBudgetMinor + feesMinor },
+            planFromWalletMinor: r.plan_wallet,
+            adSpendMinor: microsToMinor(Number(r.spend_micros)),
+            campaignsWithSpend: r.campaigns_with_spend,
+            launchedCampaigns: r.launched,
+            adsMade: r.ads_made,
+          };
+        }),
+      };
+    },
+  );
 }

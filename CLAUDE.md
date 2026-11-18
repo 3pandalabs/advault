@@ -576,8 +576,13 @@ e.g. "SiteVault"), set by a real admin (DB role) via `POST
   ops alerts (`accountLabel`), like "TEST · ".
 - `/auth/me` returns `isInternal`/`internalLabel`; the dashboard header shows
   an "Internal · <label>" badge.
+- `GET /admin/internal-spend?since=&until=` (admin session or
+  `ADMIN_ANALYTICS_TOKEN`, `routes/adminInsights.ts`) gives per internal
+  account what it paid AdVault in the range (ad budget top-ups vs fees by
+  purpose) and its real Google spend (`campaign_daily_metrics.cost_micros`).
+  The org admin site's "Internal" tab reads it and adds the Stripe fees.
 Never let it change a price, gate or launch. Tests:
-`routes/internalAccounts.test.ts`.
+`routes/internalAccounts.test.ts`, `routes/internalSpend.test.ts`.
 
 ## Stripe: one org account, one AdVault endpoint
 
