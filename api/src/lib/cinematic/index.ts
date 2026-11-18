@@ -87,6 +87,9 @@ export type Quote = {
   currency: Currency;
   /** Admin testing as a customer: amountMinor is the $0.50 test price. */
   testMode: boolean;
+  /** 3PandaLabs' own account (0032): full price; Stripe tags it `internal=1`. */
+  internal: boolean;
+  internalLabel: string | null;
 };
 
 export async function quoteFor(
@@ -108,6 +111,8 @@ export async function quoteFor(
     isFirstPurchase: prior === 0,
     currency,
     testMode,
+    internal: user?.isInternal === true,
+    internalLabel: user?.isInternal ? (user.internalLabel ?? null) : null,
   };
 }
 

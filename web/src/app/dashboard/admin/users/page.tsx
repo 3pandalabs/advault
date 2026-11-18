@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { ApiError, getMe, listAdminUsers, setUserRole, type AdminUser } from "@/lib/api/browser";
 import { Badge, Card, CardDescription, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { InternalAccounts } from "./internal-accounts";
 
 // Admin-only: find a user and make them an admin, or back to a normal user.
 // GET/POST /admin/users enforce admin themselves (re-read from the database);
@@ -149,6 +150,7 @@ export default function AdminUsersPage() {
                     <div className="text-xs text-zinc-500">
                       {[u.displayName, u.businessName].filter(Boolean).join(" · ") || "—"}
                       {u.signupApp === "sitevault" ? " · joined via SiteVault" : ""}
+                      {u.isInternal ? ` · internal${u.internalLabel ? ` (${u.internalLabel})` : ""}` : ""}
                     </div>
                   </td>
                   <td className="px-3 py-2">
@@ -174,6 +176,8 @@ export default function AdminUsersPage() {
           </table>
         </div>
       )}
+
+      <InternalAccounts />
     </div>
   );
 }

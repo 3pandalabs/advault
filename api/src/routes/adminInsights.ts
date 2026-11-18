@@ -8,8 +8,10 @@ import { WINDOW_DAYS, assess, dailyBurn } from "../lib/vendors/balancePolicy.js"
 
 // The admin Business page (web /dashboard/admin/business): customers, the
 // signup -> launch funnel, customer groups, categories, revenue and top ads.
-// Read-only and DB-only. Customers = advertisers that are not deleted; admins
-// are left out so our own testing doesn't count as customers.
+// Read-only and DB-only. Customers = advertisers that are not deleted; admins,
+// test customers (0030) and 3PandaLabs' own internal accounts (0032) are left
+// out so our own testing and our own ads don't count as customers or revenue.
+// Internal accounts are listed on their own under `internal`.
 
 type CustomerRow = {
   id: string;
@@ -68,7 +70,7 @@ export async function adminInsightsRoutes(app: FastifyInstance) {
             + coalesce((select sum(i.amount_minor) from subscription_invoices i where i.user_id = u.id and i.status = 'paid'), 0)::int
             as revenue_minor
         from users u
-        where u.role = 'advertiser' and u.test_owner_id is null and u.deleted_at is null
+        where u.role = 'advertiser' and u.test_owner_id is null and not u.is_internal and u.deleted_at is null
         order by u.created_at desc
       `)
     ).rows;
@@ -140,7 +142,7 @@ export async function adminInsightsRoutes(app: FastifyInstance) {
           count(c.launched_at)::int as launched,
           coalesce(sum((select sum(m.views) from campaign_daily_metrics m where m.campaign_id = c.id)), 0)::bigint as views
         from campaigns c join users u on u.id = c.user_id
-        where u.role = 'advertiser' and u.test_owner_id is null and u.deleted_at is null
+        where u.role = 'advertiser' and u.test_owner_id is null and not u.is_internal and u.deleted_at is null
         group by c.business_category
         order by customers desc, campaigns desc
       `)
@@ -153,12 +155,12 @@ export async function adminInsightsRoutes(app: FastifyInstance) {
             p.currency_code, p.amount_minor as amount,
             case when p.created_at > now() - interval '30 days' then p.amount_minor else 0 end as last30
           from purchases p join users u on u.id = p.user_id
-          where ${PAID_PURCHASE} and u.role = 'advertiser' and u.test_owner_id is null
+          where ${PAID_PURCHASE} and u.role = 'advertiser' and u.test_owner_id is null and not u.is_internal
           union all
           select 'Subscriptions', i.currency_code, i.amount_minor,
             case when i.paid_at > now() - interval '30 days' then i.amount_minor else 0 end
           from subscription_invoices i join users u on u.id = i.user_id
-          where i.status = 'paid' and u.role = 'advertiser' and u.test_owner_id is null
+          where i.status = 'paid' and u.role = 'advertiser' and u.test_owner_id is null and not u.is_internal
         ) r group by source, currency_code order by all_time desc
       `)
     ).rows.map((r) => ({
@@ -206,6 +208,28 @@ export async function adminInsightsRoutes(app: FastifyInstance) {
       };
     });
 
+    // 3PandaLabs' own accounts (0032): real full-price charges, but the org
+    // paying itself, so shown apart from customers and revenue.
+    const internal = (
+      await db.execute<{ id: string; email: string; label: string | null; currency_code: string; paid_minor: number; last30_minor: number }>(sql`
+        select u.id, u.email, u.internal_label as label, u.currency_code,
+          (coalesce((select sum(p.amount_minor) from purchases p where p.user_id = u.id and ${PAID_PURCHASE}), 0)
+            + coalesce((select sum(i.amount_minor) from subscription_invoices i where i.user_id = u.id and i.status = 'paid'), 0))::int as paid_minor,
+          (coalesce((select sum(p.amount_minor) from purchases p where p.user_id = u.id and ${PAID_PURCHASE} and p.created_at > now() - interval '30 days'), 0)
+            + coalesce((select sum(i.amount_minor) from subscription_invoices i where i.user_id = u.id and i.status = 'paid' and i.paid_at > now() - interval '30 days'), 0))::int as last30_minor
+        from users u
+        where u.is_internal and u.deleted_at is null
+        order by u.internal_label nulls last, u.email
+      `)
+    ).rows.map((r) => ({
+      id: r.id,
+      email: r.email,
+      label: r.label,
+      paidMinor: r.paid_minor,
+      paidDisplay: formatMinor(r.paid_minor, r.currency_code as Currency),
+      last30Display: formatMinor(r.last30_minor, r.currency_code as Currency),
+    }));
+
     // fal credit (render/falBalanceWatch.ts readings): balance, spend rate,
     // the dynamic alert line and days left. Null until the first reading.
     const falRows = (
@@ -243,6 +267,7 @@ export async function adminInsightsRoutes(app: FastifyInstance) {
       revenue,
       topAds,
       customers: list,
+      internal,
     };
   });
 }

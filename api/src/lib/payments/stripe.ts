@@ -1,7 +1,7 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import type { CheckoutRequest, CheckoutSession, PaymentProvider, WebhookResult } from "./index.js";
 import { isCurrency } from "../pricing/index.js";
-import { isUndeliverableEmail } from "../testMode/policy.js";
+import { internalStripeMetadata, isUndeliverableEmail } from "../testMode/policy.js";
 
 // Stripe — the USD rail. REST + fetch for the same reason as Razorpay: one
 // endpoint and one signature check.
@@ -68,6 +68,10 @@ export const stripe: PaymentProvider = {
       "metadata[app]": "advault",
       // Admin "Test as customer": a $0.50 test charge, not revenue.
       ...(req.testMode ? { "metadata[test_mode]": "1" } : {}),
+      // 3PandaLabs' own account (0032): a real full-price charge, but the org
+      // paying itself. On the session and the payment intent (the charge).
+      ...internalStripeMetadata(req),
+      ...internalStripeMetadata(req, "payment_intent_data[metadata]"),
     });
 
     const res = await fetch(`${API}/checkout/sessions`, {

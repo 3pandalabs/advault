@@ -35,6 +35,12 @@ export type CheckoutRequest = {
   lineItems?: { amountMinor: number; name: string }[];
   /** Admin testing as a customer (lib/testMode): Stripe tags it `test_mode=1`. */
   testMode?: boolean;
+  /**
+   * 3PandaLabs' own account (0032, lib/testMode `internal`): full price, but
+   * Stripe tags it `internal=1` (+ `internal_label`) so it is never revenue.
+   */
+  internal?: boolean;
+  internalLabel?: string | null;
 };
 
 export type CheckoutSession = {

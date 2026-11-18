@@ -17,6 +17,12 @@ export type BillingIdentity = {
   exempt: boolean;
   /** An admin's test customer (0030): launch is always a dry run. */
   testCustomer: boolean;
+  /**
+   * 3PandaLabs' own account (0032). Changes NO pricing or gate: only names
+   * ("INTERNAL · "), Stripe metadata (`internal=1`) and revenue reporting.
+   */
+  internal: boolean;
+  internalLabel: string | null;
 };
 
 /** How billing and perk gates should treat this user right now. */
@@ -27,13 +33,19 @@ export async function billingIdentity(userId: string): Promise<BillingIdentity> 
       marginMode: users.marginMode,
       testAsCustomer: users.testAsCustomer,
       testOwnerId: users.testOwnerId,
+      isInternal: users.isInternal,
+      internalLabel: users.internalLabel,
     })
     .from(users)
     .where(eq(users.id, userId))
     .limit(1);
-  if (!u) return { role: undefined, marginMode: "standard", testMode: false, exempt: false, testCustomer: false };
+  if (!u) {
+    return { role: undefined, marginMode: "standard", testMode: false, exempt: false, testCustomer: false, internal: false, internalLabel: null };
+  }
   return {
     testCustomer: isTestCustomer(u),
+    internal: u.isInternal,
+    internalLabel: u.isInternal ? u.internalLabel : null,
     role: effectiveRole(u),
     marginMode: effectiveMarginMode(u),
     testMode: inTestMode(u),

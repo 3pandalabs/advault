@@ -128,6 +128,12 @@ export type Me = {
    * $0.50 charges, launch is a dry run. The dashboard offers "Back to admin".
    */
   isTestCustomer?: boolean;
+  /**
+   * 3PandaLabs' own account (api migration 0032): a normal full-price
+   * customer, kept out of revenue numbers. The header shows "Internal · <label>".
+   */
+  isInternal?: boolean;
+  internalLabel?: string | null;
 };
 
 export type Asset = {
@@ -410,6 +416,8 @@ export type AdminBusiness = {
     segment: BusinessSegment; photos: number; campaigns: number; adsMade: number; paidAds: number;
     launched: number; liveNow: number; views: number; revenueDisplay: string; lastActivityAt: string | null;
   }[];
+  /** 3PandaLabs' own accounts (0032): paid full price, not in customers or revenue. */
+  internal?: { id: string; email: string; label: string | null; paidMinor: number; paidDisplay: string; last30Display: string }[];
 };
 // Admin only (the API enforces it): customers, funnel, groups, categories.
 export const getAdminBusiness = () => api<AdminBusiness>("/admin/business");
@@ -830,6 +838,8 @@ export type AdminUser = {
   businessName: string | null;
   role: "advertiser" | "admin";
   signupApp: "advault" | "sitevault";
+  isInternal?: boolean;
+  internalLabel?: string | null;
   createdAt: string;
 };
 
@@ -838,6 +848,15 @@ export const listAdminUsers = (q = "") =>
 
 export const setUserRole = (id: string, role: AdminUser["role"]) =>
   api<{ user: AdminUser }>(`/admin/users/${id}/role`, { method: "POST", body: JSON.stringify({ role }) });
+
+/** 3PandaLabs' own accounts (0032): full price, left out of revenue. */
+export const listInternalAccounts = () => api<{ users: AdminUser[] }>("/admin/internal-accounts");
+
+export const setInternalAccount = (email: string, internal: boolean, label?: string) =>
+  api<{ user: AdminUser }>("/admin/internal-accounts", {
+    method: "POST",
+    body: JSON.stringify({ email, internal, ...(label ? { label } : {}) }),
+  });
 
 // --- billing ---------------------------------------------------------------
 

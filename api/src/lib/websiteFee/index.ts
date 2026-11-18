@@ -19,7 +19,7 @@ export const WEBSITE_FEE_MAX_ATTEMPTS = 5;
 const PAID = ["paid", "producing", "delivered"] as const;
 
 /** The website add-on, priced for this user: the $0.50 test price for an admin testing as a customer. */
-export type WebsiteFee = AddOn & { testMode: boolean };
+export type WebsiteFee = AddOn & { testMode: boolean; internal?: boolean; internalLabel?: string | null };
 
 /** The fee this advertiser pays for a website, or null (admins, at_cost, no price in their currency). */
 export async function websiteFeeFor(userId: string): Promise<WebsiteFee | null> {
@@ -29,7 +29,7 @@ export async function websiteFeeFor(userId: string): Promise<WebsiteFee | null> 
   const fee = maybeAddOnFor(currencyForCountry(u?.countryCode ?? "US"), "website");
   if (!fee) return null;
   const priceMinor = chargeMinor(fee.priceMinor, who.testMode);
-  return { ...fee, priceMinor, firstPurchasePriceMinor: priceMinor, testMode: who.testMode };
+  return { ...fee, priceMinor, firstPurchasePriceMinor: priceMinor, testMode: who.testMode, internal: who.internal, internalLabel: who.internalLabel };
 }
 
 export const feeDisplay = (fee: AddOn) => formatMinor(fee.priceMinor, fee.currency);
@@ -52,6 +52,8 @@ export async function startWebsiteCheckout(args: { userId: string; campaignId: s
     currency: args.fee.currency,
     purpose: "add_on",
     testMode: args.fee.testMode,
+    internal: args.fee.internal,
+    internalLabel: args.fee.internalLabel,
     lineItems: [{ amountMinor: args.fee.priceMinor, name: "Your website (first year of Pro included)" }],
     userEmail: user?.email ?? "",
     returnUrl: `${WEB_ORIGIN}/dashboard/campaigns/${args.campaignId}?website=paid`,

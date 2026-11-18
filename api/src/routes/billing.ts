@@ -17,7 +17,7 @@ import {
 } from "../lib/wallet/index.js";
 import { providerByName, providerFor } from "../lib/payments/index.js";
 import { chargeMinor } from "../lib/pricing/index.js";
-import { isTestMode } from "../lib/testMode/index.js";
+import { billingIdentity } from "../lib/testMode/index.js";
 import {
   addOnFor,
   effectiveMonthlyFeeMinor,
@@ -228,7 +228,8 @@ export async function billingRoutes(app: FastifyInstance) {
         // Test mode (admin testing as a customer, or a test customer): charge
         // and credit the $0.50 test price, never the amount asked for, so a
         // test top-up can't mint real ad budget it didn't pay for.
-        const testMode = await isTestMode(req.userId!);
+        const who = await billingIdentity(req.userId!);
+        const testMode = who.testMode;
         const amountMinor = chargeMinor(body.amountMinor, testMode);
 
         // The payments row is written BEFORE the provider is called, so its id
@@ -254,6 +255,8 @@ export async function billingRoutes(app: FastifyInstance) {
             currency,
             purpose: body.purpose,
             testMode,
+            internal: who.internal,
+            internalLabel: who.internalLabel,
             userEmail: user.email,
             returnUrl: `${env.WEB_ORIGIN}/dashboard/wallet`,
           });

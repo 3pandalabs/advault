@@ -54,6 +54,11 @@ type CountsRow = {
   cinematic_failed_unrefunded: number;
   add_on_revenue_minor_inr: number;
   add_on_revenue_minor_usd: number;
+  internal_accounts: number;
+  internal_mrr_minor_inr: number;
+  internal_mrr_minor_usd: number;
+  internal_add_on_revenue_minor_inr: number;
+  internal_add_on_revenue_minor_usd: number;
 };
 
 type DatabaseRow = {
@@ -119,11 +124,13 @@ export async function metricsRoutes(app: FastifyInstance) {
         -- written, so "is this product earning anything" was unanswerable from
         -- the admin page. Admins' own payments are excluded: an admin only pays
         -- when testing as a customer at $0.50 (lib/testMode), which is not revenue;
-        -- nor are an admin's test customers' (users.test_owner_id, 0030).
-        (select count(*) from subscriptions where status = 'active' and user_id not in (select id from users where role = 'admin' or test_owner_id is not null))::int as paying_subscribers,
-        (select count(*) from subscriptions where status = 'past_due' and user_id not in (select id from users where role = 'admin' or test_owner_id is not null))::int as past_due_subscribers,
-        (select coalesce(sum(amount_minor), 0) from subscriptions where status in ('active','past_due') and currency_code = 'INR' and user_id not in (select id from users where role = 'admin' or test_owner_id is not null))::int as mrr_minor_inr,
-        (select coalesce(sum(amount_minor), 0) from subscriptions where status in ('active','past_due') and currency_code = 'USD' and user_id not in (select id from users where role = 'admin' or test_owner_id is not null))::int as mrr_minor_usd,
+        -- nor are an admin's test customers' (users.test_owner_id, 0030), nor
+        -- 3PandaLabs' own internal accounts (users.is_internal, 0032): those pay
+        -- full price but are the org paying itself, reported separately below.
+        (select count(*) from subscriptions where status = 'active' and user_id not in (select id from users where role = 'admin' or test_owner_id is not null or is_internal))::int as paying_subscribers,
+        (select count(*) from subscriptions where status = 'past_due' and user_id not in (select id from users where role = 'admin' or test_owner_id is not null or is_internal))::int as past_due_subscribers,
+        (select coalesce(sum(amount_minor), 0) from subscriptions where status in ('active','past_due') and currency_code = 'INR' and user_id not in (select id from users where role = 'admin' or test_owner_id is not null or is_internal))::int as mrr_minor_inr,
+        (select coalesce(sum(amount_minor), 0) from subscriptions where status in ('active','past_due') and currency_code = 'USD' and user_id not in (select id from users where role = 'admin' or test_owner_id is not null or is_internal))::int as mrr_minor_usd,
         -- Prepaid balances the org is holding against platform-funded ad spend.
         -- This is money we owe as media, not revenue, and it was previously
         -- invisible on the admin page — the outstanding exposure under MCC.
@@ -134,8 +141,15 @@ export async function metricsRoutes(app: FastifyInstance) {
         (select count(*) from purchases where status in ('paid','producing'))::int as cinematic_awaiting_production,
         (select count(*) from purchases where status = 'delivered')::int as cinematic_delivered,
         (select count(*) from purchases where status = 'failed')::int as cinematic_failed_unrefunded,
-        (select coalesce(sum(amount_minor),0) from purchases where currency_code = 'INR' and status in ('paid','producing','delivered') and user_id not in (select id from users where role = 'admin' or test_owner_id is not null))::int as add_on_revenue_minor_inr,
-        (select coalesce(sum(amount_minor),0) from purchases where currency_code = 'USD' and status in ('paid','producing','delivered') and user_id not in (select id from users where role = 'admin' or test_owner_id is not null))::int as add_on_revenue_minor_usd
+        (select coalesce(sum(amount_minor),0) from purchases where currency_code = 'INR' and status in ('paid','producing','delivered') and user_id not in (select id from users where role = 'admin' or test_owner_id is not null or is_internal))::int as add_on_revenue_minor_inr,
+        (select coalesce(sum(amount_minor),0) from purchases where currency_code = 'USD' and status in ('paid','producing','delivered') and user_id not in (select id from users where role = 'admin' or test_owner_id is not null or is_internal))::int as add_on_revenue_minor_usd,
+        -- Internal accounts (0032): the org advertising its own apps. Real
+        -- charges, never revenue or traction; shown on their own.
+        (select count(*) from users where is_internal and deleted_at is null)::int as internal_accounts,
+        (select coalesce(sum(amount_minor), 0) from subscriptions where status in ('active','past_due') and currency_code = 'INR' and user_id in (select id from users where is_internal))::int as internal_mrr_minor_inr,
+        (select coalesce(sum(amount_minor), 0) from subscriptions where status in ('active','past_due') and currency_code = 'USD' and user_id in (select id from users where is_internal))::int as internal_mrr_minor_usd,
+        (select coalesce(sum(amount_minor),0) from purchases where currency_code = 'INR' and status in ('paid','producing','delivered') and user_id in (select id from users where is_internal))::int as internal_add_on_revenue_minor_inr,
+        (select coalesce(sum(amount_minor),0) from purchases where currency_code = 'USD' and status in ('paid','producing','delivered') and user_id in (select id from users where is_internal))::int as internal_add_on_revenue_minor_usd
     `);
 
     const database = await db.execute<DatabaseRow>(sql`
@@ -228,6 +242,13 @@ export async function metricsRoutes(app: FastifyInstance) {
         cinematicFailedUnrefunded: c.cinematic_failed_unrefunded,
         addOnRevenueMinorInr: c.add_on_revenue_minor_inr,
         addOnRevenueMinorUsd: c.add_on_revenue_minor_usd,
+        // 3PandaLabs' own accounts (0032): money the org paid itself. Kept out
+        // of every revenue / subscriber number above.
+        internalAccounts: c.internal_accounts,
+        internalMrrMinorInr: c.internal_mrr_minor_inr,
+        internalMrrMinorUsd: c.internal_mrr_minor_usd,
+        internalAddOnRevenueMinorInr: c.internal_add_on_revenue_minor_inr,
+        internalAddOnRevenueMinorUsd: c.internal_add_on_revenue_minor_usd,
         // `advertisers` above counts every users row, which since 2026-11-16
         // includes accounts made on SiteVault. These split it (deleted
         // accounts excluded): where each signed up, and which apps it uses

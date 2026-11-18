@@ -180,6 +180,9 @@ export async function authRoutes(app: FastifyInstance) {
         testAsCustomer: users.testAsCustomer,
         // An admin's test customer (0030): the dashboard shows "Testing as …".
         testOwnerId: users.testOwnerId,
+        // 3PandaLabs' own account (0032): the dashboard shows "Internal · <label>".
+        isInternal: users.isInternal,
+        internalLabel: users.internalLabel,
         createdAt: users.createdAt,
         // Shared 3PandaLabs account: where it was made, and whether it has a
         // SiteVault website (the dashboard links one).

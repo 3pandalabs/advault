@@ -1,8 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  accountLabel,
   billingExempt,
   effectiveMarginMode,
   effectiveRole,
+  internalLabel,
   inTestMode,
   isUndeliverableEmail,
   mayToggleTestMode,
@@ -174,5 +176,53 @@ describe("admin test customers (0030)", () => {
     expect(maySwitchInto({ actorOwnerId: "a", target: { testOwnerId: null } })).toBe(false);
     expect(maySwitchInto({ actorOwnerId: "a", target: { testOwnerId: "a", deletedAt: new Date() } })).toBe(false);
     expect(maySwitchInto({ actorOwnerId: "a", target: null })).toBe(false);
+  });
+});
+
+describe("internal accounts (0032)", () => {
+  it("names say INTERNAL, once; TEST still applies on top", () => {
+    expect(internalLabel("SiteVault", true)).toBe("INTERNAL · SiteVault");
+    expect(internalLabel("INTERNAL · SiteVault", true)).toBe("INTERNAL · SiteVault");
+    expect(internalLabel("SiteVault", false)).toBe("SiteVault");
+    expect(accountLabel("Lawn Pros", { testCustomer: false, internal: false })).toBe("Lawn Pros");
+    expect(accountLabel("SiteVault", { testCustomer: false, internal: true })).toBe("INTERNAL · SiteVault");
+    expect(accountLabel("Lawn Pros", { testCustomer: true, internal: false })).toBe("TEST · Lawn Pros");
+  });
+
+  it("one-off and subscription checkouts carry internal=1 + label at full price; others don't", async () => {
+    const bodies: string[] = [];
+    vi.stubGlobal("fetch", async (_url: string, init: { body: URLSearchParams }) => {
+      bodies.push(String(init.body));
+      return new Response(JSON.stringify({ id: "cs_1", url: "https://stripe.test" }), { status: 200 });
+    });
+    const req = { paymentId: "p", amountMinor: 1000, currency: "USD" as const, purpose: "add_on" as const, userEmail: "a@b.c", returnUrl: "https://x" };
+    await stripe.createCheckout({ ...req, internal: true, internalLabel: "SiteVault" });
+    await stripe.createCheckout(req);
+    await stripeSubscriptions.createCheckout({
+      subscriptionId: "s",
+      invoiceId: "i",
+      planKey: "us-evergreen",
+      amountMinor: 50,
+      currency: "USD",
+      userEmail: "a@b.c",
+      returnUrl: "https://x",
+      // Test-priced line so no price id is needed; the tags are what matter here.
+      testMode: true,
+      internal: true,
+      internalLabel: "RsvpVault",
+    });
+    vi.unstubAllGlobals();
+    const tagged = new URLSearchParams(bodies[0]);
+    expect(tagged.get("metadata[internal]")).toBe("1");
+    expect(tagged.get("metadata[internal_label]")).toBe("SiteVault");
+    expect(tagged.get("payment_intent_data[metadata][internal]")).toBe("1");
+    expect(tagged.get("metadata[test_mode]")).toBeNull();
+    expect(tagged.get("line_items[0][price_data][unit_amount]")).toBe("1000");
+    const plain = new URLSearchParams(bodies[1]);
+    expect([...plain.keys()].some((k) => k.includes("internal"))).toBe(false);
+    const sub = new URLSearchParams(bodies[2]);
+    expect(sub.get("metadata[internal]")).toBe("1");
+    expect(sub.get("subscription_data[metadata][internal]")).toBe("1");
+    expect(sub.get("subscription_data[metadata][internal_label]")).toBe("RsvpVault");
   });
 });

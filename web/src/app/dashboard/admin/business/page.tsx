@@ -190,6 +190,16 @@ export default function AdminBusinessPage() {
                   right={[1, 2, 3]}
                 />
               )}
+              {data.internal && data.internal.length > 0 && (
+                <>
+                  <CardDescription className="mt-4">Our own accounts (not counted above):</CardDescription>
+                  <Table
+                    head={["Account", "30 days", "All time"]}
+                    rows={data.internal.map((i) => [i.label ?? i.email, i.last30Display, i.paidDisplay])}
+                    right={[1, 2]}
+                  />
+                </>
+              )}
             </Card>
 
             <Card>

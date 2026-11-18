@@ -16,6 +16,11 @@ import { roleChangeBlock, type Role } from "../lib/adminUsers/policy.js";
 // sign-in or token refresh.
 
 const listQuery = z.object({ q: z.string().trim().max(200).optional() });
+const internalBody = z.object({
+  email: z.string().trim().min(3).max(320),
+  internal: z.boolean(),
+  label: z.string().trim().max(60).optional(),
+});
 const roleBody = z.object({ role: z.enum(["advertiser", "admin"]) });
 
 async function requireDbAdmin(req: FastifyRequest, reply: FastifyReply) {
@@ -30,6 +35,8 @@ const columns = {
   businessName: users.businessName,
   role: users.role,
   signupApp: users.signupApp,
+  isInternal: users.isInternal,
+  internalLabel: users.internalLabel,
   createdAt: users.createdAt,
 };
 
@@ -53,6 +60,42 @@ export async function adminUserRoutes(app: FastifyInstance) {
         .orderBy(sql`${users.role} = 'admin' desc`, desc(users.createdAt), asc(users.email))
         .limit(50);
       return { users: rows };
+    },
+  );
+
+  // Internal accounts (0032): 3PandaLabs advertising its own apps through
+  // AdVault as a normal full-price customer. The flag changes NO price, gate
+  // or launch; it only keeps the account out of revenue / traction numbers,
+  // tags Stripe (`internal=1`) and prefixes "INTERNAL · " on ops-facing names.
+  app.get("/admin/internal-accounts", { preHandler: [requireAuth, requireDbAdmin] }, async () => {
+    const rows = await db
+      .select(columns)
+      .from(users)
+      .where(and(eq(users.isInternal, true), isNull(users.deletedAt)))
+      .orderBy(asc(users.internalLabel), asc(users.email));
+    return { users: rows };
+  });
+
+  app.post(
+    "/admin/internal-accounts",
+    { preHandler: [requireAuth, requireDbAdmin], schema: { body: internalBody } },
+    async (req, reply) => {
+      const { email, internal, label } = req.body as z.infer<typeof internalBody>;
+      const [target] = await db
+        .select({ id: users.id, testOwnerId: users.testOwnerId })
+        .from(users)
+        .where(and(sql`lower(${users.email}) = lower(${email})`, isNull(users.deletedAt)))
+        .limit(1);
+      if (!target) return reply.code(404).send({ error: "not_found" });
+      // A test customer is already out of every number and test-priced.
+      if (target.testOwnerId) return reply.code(409).send({ error: "test_customer" });
+      const [row] = await db
+        .update(users)
+        .set({ isInternal: internal, internalLabel: internal ? label || null : null })
+        .where(eq(users.id, target.id))
+        .returning(columns);
+      req.log.info({ actor: req.userId, target: target.id, internal, label }, "internal account changed");
+      return { user: row };
     },
   );
 
