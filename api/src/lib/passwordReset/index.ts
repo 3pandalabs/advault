@@ -57,7 +57,7 @@ export async function requestPasswordReset(db: Db, email: string, ctx: ResetCont
       actionMail(
         user.email,
         `Reset your ${ctx.productName} password`,
-        `Someone asked to reset the password for your 3PandaLabs account (your ${ctx.productName} login). The link works once and expires in 30 minutes.`,
+        `Someone asked to reset the password for your ${ctx.productName} account. The link works once and expires in 30 minutes.`,
         "Choose a new password",
         url,
         "If this wasn't you, you can ignore this email — your password stays the same.",
