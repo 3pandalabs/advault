@@ -147,6 +147,10 @@ export default function NewCampaignPage() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
+  // Internal accounts (our own apps) may also use their own video (#121); it
+  // still waits for admin review and uses the customer limits.
+  const [isInternal, setIsInternal] = useState(false);
+  const canOwnVideo = isAdmin || isInternal;
   // Admin testing (test mode or inside a test customer): ask "Who are you
   // testing as?" first. null = not asked (a customer) or already answered.
   const [askWho, setAskWho] = useState<{ currentName: string | null } | null>(null);
@@ -220,6 +224,7 @@ export default function NewCampaignPage() {
     getMe()
       .then((me) => {
         setIsAdmin(actsAsAdmin(me));
+        setIsInternal(me.isInternal === true);
         const testing = me.isTestCustomer === true || (me.role === "admin" && me.testAsCustomer === true);
         const answered = new URLSearchParams(window.location.search).has(CHOSEN_PARAM);
         if (testing && !answered) {
@@ -544,8 +549,9 @@ export default function NewCampaignPage() {
       )}
 
       {/* "Use my own video" is admin-only for launch (2026-11-16): every upload
-          needs a human review and skips the paid ad. Customers email us. */}
-      {step === 2 && !isAdmin && (
+          needs a human review and skips the paid ad. Customers email us; internal
+          accounts (our own apps) get it too, behind the same review. */}
+      {step === 2 && !canOwnVideo && (
         <p className="mb-4 text-sm text-zinc-400">
           Already have a video ad? Email{" "}
           <a href="mailto:3pandas@3pandalabs.com" className="text-amber-300 underline">
@@ -554,7 +560,7 @@ export default function NewCampaignPage() {
           and we&apos;ll help.
         </p>
       )}
-      {step === 2 && isAdmin && (
+      {step === 2 && canOwnVideo && (
         <div className="mb-4 flex flex-wrap gap-2" role="radiogroup" aria-label="Ad video source">
           {(
             [
