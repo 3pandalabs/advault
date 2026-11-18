@@ -15,7 +15,7 @@ import {
   checkUploadedVideo,
   uploadLimitsFor,
 } from "../lib/uploads/policy.js";
-import { initialReviewStatus } from "../lib/uploads/review.js";
+import { initialReviewStatus, ownVideoAllowed } from "../lib/uploads/review.js";
 import { billingIdentity, customerFlowRole } from "../lib/testMode/index.js";
 import { accountLabel } from "../lib/testMode/policy.js";
 import { creativeVideoKey, deleteObject, headObject, presignUpload } from "../plugins/r2.js";
@@ -52,17 +52,14 @@ const confirmSchema = metaSchema.extend({
   rightsAttested: z.literal(true),
 });
 
-// "Use my own video" is admins-only for launch (2026-11-16): every customer
-// upload needs a human review and skips the paid ad. OWN_VIDEO_UPLOADS=on on
-// advault-api opens it to everyone again.
-function ownVideoAllowed(role: string | undefined): boolean {
-  return role === "admin" || process.env.OWN_VIDEO_UPLOADS === "on";
-}
-
 export async function uploadRoutes(app: FastifyInstance) {
   app.addHook("onRequest", requireAuth);
   app.addHook("preHandler", async (req, reply) => {
-    if (req.method === "POST" && !ownVideoAllowed(await customerFlowRole(req))) return reply.code(403).send({ error: "own_video_paused" });
+    if (req.method !== "POST") return;
+    const role = await customerFlowRole(req);
+    if (ownVideoAllowed(role)) return;
+    if (ownVideoAllowed(role, (await billingIdentity(req.userId!)).internal)) return;
+    return reply.code(403).send({ error: "own_video_paused" });
   });
 
   app.post(

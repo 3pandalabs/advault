@@ -162,6 +162,9 @@ export default function CampaignDetailPage({
   const [busy, setBusy] = useState(false);
   const [logo, setLogo] = useState<Asset | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
+  // Internal accounts (our own apps) may upload their own video, like admins;
+  // it still waits for admin review and uses the customer limits.
+  const [isInternal, setIsInternal] = useState(false);
   // An admin's test customer: launch is always a dry run (api routes/launch.ts).
   const [isTestCustomer, setIsTestCustomer] = useState(false);
   // Two-click remove: the first click arms it, so a stray click can't delete.
@@ -210,6 +213,7 @@ export default function CampaignDetailPage({
     getMe()
       .then((me) => {
         setIsAdmin(actsAsAdmin(me));
+        setIsInternal(me?.isInternal === true);
         setIsTestCustomer(me.isTestCustomer === true);
       })
       .catch(() => undefined);
@@ -699,7 +703,7 @@ export default function CampaignDetailPage({
           (an order or an AdVault-made video exists) it is only noise. */}
       {/* Also hidden once a video is uploaded: one is enough (AdVault makes the
           other shape). To replace it, remove it first. */}
-      {isAdmin && !campaign.googleCampaignResourceName && !newAd?.order && campaign.creatives.length === 0 && (
+      {(isAdmin || isInternal) && !campaign.googleCampaignResourceName && !newAd?.order && campaign.creatives.length === 0 && (
         <VideoUpload campaignId={campaignId} isAdmin={isAdmin} onUploaded={refresh} />
       )}
 
