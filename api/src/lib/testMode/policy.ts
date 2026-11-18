@@ -45,6 +45,37 @@ export function testLabel(name: string, testCustomer: boolean): string {
   return `${TEST_NAME_PREFIX}${name}`;
 }
 
+/**
+ * Internal accounts (0032, users.is_internal): 3PandaLabs advertising its own
+ * apps. NOT test mode: real prices, real launches. Only the names change
+ * (Google account, Mercury card, ops alerts) so nobody mistakes the org's own
+ * ads for a customer's, and Stripe gets `internal=1`.
+ */
+export const INTERNAL_NAME_PREFIX = "INTERNAL · ";
+
+/** "INTERNAL · <name>" for an internal account, the name unchanged otherwise. */
+export function internalLabel(name: string, internal: boolean): string {
+  if (!internal || name.startsWith(INTERNAL_NAME_PREFIX)) return name;
+  return `${INTERNAL_NAME_PREFIX}${name}`;
+}
+
+/** The name on everything made for an account: "TEST · " and/or "INTERNAL · " as they apply. */
+export function accountLabel(name: string, who: { testCustomer: boolean; internal: boolean }): string {
+  return testLabel(internalLabel(name, who.internal), who.testCustomer);
+}
+
+/** Stripe metadata entries for an internal account (form-encoded keys under `prefix`). */
+export function internalStripeMetadata(
+  tag: { internal?: boolean; internalLabel?: string | null },
+  prefix = "metadata",
+): Record<string, string> {
+  if (!tag.internal) return {};
+  return {
+    [`${prefix}[internal]`]: "1",
+    ...(tag.internalLabel ? { [`${prefix}[internal_label]`]: tag.internalLabel.slice(0, 450) } : {}),
+  };
+}
+
 /** Test customers get a synthetic address under the reserved .invalid TLD (RFC 2606). */
 export function isUndeliverableEmail(email: string | null | undefined): boolean {
   return !!email && /\.invalid$/i.test(email.trim());

@@ -158,6 +158,8 @@ export async function newAdRoutes(app: FastifyInstance) {
         currency: quote.currency,
         purpose: "add_on",
         testMode: quote.testMode,
+        internal: quote.internal,
+        internalLabel: quote.internalLabel,
         lineItems:
           addonMinor > 0
             ? [

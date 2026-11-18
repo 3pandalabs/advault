@@ -40,7 +40,7 @@ import {
   type BillingMode,
 } from "../lib/billing/policy.js";
 import type { Currency } from "../lib/pricing/index.js";
-import { isTestCustomer, testLabel } from "../lib/testMode/policy.js";
+import { accountLabel, isTestCustomer } from "../lib/testMode/policy.js";
 
 /** What this deployment offers — recomputed per request so a config change lands without a restart. */
 function currentOfferedModes() {
@@ -129,14 +129,16 @@ export async function adAccountRoutes(app: FastifyInstance) {
         email: users.email,
         currencyCode: users.currencyCode,
         testOwnerId: users.testOwnerId,
+        isInternal: users.isInternal,
       })
       .from(users)
       .where(eq(users.id, req.userId!))
       .limit(1);
     // An admin's test customer (0030): "TEST · " on the Google account, the
     // Mercury card nickname and every ops alert (they all read this name).
-    const testCustomer = isTestCustomer(user);
-    const accountName = user.businessName ? testLabel(user.businessName, testCustomer) : null;
+    // 3PandaLabs' own internal account (0032): "INTERNAL · " the same way.
+    const who = { testCustomer: isTestCustomer(user), internal: user.isInternal === true };
+    const accountName = user.businessName ? accountLabel(user.businessName, who) : null;
 
     // One managed account per advertiser. A second would silently split their
     // campaigns and their spend across two children, and only one of them
@@ -181,7 +183,7 @@ export async function adAccountRoutes(app: FastifyInstance) {
 
     try {
       const result = await createChildAccount({
-        descriptiveName: accountName ?? testLabel(user.email, testCustomer),
+        descriptiveName: accountName ?? accountLabel(user.email, who),
         currency,
         // Immutable at Google once set — derived from the market rather than a
         // form field, because a wrong value means a whole new account.

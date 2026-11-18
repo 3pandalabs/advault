@@ -555,6 +555,30 @@ checks, nothing created, $0), and "TEST · " on its Google account, Mercury card
 and ops alerts. Ad-account setup really runs (real MCC child + Mercury card):
 the owner accepted that. Excluded from revenue and `/admin/business`.
 
+## Internal accounts (2026-11-18, migration 0032)
+
+3PandaLabs runs ads for its own apps (SiteVault, RsvpVault, AdVault…) through
+AdVault from org logins such as advault@3pandalabs.com. These are **real,
+full-price customers in every flow**: real prices, real Stripe charges, real
+launches, NOT test mode. `users.is_internal` (+ optional `internal_label`,
+e.g. "SiteVault"), set by a real admin (DB role) via `POST
+/admin/internal-accounts` / the "Internal accounts" box on
+`/dashboard/admin/users`. What it changes, and nothing else:
+- Revenue / traction: excluded wherever admins and test customers are
+  (`/metrics` subscriber/MRR/add-on revenue, `/admin/ad-production` `paidAds`,
+  `/admin/business` customers, categories and revenue) and reported apart
+  (`counts.internal*`, `internalPaidAds`, `/admin/business` `internal`).
+  `counts.advertisers` still counts every users row, as before.
+- Stripe: `internal=1` + `internal_label` metadata on every checkout session
+  (and its payment intent / subscription), from `billingIdentity().internal`
+  (`internalStripeMetadata` in `lib/testMode/policy.ts`).
+- Names: "INTERNAL · " on the Google Ads child account, the Mercury card and
+  ops alerts (`accountLabel`), like "TEST · ".
+- `/auth/me` returns `isInternal`/`internalLabel`; the dashboard header shows
+  an "Internal · <label>" badge.
+Never let it change a price, gate or launch. Tests:
+`routes/internalAccounts.test.ts`.
+
 ## Stripe: one org account, one AdVault endpoint
 
 The 3PandaLabs Stripe account is shared by every app. AdVault tags what it

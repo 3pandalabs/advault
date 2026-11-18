@@ -186,6 +186,8 @@ export async function subscriptionRoutes(app: FastifyInstance) {
             currency: plan.currency,
             userEmail: user.email,
             testMode: who.testMode,
+            internal: who.internal,
+            internalLabel: who.internalLabel,
             returnUrl: `${env.WEB_ORIGIN}/dashboard/subscription`,
           });
 

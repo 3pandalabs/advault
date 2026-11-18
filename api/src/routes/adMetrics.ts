@@ -123,13 +123,34 @@ export async function adMetricsRoutes(app: FastifyInstance) {
           and(
             sql`${purchases.sku} = 'new_ad'`,
             sql`${purchases.amountMinor} > 0`,
-            // Not admins' $0.50 "Test as customer" payments (lib/testMode).
-            sql`${purchases.userId} not in (select id from users where role = 'admin' or test_owner_id is not null)`,
+            // Not admins' $0.50 "Test as customer" payments (lib/testMode),
+            // test customers (0030), or 3PandaLabs' own internal accounts (0032).
+            sql`${purchases.userId} not in (select id from users where role = 'admin' or test_owner_id is not null or is_internal)`,
             gte(purchases.paidAt, from),
             lt(purchases.paidAt, to),
           ),
         );
-      return { since, until, adsMade: made?.adsMade ?? 0, renders: made?.renders ?? 0, paidAds: paid?.paidAds ?? 0 };
+      // Internal accounts' full-price ads, reported on their own (not in paidAds).
+      const [internal] = await db
+        .select({ n: sql<number>`count(*)::int` })
+        .from(purchases)
+        .where(
+          and(
+            sql`${purchases.sku} = 'new_ad'`,
+            sql`${purchases.amountMinor} > 0`,
+            sql`${purchases.userId} in (select id from users where is_internal)`,
+            gte(purchases.paidAt, from),
+            lt(purchases.paidAt, to),
+          ),
+        );
+      return {
+        since,
+        until,
+        adsMade: made?.adsMade ?? 0,
+        renders: made?.renders ?? 0,
+        paidAds: paid?.paidAds ?? 0,
+        internalPaidAds: internal?.n ?? 0,
+      };
     },
   );
 }

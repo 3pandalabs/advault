@@ -300,6 +300,8 @@ export async function cinematicRoutes(app: FastifyInstance) {
           currency: quote.currency,
           purpose: "add_on",
           testMode: quote.testMode,
+          internal: quote.internal,
+          internalLabel: quote.internalLabel,
           userEmail: user?.email ?? "",
           // The cinematic page lists the order and polls its status.
           returnUrl: `${WEB_ORIGIN}/dashboard/cinematic?order=${purchase.id}`,
@@ -344,6 +346,8 @@ export async function cinematicRoutes(app: FastifyInstance) {
         currency: quote.currency,
         purpose: "add_on",
         testMode: quote.testMode,
+        internal: quote.internal,
+        internalLabel: quote.internalLabel,
         userEmail: user?.email ?? "",
         returnUrl: `${WEB_ORIGIN}/dashboard/cinematic?pack=${purchase.id}`,
       });

@@ -58,6 +58,12 @@ export const users = pgTable(
     // this account. Always test mode; launch is a dry run; cannot log in.
     // FK to users(id) lives in the migration (self-reference).
     testOwnerId: uuid("test_owner_id"),
+    // Internal account (0032, POST /admin/internal-accounts): owned by
+    // 3PandaLabs, advertising its own apps. A REAL full-price customer in
+    // every flow; only kept out of revenue / traction numbers and tagged
+    // ("INTERNAL · ", Stripe `internal=1`). `internalLabel` is the product.
+    isInternal: boolean("is_internal").notNull().default(false),
+    internalLabel: text("internal_label"),
 
     // Set when the user deleted their account (lib/accountDeletion.ts). The row
     // is kept, anonymised, because the financial records point at it.

@@ -1,6 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { isCurrency } from "../../pricing/index.js";
-import { isUndeliverableEmail } from "../../testMode/policy.js";
+import { internalStripeMetadata, isUndeliverableEmail } from "../../testMode/policy.js";
 import type {
   SubscriptionCheckout,
   SubscriptionCheckoutRequest,
@@ -96,6 +96,9 @@ export const stripeSubscriptions: SubscriptionProvider = {
       "subscription_data[metadata][app]": "advault",
       // Admin "Test as customer": a $0.50 test subscription, not revenue.
       ...(req.testMode ? { "metadata[test_mode]": "1", "subscription_data[metadata][test_mode]": "1" } : {}),
+      // 3PandaLabs' own account (0032): full price, the org paying itself.
+      ...internalStripeMetadata(req),
+      ...internalStripeMetadata(req, "subscription_data[metadata]"),
     });
 
     const res = await fetch(`${API}/checkout/sessions`, {

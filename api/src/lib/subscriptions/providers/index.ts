@@ -28,6 +28,9 @@ export type SubscriptionCheckoutRequest = {
    * `test_mode=1`.
    */
   testMode?: boolean;
+  /** 3PandaLabs' own account (0032): full price, Stripe tags it `internal=1`. */
+  internal?: boolean;
+  internalLabel?: string | null;
 };
 
 export type SubscriptionCheckout = {
