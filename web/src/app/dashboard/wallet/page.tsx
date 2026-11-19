@@ -5,6 +5,7 @@ import { getWallet, type Wallet } from "@/lib/api/browser";
 import { Badge, Card, CardDescription, CardTitle } from "@/components/ui/card";
 import { BudgetBanner } from "@/components/BudgetBanner";
 import { TopUpPicker } from "@/components/TopUpPicker";
+import { ADD_MORE_LINE } from "@/lib/spread";
 import { formatDate } from "@/lib/utils";
 
 // The ad balance. Under the managed (MCC) model, ads run against 3PandaLabs'
@@ -94,6 +95,9 @@ export default function WalletPage() {
 
       <Card className="mt-4" id="add">
         <CardTitle>Add to your ad budget</CardTitle>
+        <CardDescription className="mt-1">
+          {ADD_MORE_LINE} More budget means more days of showing.
+        </CardDescription>
         <div className="mt-4">
           <TopUpPicker
             currency={wallet.currencyCode}

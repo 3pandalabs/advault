@@ -115,6 +115,7 @@ export default function CampaignsPage() {
         </Card>
         <CostSimulator
           ctaHref="/dashboard/campaigns/new"
+          addMoreHref="/dashboard/wallet"
           firstMonthIncluded={firstMonthIncluded}
         />
       </div>
@@ -151,6 +152,7 @@ export default function CampaignsPage() {
           <CostSimulator
             bare
             ctaHref="/dashboard/campaigns/new"
+            addMoreHref="/dashboard/wallet"
             firstMonthIncluded={firstMonthIncluded}
           />
         </div>

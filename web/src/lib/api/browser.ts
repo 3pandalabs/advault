@@ -1149,9 +1149,11 @@ export type SubscriptionView = {
     pastDue: boolean;
     /** The included first month: nothing is charged until this date. */
     includedUntil?: string | null;
+    /** The automatic monthly ad-budget recharge ("$55 a month" plans: 3500); 0 or absent for grandfathered $19 plans. */
+    budgetRechargeMinor?: number;
   } | null;
   entitled: boolean;
-  /** The $19 plan follows the running ad (2026-11-19). */
+  /** The plan follows the running ad (2026-11-19). */
   plan?: { firstMonthAvailable: boolean; adRunning: boolean };
   invoices?: {
     id: string;

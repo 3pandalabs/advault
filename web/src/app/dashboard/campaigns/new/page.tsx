@@ -1140,9 +1140,10 @@ export default function NewCampaignPage() {
                 />
               </div>
               <FieldHint>
-                Nothing is charged now — you add it before your ad goes live. Your ad runs until
-                the budget runs out. You only pay for what Google delivers; unused budget stays in
-                your account.
+                Nothing is charged now — you add it before your ad goes live. With your AdVault plan,
+                $35 is added to your ad budget each month (100% to Google). You only pay for what
+                Google delivers; unused budget stays in your account. Want it shown more? Add to your
+                ad budget anytime.
               </FieldHint>
             </div>
 

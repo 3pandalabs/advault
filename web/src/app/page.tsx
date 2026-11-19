@@ -3,11 +3,20 @@ import { Wordmark, WordmarkName, WordmarkTag } from "@/components/Wordmark";
 import { Card, CardDescription, CardTitle } from "@/components/ui/card";
 import { CostSimulator } from "@/components/CostSimulator";
 import { PlanPriceLines } from "@/components/PlanPriceLines";
+import { timesShownEstimate } from "@/lib/budget";
+import { ADD_MORE_LINE, googleMinimumSentence, spreadSentence } from "@/lib/spread";
 
 // Server-rendered. The cost simulator inside is the only client component, so the
 // page produces a real link preview and is up even when the API is not.
-// Prices here are the Keep it running plan (lib/pricing us-evergreen + the
-// us-new_ad add-on); change them together.
+// Prices here are the "$55 a month" Keep it running plan (owner 2026-11-19;
+// lib/pricing us-evergreen $20 + the $35 monthly ad-budget recharge, the
+// us-new_ad and us-website $10s); change them together with web/src/lib/prices.
+// Times-shown numbers always come from timesShownEstimate, never typed in.
+
+const EST = timesShownEstimate(3_500, "USD");
+const SHOWN = `${EST.low.toLocaleString("en-US")}–${EST.high.toLocaleString("en-US")}`;
+const SHOWN_WORDS = `${EST.low.toLocaleString("en-US")} to ${EST.high.toLocaleString("en-US")}`;
+const TIMING = `${googleMinimumSentence(3_500)} ${spreadSentence(3_500)} More budget means more days.`;
 
 const STEPS = [
   {
@@ -57,7 +66,7 @@ const FOR_WHOM = [
 const FAQ = [
   {
     q: "I don't have a website. Can I still advertise?",
-    a: "Yes. Make your ad without one; Google needs a link before the ad goes live, so press Make me a website on your campaign and we build a one-page website from your ad in minutes: your photos, offer and video, with call and directions buttons. It's $10 with the first year of Pro (visitor stats) included, then $49 a year.",
+    a: "Yes. Make your ad without one; Google needs a link before the ad goes live, so press Make me a website on your campaign and we build a one-page website from your ad in minutes: your photos, offer and video, with call and directions buttons. It's $10 once, and Pro (visitor stats) stays included while your AdVault plan runs.",
   },
   {
     q: "Do I need a Google Ads or YouTube account?",
@@ -65,7 +74,7 @@ const FAQ = [
   },
   {
     q: "What does it cost to keep my ad running?",
-    a: "Your ad is $10 once. Your ad budget is from $35, and 100% of it goes to Google: your ad runs until it runs out. For $35 we estimate it is shown 6,000 to 11,500 times to people near you. The AdVault plan is $19 a month while your ad runs, and the first month is included. Every dollar of your ad budget goes to Google. AdVault earns only the $10 and the $19.",
+    a: `$55 a month. The first month: your ad $10 (made once), your website $10, the AdVault plan $0 (first month included) and a $35 ad budget. Every month after, while your ad runs: the $20 plan plus $35 ad budget, recharged automatically. 100% of the ad budget goes to Google, and AdVault earns only the $10s and the $20. ${ADD_MORE_LINE}`,
   },
   {
     q: "What happens to ad budget I don't use?",
@@ -73,11 +82,11 @@ const FAQ = [
   },
   {
     q: "How often will my ad be shown?",
-    a: "For $35 we estimate your ad is shown 6,000 to 11,500 times to people near you, depending on your area. It's an estimate, not a guarantee. Your results screen shows the real numbers.",
+    a: `For $35 a month we estimate your ad is shown ${SHOWN_WORDS} times to people near you, depending on your area. ${TIMING} It's an estimate, not a guarantee. Your results screen shows the real numbers. ${ADD_MORE_LINE}`,
   },
   {
     q: "Is there a contract?",
-    a: "No. Pause anytime: no fee while paused. When no ad is running, the $19 plan stops at the end of the month you've paid for, and you're never charged for a month with no ad running. Resume and it starts again. The videos we made are yours to keep.",
+    a: "No. Pause anytime: no fee and no ad-budget recharge while paused. When no ad is running, the $20 plan stops at the end of the month you've paid for, and you're never charged for a month with no ad running. Resume and it starts again. The videos we made are yours to keep.",
   },
   {
     q: "Can I change my ad later?",
@@ -134,10 +143,10 @@ export default function LandingPage() {
           people near you. No agency, no video team, no Google Ads.
         </p>
         <p className="mt-4 text-xl font-semibold tracking-tight">
-          <span className="text-amber-300">$10</span> makes your ad.{" "}
-          <span className="text-amber-300">$19 a month</span> while it runs, first month included, plus ad budget from
-          $35 that goes 100% to Google.
+          <span className="text-amber-300">$55 a month.</span> We make your ad and your website, and show your
+          business about {SHOWN} times to people near you.
         </p>
+        <p className="mt-2 text-sm text-zinc-400">{ADD_MORE_LINE}</p>
         <p className="mt-2 text-base text-zinc-300">
           YouTube ads need a website to go live. No website? Don&apos;t worry, we&apos;ve got you covered: we&apos;ll
           build one in minutes while we make your ad.
@@ -230,32 +239,41 @@ export default function LandingPage() {
 
       <section id="pricing" className="mx-auto w-full max-w-5xl scroll-mt-6 px-6 pb-16">
         <h2 className="text-2xl font-semibold tracking-tight">Simple pricing</h2>
-        <p className="mt-2 mb-5 text-sm text-zinc-400">One plan. No setup fee, no contract. Pause anytime: no fee while paused.</p>
+        <p className="mt-2 mb-5 text-sm text-zinc-400">
+          $55 a month. One plan, no setup fee, no contract. Pause anytime: no fee and no recharge while paused.
+        </p>
         <div className="grid gap-4 sm:grid-cols-2">
           <Card className="border-amber-400/20 bg-amber-400/[0.04]">
-            <CardDescription>Making your ad</CardDescription>
+            <CardDescription>First month</CardDescription>
             <p className="mt-2 text-4xl font-semibold tracking-tight">
-              $10 <span className="text-base font-normal text-zinc-400">one-time, per ad</span>
+              $55 <span className="text-base font-normal text-zinc-400">to start</span>
             </p>
             <p className="mt-3 text-sm text-zinc-400">
-              Script, voiceover, captions, both video formats. New offer next month? Another
-              ad is $10 too.
+              Your ad $10 (made once: script, voiceover, captions, both video formats) + your website $10 + the
+              AdVault plan $0 (first month included) + $35 ad budget, 100% to Google. A new ad later is $10 too.
             </p>
           </Card>
           <Card className="border-amber-400/20 bg-amber-400/[0.04]">
-            <CardDescription>Keeping it running</CardDescription>
+            <CardDescription>Every month after</CardDescription>
             <p className="mt-2 text-4xl font-semibold tracking-tight">
-              $19 <span className="text-base font-normal text-zinc-400">a month while your ad runs</span>
+              $55 <span className="text-base font-normal text-zinc-400">a month while your ad runs</span>
             </p>
             <p className="mt-3 text-sm text-zinc-400">
-              First month included with your first ad. Pause anytime: no fee while paused. Plus
-              your ad budget from $35: your ad runs until it runs out, and unused budget stays in your account and is refunded if you leave.
+              The AdVault plan $20 + $35 ad budget, recharged automatically, 100% to Google. Your website stays
+              included. Pause anytime: no fee and no recharge while paused. Unused budget stays in your account and
+              is refunded if you leave.
             </p>
           </Card>
         </div>
         <Card className="mt-4">
           <CardDescription>What you pay</CardDescription>
-          <PlanPriceLines className="mt-3" />
+          <PlanPriceLines className="mt-3" addMoreHref="/signup" />
+        </Card>
+        <Card className="mt-4">
+          <CardDescription>When your ad shows</CardDescription>
+          <p className="mt-2 text-sm text-zinc-300">
+            Your ad is shown about {SHOWN} times each month to people near you. {TIMING}
+          </p>
         </Card>
         <ul className="mt-6 grid gap-2 text-sm text-zinc-300 sm:grid-cols-2">
           {INCLUDED.map((item) => (

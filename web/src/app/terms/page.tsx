@@ -109,7 +109,7 @@ export default function TermsPage() {
           <tr>
             <td>Keep it running</td>
             <td>Not offered</td>
-            <td>$19/month while an ad runs</td>
+            <td>$20/month while an ad runs, plus $35/month ad budget</td>
             <td>
               One ad kept running in a campaign we run for you, with no monthly offer.
               <strong> The plan is billed only for months in which an ad is running.</strong>{" "}
@@ -119,8 +119,16 @@ export default function TermsPage() {
               month the plan simply carries on; after it, the plan restarts with a new month,
               charged that day to your saved card (or at checkout).{" "}
               <strong>The first month is included, once per account:</strong> you start the
-              plan when you first launch an ad, $0 that day, and the first $19 is charged one
-              month later only if an ad is still running then.
+              plan when you first launch an ad, $0 that day, and the first $20 is charged one
+              month later only if an ad is still running then.{" "}
+              <strong>While the plan runs, $35 is added to your ad budget each month</strong>,
+              charged automatically with the plan fee; 100% of it goes to Google. It is not
+              charged for a month in which no ad is running, including while your ad is paused.
+              Ad budget you do not use rolls over in your account and is refundable as section 5
+              explains. A Keep it running plan started before the $20 price keeps its $19/month
+              price and has no automatic ad-budget recharge.
+              If we make you a SiteVault website, it is a one-off $10 charge, and its Pro
+              features stay included while your Keep it running plan runs.
               Each ad we make is a one-off $10 charge, paid before we make it, including
               the first. If your ad links to a SiteVault website, you can also put the same
               offer on that website for $2 more ($12 in all), or for $10 in all when the
@@ -129,7 +137,7 @@ export default function TermsPage() {
               fails to render is redone at no charge. A video you upload yourself has no
               charge; it runs after we review it.
               Every dollar of your ad budget goes to Google; AdVault earns only the
-              $10 per ad and the $19 plan.
+              $10 per ad, the $10 website and the plan fee.
             </td>
           </tr>
         </tbody>

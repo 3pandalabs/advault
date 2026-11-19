@@ -104,7 +104,7 @@ export default function SubscriptionPage() {
   }
 
   // Only reachable for a plan that is NOT Keep it running, or with no ad
-  // running: the $19 plan follows the running ad and stops by itself.
+  // running: the plan follows the running ad and stops by itself.
   async function onCancel() {
     setBusy(true);
     try {
@@ -132,13 +132,18 @@ export default function SubscriptionPage() {
   const firstMonthAvailable = view?.plan?.firstMonthAvailable !== false;
   // The API sends includedUntil only while the included month is still running.
   const inIncludedMonth = Boolean(sub?.includedUntil);
+  // "$55 a month" plans also recharge the ad budget each month; plans started
+  // before it (grandfathered at $19) have 0 / no field and no recharge.
+  const rechargeMinor = sub?.budgetRechargeMinor ?? 0;
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-semibold">Subscription</h1>
         <p className="mt-1 text-sm text-zinc-400">
-          $19 a month while your ad is running. Pause anytime: no fee while paused.
+          {sub
+            ? "Your plan runs while your ad is running. Pause anytime: no fee while paused."
+            : "$20 a month plus $35 ad budget, while your ad is running. Pause anytime: no fee and no recharge while paused."}
         </p>
       </div>
 
@@ -150,6 +155,12 @@ export default function SubscriptionPage() {
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
               <CardTitle>{sub.display} / month</CardTitle>
+              {rechargeMinor > 0 ? (
+                <p className="mt-1 text-sm text-zinc-300">
+                  plus {fmt(rechargeMinor, sub.currencyCode)} ad budget each month, 100% to Google, added to your ad
+                  budget
+                </p>
+              ) : null}
               <CardDescription>
                 {STATUS_COPY[sub.status] ?? sub.status}
                 {sub.currentPeriodEnd
@@ -175,12 +186,12 @@ export default function SubscriptionPage() {
           ) : null}
 
           {evergreen ? (
-            // The $19 plan follows the running ad (2026-11-19): no cancel button.
+            // The plan follows the running ad (2026-11-19): no cancel button.
             <p className="mt-4 text-sm text-zinc-400">
               {sub.cancelAtPeriodEnd
-                ? `No ad is running, so your plan stops on ${sub.currentPeriodEnd ? formatDate(sub.currentPeriodEnd) : "the end of this month"} and nothing more is charged. Resume an ad before then and it simply carries on; after that, resuming restarts it at $19.`
+                ? `No ad is running, so your plan stops on ${sub.currentPeriodEnd ? formatDate(sub.currentPeriodEnd) : "the end of this month"} and nothing more is charged. Resume an ad before then and it simply carries on; after that, resuming restarts it.`
                 : adRunning
-                  ? "Your ad is running, so your plan renews each month. Pause your ad on its campaign page and the plan stops at the end of the month you've paid for: no fee while paused."
+                  ? `Your ad is running, so your plan renews each month. Pause your ad on its campaign page and the plan stops at the end of the month you've paid for: no fee${rechargeMinor > 0 ? " and no recharge" : ""} while paused.`
                   : "No ad is running: your plan will stop at the end of this month."}
             </p>
           ) : sub.cancelAtPeriodEnd ? (
@@ -220,7 +231,12 @@ export default function SubscriptionPage() {
                 {plan.display.monthlyFee}
                 <span className="text-base font-normal text-zinc-400"> / month while your ad runs</span>
               </p>
-              <PlanPriceLines className="mt-3" testMode={testMode} firstMonthIncluded={firstMonthAvailable} />
+              <PlanPriceLines
+                className="mt-3"
+                testMode={testMode}
+                firstMonthIncluded={firstMonthAvailable}
+                addMoreHref="/dashboard/wallet"
+              />
               <p className="mt-3 text-sm text-zinc-400">
                 {firstMonthAvailable
                   ? "You start the plan when you launch your first ad: $0 that day."

@@ -1,7 +1,13 @@
 // The customer-facing prices, in one place (USD cents). Mirrored from the API:
-// api/src/lib/pricing (us-new_ad $10, us-website $10, us-evergreen $19/month,
-// suggestedAdBudgetMinor $35) and the SiteVault Pro renewal ($49/year). Change
-// the API first, then here. Home-page prose may keep its own wording.
+// api/src/lib/pricing (us-new_ad $10, us-website $10, us-evergreen $20/month,
+// the plan's automatic $35 monthly ad-budget recharge, suggestedAdBudgetMinor
+// $35). Change the API first, then here. Home-page prose may keep its own
+// wording.
+//
+// "$55 a month" (owner, 2026-11-19): month one = ad $10 + website $10 + plan
+// $0 (first month included) + ad budget $35; every month after = plan $20 +
+// ad budget $35. The website (SiteVault Pro) stays included while the plan
+// runs, so there is no separate renewal any more.
 
 /** Making one ad from photos. One-time, per ad. */
 export const AD_PRICE_CENTS = 1_000;
@@ -9,14 +15,14 @@ export const AD_PRICE_CENTS = 1_000;
 /** An ad from the customer's own uploaded video: we did not make it, so no fee. */
 export const OWN_VIDEO_AD_PRICE_CENTS = 0;
 
-/** "Make me a website": first year of SiteVault Pro included. */
+/** "Make me a website": once; Pro stays included while the AdVault plan runs. */
 export const WEBSITE_PRICE_CENTS = 1_000;
 
-/** SiteVault Pro after the included first year. */
-export const WEBSITE_RENEWAL_CENTS_PER_YEAR = 4_900;
-
 /** The AdVault plan, charged only for months an ad is running. First month included with the first ad. */
-export const PLAN_PRICE_CENTS_PER_MONTH = 1_900;
+export const PLAN_PRICE_CENTS_PER_MONTH = 2_000;
+
+/** The ad budget the plan recharges automatically each month (100% to Google). */
+export const MONTHLY_AD_BUDGET_CENTS = 3_500;
 
 /** The smallest ad budget top-up (also lib/budget TOPUP_PRESETS_CENTS[0]). */
 export const MIN_AD_BUDGET_CENTS = 3_500;
@@ -49,5 +55,30 @@ export function costToday(i: CostInputs): CostBreakdown {
     websiteCents,
     planTodayCents,
     totalTodayCents: adCents + adBudgetCents + websiteCents + planTodayCents,
+  };
+}
+
+export type MonthlyBreakdown = {
+  /** Month one: what is paid when the first ad starts. */
+  firstMonth: CostBreakdown;
+  /** Every month after, while the ad runs: the plan + the ad-budget recharge. */
+  everyMonth: { planCents: number; adBudgetCents: number; totalCents: number };
+};
+
+/**
+ * Month one vs every month after (default: $10 + $10 + $0 + $35 = $55, then
+ * $20 + $35 = $55). `adBudgetCents` is the monthly ad budget; the recharge
+ * after month one is the same amount.
+ */
+export function monthlyBreakdown(i: CostInputs): MonthlyBreakdown {
+  const firstMonth = costToday(i);
+  const adBudgetCents = Math.max(i.adBudgetCents, 0);
+  return {
+    firstMonth,
+    everyMonth: {
+      planCents: PLAN_PRICE_CENTS_PER_MONTH,
+      adBudgetCents,
+      totalCents: PLAN_PRICE_CENTS_PER_MONTH + adBudgetCents,
+    },
   };
 }

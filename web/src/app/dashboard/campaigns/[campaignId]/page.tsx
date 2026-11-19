@@ -191,7 +191,7 @@ export default function CampaignDetailPage({
     if (q.get("subscribed") === "1") return "Your AdVault plan is set up. Press Launch my ads (or Resume) to start your ad.";
     return q.get("status") === "success" ? "Thanks — your ad budget top-up went through. It can take a minute to show." : null;
   });
-  // The $19 plan (lib/planBilling): set when launch / resume answered
+  // The AdVault plan (lib/planBilling): set when launch / resume answered
   // plan_required; shows the start-plan card ($0 today with the first month).
   const [planPrompt, setPlanPrompt] = useState<{ firstMonthIncluded: boolean } | null>(null);
   const [firstMonthAvailable, setFirstMonthAvailable] = useState(true);
@@ -423,14 +423,14 @@ export default function CampaignDetailPage({
       if (action === "pause") {
         await pauseCampaign(campaignId);
         setLaunchNote(
-          "Paused. Your ad has stopped showing. With no ad running, your $19 plan stops at the end of the month you've paid for: no fee while paused.",
+          "Paused. Your ad has stopped showing. With no ad running, your AdVault plan stops at the end of the month you've paid for: no fee and no ad-budget recharge while paused.",
         );
       } else {
         const r = await resumeCampaign(campaignId);
         setPlanPrompt(null);
         setLaunchNote(
           r.planRestarted
-            ? "Your ad is running again. Your $19 plan restarted today with your saved card."
+            ? "Your ad is running again. Your AdVault plan restarted today with your saved card."
             : "Your ad is running again.",
         );
       }
@@ -564,7 +564,12 @@ export default function CampaignDetailPage({
                 </div>
               )}
               {newAd.order && !newAd.freeLaunchOffer && (
-                <PlanPriceLines className="w-full" testMode={testMode} firstMonthIncluded={firstMonthAvailable} />
+                <PlanPriceLines
+                  className="w-full"
+                  testMode={testMode}
+                  firstMonthIncluded={firstMonthAvailable}
+                  addMoreHref={usesWallet ? "#ad-budget" : undefined}
+                />
               )}
             </div>
           )}
@@ -899,10 +904,15 @@ export default function CampaignDetailPage({
           <CardTitle>{planPrompt.firstMonthIncluded ? "Start your AdVault plan" : "Restart your AdVault plan"}</CardTitle>
           <CardDescription>
             {planPrompt.firstMonthIncluded
-              ? "$0 today: your first month is included. Then $19 a month, only while your ad is running. Pause anytime: no fee while paused."
-              : "$19 a month while your ad is running, charged today. Pause anytime: no fee while paused."}
+              ? "$0 today: your first month is included. Then $20 a month plus $35 ad budget (100% to Google, added to your ad budget automatically), only while your ad is running. Pause anytime: no fee and no recharge while paused."
+              : "$20 a month plus $35 ad budget each month (100% to Google), while your ad is running, charged today. Pause anytime: no fee and no recharge while paused."}
           </CardDescription>
-          <PlanPriceLines className="mt-3" testMode={testMode} firstMonthIncluded={planPrompt.firstMonthIncluded} />
+          <PlanPriceLines
+            className="mt-3"
+            testMode={testMode}
+            firstMonthIncluded={planPrompt.firstMonthIncluded}
+            addMoreHref={usesWallet ? "#ad-budget" : undefined}
+          />
           <div className="mt-4 flex flex-wrap gap-2">
             <Button disabled={busy} onClick={onStartPlan}>
               {busy ? "Opening checkout…" : planPrompt.firstMonthIncluded ? "Start my plan ($0 today)" : "Restart my plan"}
@@ -947,8 +957,8 @@ export default function CampaignDetailPage({
                 )}
                 <span className="text-xs text-zinc-500">
                   {campaign.status === "live"
-                    ? "Pause anytime: no fee while paused."
-                    : "Paused: no $19 plan fee for months with no ad running."}
+                    ? "Pause anytime: no fee and no recharge while paused."
+                    : "Paused: no plan fee and no ad-budget recharge for months with no ad running."}
                 </span>
               </div>
             )}
