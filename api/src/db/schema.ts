@@ -551,6 +551,10 @@ export const campaigns = pgTable(
     // video campaign supports exactly one ad group, so there is no reason to
     // model this as its own table.
     googleAdGroupResourceName: text("google_ad_group_resource_name"),
+    // The Audience carrying the demographic filters (migration 0036), set at
+    // launch and by PUT /campaigns/:id/targeting. NULL = no Audience, or a
+    // campaign launched before the column existed.
+    googleAudienceResourceName: text("google_audience_resource_name"),
     launchError: text("launch_error"),
     launchedAt: timestamp("launched_at", { withTimezone: true }),
 

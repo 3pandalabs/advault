@@ -52,8 +52,11 @@ import { syncCardLimit } from "../lib/billing/managedCard.js";
 // THE ONLY ROUTE IN THIS CODEBASE THAT SPENDS MONEY.
 //
 // Everything before this point — uploads, scripts, renders — is free and
-// reversible. This is the boundary. Keep it that way: no other route may call
-// the Google Ads mutate API, and `campaigns.status` reaches 'live' here alone.
+// reversible. This is the boundary. Keep it that way: no other route may
+// CREATE anything that spends at Google, and `campaigns.status` reaches 'live'
+// here alone. (PUT /campaigns/:id/targeting, routes/targeting.ts, changes who
+// an already-launched campaign reaches; it never creates a campaign, budget
+// or ad.)
 //
 // For customer-billed and BYO accounts the campaign is created PAUSED at Google
 // (see lib/googleAds/demandGen.ts): the advertiser presses go in their own
@@ -498,6 +501,7 @@ export async function launchRoutes(app: FastifyInstance) {
             googleBudgetResourceName: result.budgetResourceName,
             googleCampaignResourceName: result.campaignResourceName,
             googleAdGroupResourceName: result.adGroupResourceName,
+            googleAudienceResourceName: result.audienceResourceName,
             status: "live",
             launchError: null,
             launchedAt: new Date(),

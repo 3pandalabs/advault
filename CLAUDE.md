@@ -206,6 +206,21 @@ orphaned a budget on every failure. Don't split it back up.
   through ONE `Audience` resource on the ad group (`useAudienceGrouped`), not
   individual age/gender criteria. Every filter shrinks reach for the same
   budget, and the UI says so whenever one is set.
+- **Audience edits after launch (2026-11-20, migration 0036).**
+  `PUT /campaigns/:id/targeting` (`routes/targeting.ts`,
+  `lib/googleAds/targeting.ts`) changes a launched campaign's filters AT
+  GOOGLE first, in one atomic mutate, then the row; PATCH refuses
+  `audienceFilters` once a Google campaign exists. It reads the ad group's
+  Audience/language criteria from Google (rows launched before 0036 have no
+  stored Audience), then updates the Audience's `dimensions`, or creates and
+  attaches one, or removes the criterion (everyone); languages are diffed at
+  the ad group or, for proximity/housing launches, the campaign. Housing rules
+  are enforced on the route and in the builder. Validated 2026-11-20 with
+  validateOnly against the test customer: an Audience criterion on a Demand
+  Gen ad group created without `use_audience_grouped` is accepted, and the
+  update/remove shapes parse. The wizard's filters stay parked
+  (`AUDIENCE_FILTERS_ENABLED = false`), but the campaign page shows "Who
+  should see it" for every launched campaign.
 - **Location targeting is PRESENCE only** (`geoTargetTypeSetting` on the campaign).
   Google defaults to presence-or-interest, which also serves people elsewhere who
   merely search about the area. A walk-in shop pays for those views, and the

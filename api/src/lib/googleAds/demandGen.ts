@@ -477,6 +477,8 @@ export type LaunchResult = {
   campaignResourceName: string;
   adGroupResourceName: string;
   adResourceName: string;
+  /** The demographic Audience, when the launch created one (0036). */
+  audienceResourceName: string | null;
 };
 
 type MutateResponse = {
@@ -485,10 +487,11 @@ type MutateResponse = {
     campaignResult?: { resourceName?: string };
     adGroupResult?: { resourceName?: string };
     adGroupAdResult?: { resourceName?: string };
+    audienceResult?: { resourceName?: string };
   }[];
 };
 
-/** Pulls the four resource names this app stores out of a Mutate response. */
+/** Pulls the resource names this app stores out of a Mutate response. */
 export function parseLaunchResponse(body: MutateResponse): LaunchResult {
   const r = body.mutateOperationResponses ?? [];
   const pick = (k: keyof (typeof r)[number]) =>
@@ -503,7 +506,8 @@ export function parseLaunchResponse(body: MutateResponse): LaunchResult {
   for (const [k, v] of Object.entries(result)) {
     if (!v) throw new Error(`Google Ads returned no ${k}`);
   }
-  return result as LaunchResult;
+  // Optional: only present when the launch carried demographic filters.
+  return { ...(result as Omit<LaunchResult, "audienceResourceName">), audienceResourceName: pick("audienceResult") ?? null };
 }
 
 /**
