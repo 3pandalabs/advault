@@ -352,7 +352,7 @@ export function WebsiteCard({
                     No website yet? Don&apos;t worry, we&apos;ve got you covered. We can make you one in minutes, with
                     no hassle and at almost no cost: your photos, offer and ad video, with call and directions buttons.
                     {websiteFee
-                      ? ` ${websiteFee}, with the first year of Pro (visitor stats) included; then $49 a year, cancel any time.`
+                      ? ` ${websiteFee} once; Pro (visitor stats) stays included while your AdVault plan runs.`
                       : ""}
                   </span>
                 )}
@@ -407,8 +407,8 @@ export function WebsiteCard({
           ) : (
             <>
               <p className="text-sm text-zinc-300">
-                Publish it for {pendingSite.display ?? "$10"}, with the first year of Pro (visitor stats) included. After
-                that it&apos;s $49 a year on SiteVault.
+                Publish it for {pendingSite.display ?? "$10"} once; Pro (visitor stats) stays included while your
+                AdVault plan runs.
               </p>
               <Button onClick={payForWebsite} disabled={busy}>
                 {busy ? "Opening payment…" : `Pay ${pendingSite.display ?? "$10"} and publish`}
@@ -540,7 +540,7 @@ export function WebsiteCard({
           <p className="text-sm text-zinc-300">
             We&apos;ll build a one-page website from this campaign: your business name, your offer
             and your ad photos, with call and text buttons.
-            {websiteFee ? ` It's ${websiteFee}, with the first year of Pro (visitor stats) included; after that, $49 a year on SiteVault.` : ""}{" "}
+            {websiteFee ? ` It's ${websiteFee} once; Pro (visitor stats) stays included while your AdVault plan runs.` : ""}{" "}
             We just need two things:
           </p>
           <div className="grid gap-3 sm:grid-cols-2">

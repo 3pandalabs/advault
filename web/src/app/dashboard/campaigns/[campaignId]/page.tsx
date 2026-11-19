@@ -15,6 +15,7 @@ import {
   orderNewAd,
   pauseCampaign,
   resumeCampaign,
+  setPlanChoice,
   subscribe,
   pushFreeSiteOffer,
   redoAd,
@@ -40,7 +41,9 @@ import { ResultsCard } from "./results-card";
 import { AudienceCard } from "./audience-card";
 import { ScheduleCard } from "./schedule-card";
 import { BudgetEditor } from "./budget-editor";
-import { BUDGET_BELOW_MINIMUM_MESSAGE, minDailyBudgetCents, runLengthLabel } from "@/lib/budget";
+import { BUDGET_BELOW_MINIMUM_MESSAGE, minDailyBudgetCents, runLengthLabel, wizardTopupKey } from "@/lib/budget";
+import { MONTHLY_AD_BUDGET_CENTS, monthlyTotalCents, oneMonthFromToday } from "@/lib/prices";
+import { TopUpPicker } from "@/components/TopUpPicker";
 import { WebsiteCard } from "./website-card";
 import { BeforeAfterCard } from "./before-after-card";
 import { SeasonCard } from "./season-card";
@@ -52,7 +55,7 @@ import { RenderProgress, ScriptProgress } from "./render-progress";
 import { AUDIENCE_FILTERS_ENABLED } from "@/lib/audience";
 import { Badge, Card, CardDescription, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { formatDuration } from "@/lib/utils";
+import { formatDate, formatDuration, formatMoney } from "@/lib/utils";
 import { actsAsAdmin } from "@/lib/testMode";
 import { PlanPriceLines } from "@/components/PlanPriceLines";
 
@@ -191,9 +194,20 @@ export default function CampaignDetailPage({
     if (q.get("subscribed") === "1") return "Your AdVault plan is set up. Press Launch my ads (or Resume) to start your ad.";
     return q.get("status") === "success" ? "Thanks — your ad budget top-up went through. It can take a minute to show." : null;
   });
-  // The $19 plan (lib/planBilling): set when launch / resume answered
+  // The AdVault plan (lib/planBilling): set when launch / resume answered
   // plan_required; shows the start-plan card ($0 today with the first month).
   const [planPrompt, setPlanPrompt] = useState<{ firstMonthIncluded: boolean } | null>(null);
+  // "Keep it running" (recommended, preselected) or "Just this once", and the
+  // monthly ad budget (the wizard's pick, else $35).
+  const [planOption, setPlanOption] = useState<"monthly" | "once">("monthly");
+  const [planBudget, setPlanBudget] = useState<number>(() => {
+    try {
+      const v = Number(typeof window === "undefined" ? 0 : sessionStorage.getItem(wizardTopupKey(campaignId)));
+      return Number.isFinite(v) && v >= MONTHLY_AD_BUDGET_CENTS ? v : MONTHLY_AD_BUDGET_CENTS;
+    } catch {
+      return MONTHLY_AD_BUDGET_CENTS;
+    }
+  });
   const [firstMonthAvailable, setFirstMonthAvailable] = useState(true);
   const [testMode, setTestMode] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -400,7 +414,14 @@ export default function CampaignDetailPage({
     setBusy(true);
     setError(null);
     try {
-      const r = await subscribe("us-evergreen", campaignId);
+      if (planOption === "once") {
+        // "Just this once": no subscription; the ad runs on its budget.
+        await setPlanChoice("once");
+        setPlanPrompt(null);
+        setLaunchNote("Just this once: no plan and no renewals. Press Launch my ads (or Resume) again.");
+        return;
+      }
+      const r = await subscribe("us-evergreen", campaignId, planBudget);
       if (r.redirectUrl) {
         window.location.assign(r.redirectUrl);
         return;
@@ -423,14 +444,14 @@ export default function CampaignDetailPage({
       if (action === "pause") {
         await pauseCampaign(campaignId);
         setLaunchNote(
-          "Paused. Your ad has stopped showing. With no ad running, your $19 plan stops at the end of the month you've paid for: no fee while paused.",
+          "Paused. Your ad has stopped showing. With no ad running, your $20 plan stops at the end of the month you've paid for: no fee and no ad-budget recharge while paused.",
         );
       } else {
         const r = await resumeCampaign(campaignId);
         setPlanPrompt(null);
         setLaunchNote(
           r.planRestarted
-            ? "Your ad is running again. Your $19 plan restarted today with your saved card."
+            ? "Your ad is running again. Your $20 plan restarted today with your saved card."
             : "Your ad is running again.",
         );
       }
@@ -564,7 +585,12 @@ export default function CampaignDetailPage({
                 </div>
               )}
               {newAd.order && !newAd.freeLaunchOffer && (
-                <PlanPriceLines className="w-full" testMode={testMode} firstMonthIncluded={firstMonthAvailable} />
+                <PlanPriceLines
+                  className="w-full"
+                  testMode={testMode}
+                  firstMonthIncluded={firstMonthAvailable}
+                  addMoreHref={usesWallet ? "#ad-budget" : undefined}
+                />
               )}
             </div>
           )}
@@ -896,25 +922,88 @@ export default function CampaignDetailPage({
 
       {planPrompt && (
         <Card className="mt-2 mb-4 border-amber-400/30">
-          <CardTitle>{planPrompt.firstMonthIncluded ? "Start your AdVault plan" : "Restart your AdVault plan"}</CardTitle>
-          <CardDescription>
-            {planPrompt.firstMonthIncluded
-              ? "$0 today: your first month is included. Then $19 a month, only while your ad is running. Pause anytime: no fee while paused."
-              : "$19 a month while your ad is running, charged today. Pause anytime: no fee while paused."}
-          </CardDescription>
-          <PlanPriceLines className="mt-3" testMode={testMode} firstMonthIncluded={planPrompt.firstMonthIncluded} />
+          <CardTitle>How should your ad run?</CardTitle>
+          <div className="mt-3 space-y-2" role="radiogroup" aria-label="How should your ad run?">
+            <label
+              className={`block cursor-pointer rounded-lg border p-3 ${planOption === "monthly" ? "border-amber-400 bg-amber-400/10" : "border-white/15"}`}
+            >
+              <span className="flex items-center gap-2">
+                <input
+                  type="radio"
+                  name="plan-option"
+                  className="accent-amber-400"
+                  checked={planOption === "monthly"}
+                  onChange={() => setPlanOption("monthly")}
+                />
+                <span className="font-medium">Keep it running</span>
+                <Badge>Recommended</Badge>
+              </span>
+              <span className="mt-1 block text-sm text-zinc-300">
+                {planPrompt.firstMonthIncluded
+                  ? "Plan $0 today: your first month is included."
+                  : `Charged today: ${formatMoney(monthlyTotalCents(planBudget), "USD")} ($20 plan + your monthly ad budget).`}{" "}
+                Then $20 a month plus your monthly ad budget, recharged automatically, only while your ad runs.
+              </span>
+              <span className="mt-1 block text-sm text-amber-200">
+                Renews at {formatMoney(monthlyTotalCents(planBudget), "USD")}/month from{" "}
+                {formatDate(oneMonthFromToday().toISOString())}. Cancel anytime in one click.
+              </span>
+            </label>
+            <label
+              className={`block cursor-pointer rounded-lg border p-3 ${planOption === "once" ? "border-amber-400 bg-amber-400/10" : "border-white/15"}`}
+            >
+              <span className="flex items-center gap-2">
+                <input
+                  type="radio"
+                  name="plan-option"
+                  className="accent-amber-400"
+                  checked={planOption === "once"}
+                  onChange={() => setPlanOption("once")}
+                />
+                <span className="font-medium">Just this once</span>
+              </span>
+              <span className="mt-1 block text-sm text-zinc-300">
+                One payment. No renewals. Your ad stops when the budget runs out.
+              </span>
+            </label>
+          </div>
+          {planOption === "monthly" && (
+            <div className="mt-3">
+              <p className="mb-1 text-sm font-medium text-zinc-200">Your monthly ad budget</p>
+              <TopUpPicker mode="choose" currency="USD" value={planBudget} onChange={setPlanBudget} showEstimate={false} />
+            </div>
+          )}
+          {planOption === "monthly" && (
+            <PlanPriceLines
+              className="mt-3"
+              testMode={testMode}
+              firstMonthIncluded={planPrompt.firstMonthIncluded}
+              budgetCents={planBudget}
+              addMoreHref={usesWallet ? "#ad-budget" : undefined}
+            />
+          )}
           <div className="mt-4 flex flex-wrap gap-2">
             <Button disabled={busy} onClick={onStartPlan}>
-              {busy ? "Opening checkout…" : planPrompt.firstMonthIncluded ? "Start my plan ($0 today)" : "Restart my plan"}
+              {busy
+                ? planOption === "once"
+                  ? "Saving…"
+                  : "Opening checkout…"
+                : planOption === "once"
+                  ? "Continue, just this once"
+                  : planPrompt.firstMonthIncluded
+                    ? "Start my plan ($0 today)"
+                    : "Restart my plan"}
             </Button>
             <Button variant="ghost" disabled={busy} onClick={() => setPlanPrompt(null)}>
               Not now
             </Button>
           </div>
           <p className="mt-2 text-xs text-zinc-500">
-            {planPrompt.firstMonthIncluded
-              ? "Stripe saves your card. Nothing is charged until your included month ends, and only if an ad is still running then."
-              : "Come back here after paying and press the button again."}
+            {planOption === "once"
+              ? "Your ad budget is a one-time top-up on this page. You can turn on Keep it running later from Subscription; it then starts charging that day."
+              : planPrompt.firstMonthIncluded
+                ? "Stripe saves your card. Nothing more is charged until your included month ends, and only if an ad is still running then."
+                : "Come back here after paying and press the button again."}
           </p>
         </Card>
       )}
@@ -947,8 +1036,8 @@ export default function CampaignDetailPage({
                 )}
                 <span className="text-xs text-zinc-500">
                   {campaign.status === "live"
-                    ? "Pause anytime: no fee while paused."
-                    : "Paused: no $19 plan fee for months with no ad running."}
+                    ? "Pause anytime: no fee and no recharge while paused."
+                    : "Paused: no plan fee and no ad-budget recharge for months with no ad running."}
                 </span>
               </div>
             )}

@@ -109,18 +109,44 @@ export default function TermsPage() {
           <tr>
             <td>Keep it running</td>
             <td>Not offered</td>
-            <td>$19/month while an ad runs</td>
+            <td>
+              $20/month while an ad runs, plus your monthly ad budget (from $35); or just once, with no
+              monthly charge
+            </td>
             <td>
               One ad kept running in a campaign we run for you, with no monthly offer.
               <strong> The plan is billed only for months in which an ad is running.</strong>{" "}
-              When none of your ads is running (you paused it, its ad budget ran out, it reached
-              its end date, or it was never launched) the plan stops at the end of the month
-              you have paid for, and nothing more is charged. When an ad runs again within that
-              month the plan simply carries on; after it, the plan restarts with a new month,
-              charged that day to your saved card (or at checkout).{" "}
+              When none of your ads is running (you paused it, it reached its end date, or it was
+              never launched) the plan stops at the end of the month you have paid for, and nothing
+              more is charged. An ad that stopped only because its ad budget ran out still counts as
+              running: the plan carries on, and the next month&apos;s ad budget switches it back on.
+              A pause you choose always stops the plan. When an ad runs again within the paid month
+              the plan simply carries on; after it, the plan restarts with a new month, charged that
+              day to your saved card (or at checkout).{" "}
               <strong>The first month is included, once per account:</strong> you start the
-              plan when you first launch an ad, $0 that day, and the first $19 is charged one
-              month later only if an ad is still running then.
+              plan when you first launch an ad, $0 that day, and the first $20 is charged one
+              month later only if an ad is still running then.{" "}
+              <strong>
+                You choose your monthly ad budget (whole dollars, at least $35), and while the plan
+                runs the same amount is added to your ad budget each month
+              </strong>
+              , charged automatically with the plan fee; 100% of it goes to Google. You can change
+              it at any time; a change applies from your next monthly payment, and nothing is
+              charged or refunded for the current month. It is not charged for a month in which no
+              ad is running, including while your ad is paused. Ad budget you do not use rolls over
+              in your account and is refundable as section 5 explains.{" "}
+              <strong>You can stop renewing at any time</strong> in one click on your Subscription
+              page: the plan ends at the end of the month you have paid for and nothing more is
+              charged; your ad keeps running on the ad budget you have until it runs out.{" "}
+              <strong>Just this once:</strong> instead of the plan you can pay once, with no
+              subscription: the same first payment (your ad, your website if you want one, and your
+              ad budget), no plan fee, no monthly ad budget and no renewals. Your ad runs until that
+              ad budget runs out and then stops; you can add more ad budget at any time. If you
+              later turn on Keep it running, it starts that day (the included first month was used
+              by your first ad) at $20 plus your monthly ad budget.
+              If we make you a SiteVault website, it is a one-off $10 charge, and its Pro
+              features stay included while your Keep it running plan runs; on Just this once it
+              stays live with a year of Pro.
               Each ad we make is a one-off $10 charge, paid before we make it, including
               the first. If your ad links to a SiteVault website, you can also put the same
               offer on that website for $2 more ($12 in all), or for $10 in all when the
@@ -129,7 +155,7 @@ export default function TermsPage() {
               fails to render is redone at no charge. A video you upload yourself has no
               charge; it runs after we review it.
               Every dollar of your ad budget goes to Google; AdVault earns only the
-              $10 per ad and the $19 plan.
+              $10 per ad, the $10 website and the plan fee.
             </td>
           </tr>
         </tbody>

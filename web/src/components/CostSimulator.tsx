@@ -5,18 +5,19 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { TopUpPicker } from "@/components/TopUpPicker";
 import { timesShownEstimate } from "@/lib/budget";
-import {
-  MIN_AD_BUDGET_CENTS,
-  PLAN_PRICE_CENTS_PER_MONTH,
-  WEBSITE_RENEWAL_CENTS_PER_YEAR,
-  costToday,
-} from "@/lib/prices";
+import { MIN_AD_BUDGET_CENTS, monthlyBreakdown } from "@/lib/prices";
+import { ADD_MORE_LINE, googleMinimumSentence, spreadSentence } from "@/lib/spread";
 import { formatMoney } from "@/lib/utils";
 
-// "What will this cost?" (owner, 2026-11-19): the ad, the ad budget, the
-// optional website and the plan, added up to what is paid today, with the
-// estimate of how often the ad is shown. The budget is shown ONLY as times
-// shown: never per day, never as views. Prices come from lib/prices.
+// "What will this cost?" (owner, 2026-11-19, "from $55 a month"): month one
+// (the ad, the website, the plan's included first month and the chosen ad
+// budget) next to every month after (the plan + the SAME chosen budget,
+// recharged automatically: $35 -> $55, $100 -> $120), or "Nothing more" for
+// "Just this once" (no plan, no recharge; the ad stops when the budget runs
+// out). With how often the ad is shown and the honest timing: Google's
+// $5-a-day minimum means $35 covers about 6 days of showing, about 2 days a
+// week for most of the month (lib/spread). The budget is never shown as a
+// daily price and never as views. Prices come from lib/prices.
 
 const CURRENCY = "USD";
 const n = (x: number) => x.toLocaleString("en-US");
@@ -36,43 +37,85 @@ function Toggle({ checked, onChange, label }: { checked: boolean; onChange: (v: 
   );
 }
 
-function Line({ label, amount, note }: { label: string; amount: string; note?: React.ReactNode }) {
+function Line({ label, amount, note, flash }: { label: string; amount: string; note?: React.ReactNode; flash?: boolean }) {
   return (
     <li className="flex items-baseline justify-between gap-3 py-2">
       <span className="min-w-0">
         <span className="text-zinc-200">{label}</span>
         {note ? <span className="block text-xs text-zinc-400">{note}</span> : null}
       </span>
-      <span className="shrink-0 font-medium tabular-nums text-zinc-100">{amount}</span>
+      <span
+        key={flash ? amount : undefined}
+        className={`shrink-0 font-medium tabular-nums text-zinc-100${flash ? " estimate-flash" : ""}`}
+      >
+        {amount}
+      </span>
     </li>
+  );
+}
+
+function Choice({ active, onClick, label, sub }: { active: boolean; onClick: () => void; label: string; sub: string }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={`min-w-0 flex-1 rounded-lg border px-3 py-2 text-left text-sm transition-colors ${
+        active ? "border-amber-400 bg-amber-400/10 text-zinc-100" : "border-white/15 text-zinc-300 hover:border-white/30"
+      }`}
+    >
+      <span className="block font-medium">{label}</span>
+      <span className="block text-xs text-zinc-400">{sub}</span>
+    </button>
+  );
+}
+
+function Column({ title, total, children }: { title: string; total: number; children: React.ReactNode }) {
+  return (
+    <div className="rounded-xl border border-dashed border-white/15 bg-black/20 px-4 py-2">
+      <p className="pt-2 text-xs font-semibold uppercase tracking-wide text-zinc-400">{title}</p>
+      <ul className="divide-y divide-white/10 text-sm">{children}</ul>
+      <div className="flex items-baseline justify-between gap-3 border-t border-white/20 py-3">
+        <span className="font-semibold">Total</span>
+        <span key={total} className="estimate-flash text-xl font-bold tabular-nums">
+          {money(total)}
+        </span>
+      </div>
+    </div>
   );
 }
 
 export function CostSimulator({
   ctaHref,
-  ctaPrefix = "Start with",
+  ctaPrefix = "Start for",
   firstMonthIncluded = true,
   title = "What will this cost?",
   bare = false,
+  addMoreHref,
 }: {
   ctaHref: string;
-  /** The button reads "<prefix> $X" with X = pay today. */
+  /** The button reads "<prefix> $X" with X = month one's total. */
   ctaPrefix?: string;
   /** False once the account has used its included first month of the plan. */
   firstMonthIncluded?: boolean;
   title?: string;
   /** No card border or title, for use inside another card. */
   bare?: boolean;
+  /** Where "Add to your ad budget anytime" links (logged in); no link when absent. */
+  addMoreHref?: string;
 }) {
   const [budget, setBudget] = useState(MIN_AD_BUDGET_CENTS);
   // Own-video uploads are paused for customers (CLAUDE.md 2026-11-16), so the
   // "I'll upload my own video" toggle is hidden. Restore it when they reopen.
   const ownVideo = false;
-  const [website, setWebsite] = useState(false);
+  // On by default: the "from $55 a month" price includes the website.
+  const [website, setWebsite] = useState(true);
+  // "Every month" (Keep it running, recommended) or "Just this once".
+  const [monthly, setMonthly] = useState(true);
 
-  const cost = costToday({ adBudgetCents: budget, ownVideo, website, firstMonthIncluded });
+  // Every month after = $20 + the SAME chosen budget (the API recharges it).
+  const { firstMonth, everyMonth } = monthlyBreakdown({ adBudgetCents: budget, ownVideo, website, firstMonthIncluded });
   const est = timesShownEstimate(budget, CURRENCY);
-  const plan = money(PLAN_PRICE_CENTS_PER_MONTH);
 
   const body = (
     <>
@@ -84,7 +127,7 @@ export function CostSimulator({
       )}
 
       <div className={bare ? "" : "mt-5"}>
-        <p className="mb-2 text-sm font-medium text-zinc-300">Ad budget</p>
+        <p className="mb-2 text-sm font-medium text-zinc-300">{monthly ? "Your monthly ad budget" : "Your ad budget"}</p>
         <TopUpPicker mode="choose" currency={CURRENCY} value={budget} onChange={setBudget} showEstimate={false} />
       </div>
 
@@ -92,61 +135,88 @@ export function CostSimulator({
         <Toggle checked={website} onChange={setWebsite} label="Also make me a website" />
       </div>
 
-      <div className="mt-5 rounded-xl border border-dashed border-white/15 bg-black/20 px-4 py-2">
-        <ul className="divide-y divide-white/10 text-sm">
-          <Line
-            label="Your ad"
-            amount={money(cost.adCents)}
-            note="One-time, per ad"
-          />
-          <Line label="Ad budget" amount={money(cost.adBudgetCents)} note="Goes 100% to Google" />
-          {website && (
-            <Line
-              label="Website"
-              amount={money(cost.websiteCents)}
-              note={`First year of Pro included, then ${money(WEBSITE_RENEWAL_CENTS_PER_YEAR)}/year`}
-            />
-          )}
-          <Line
-            label="AdVault plan"
-            amount={`${money(cost.planTodayCents)} today`}
-            note={
-              firstMonthIncluded
-                ? `First month included, then ${plan}/month while your ad runs`
-                : `Then ${plan}/month while your ad runs`
-            }
-          />
-        </ul>
-        <div className="flex items-baseline justify-between gap-3 border-t border-white/20 py-3">
-          <span className="font-semibold">Pay today</span>
-          <span key={cost.totalTodayCents} className="estimate-flash text-xl font-bold tabular-nums">
-            {money(cost.totalTodayCents)}
-          </span>
-        </div>
+      <div className="mt-4 flex flex-col gap-2 sm:flex-row" role="group" aria-label="How often">
+        <Choice active={monthly} onClick={() => setMonthly(true)} label="Every month" sub="Recommended. Cancel anytime." />
+        <Choice active={!monthly} onClick={() => setMonthly(false)} label="Just this once" sub="One payment. No renewals." />
       </div>
 
+      <div className="mt-5 grid gap-3 sm:grid-cols-2">
+        <Column title="First month" total={firstMonth.totalTodayCents}>
+          <Line label="Your ad" amount={money(firstMonth.adCents)} note="Made once" />
+          {website && (
+            <Line
+              label="Your website"
+              amount={money(firstMonth.websiteCents)}
+              note={monthly ? "Once, then included while your plan runs" : "Once, with a year of Pro"}
+            />
+          )}
+          {monthly && (
+            <Line
+              label="AdVault plan"
+              amount={money(firstMonth.planTodayCents)}
+              note={firstMonthIncluded ? "First month included" : undefined}
+            />
+          )}
+          <Line label="Ad budget" amount={money(firstMonth.adBudgetCents)} note="100% to Google" flash />
+        </Column>
+        {monthly ? (
+          <Column title="Every month after" total={everyMonth.totalCents}>
+            <Line label="AdVault plan" amount={money(everyMonth.planCents)} note="Only while your ad runs" />
+            <Line
+              label="Ad budget"
+              amount={money(everyMonth.adBudgetCents)}
+              note="100% to Google, recharged automatically"
+              flash
+            />
+          </Column>
+        ) : (
+          <Column title="Every month after" total={0}>
+            <Line label="Nothing more" amount={money(0)} note="Your ad stops when the budget runs out." />
+          </Column>
+        )}
+      </div>
+      <p className="mt-2 text-xs text-zinc-400">
+        {monthly
+          ? "Change your monthly ad budget anytime. Want it shown more this month? Add a one-time top-up anytime."
+          : "One payment. No renewals. Your ad stops when the budget runs out. Want it shown more? Add a one-time top-up anytime."}
+      </p>
+
       <p className="mt-4 text-base text-zinc-200">
-        Your ad would be shown about{" "}
+        Your ad is shown about{" "}
         <span key={budget} className="estimate-flash font-semibold text-amber-300">
           {n(est.low)}–{n(est.high)}
         </span>{" "}
-        times to people near you.
+        times {monthly ? "each month" : "in all"} to people near you.
       </p>
-      <p className="mt-2 text-sm text-zinc-400">
-        Next month, if your ad keeps running: {plan} plan + any ad budget you add.
+      <p className="mt-2 text-sm text-zinc-300">
+        {googleMinimumSentence(budget)}{" "}
+        <span key={`spread-${budget}`} className="estimate-flash font-medium text-amber-200">
+          {spreadSentence(budget)}
+        </span>{" "}
+        More budget means more days.
+      </p>
+      <p className="mt-2 text-sm">
+        {addMoreHref ? (
+          <Link href={addMoreHref} className="text-amber-300 underline-offset-2 hover:underline">
+            {ADD_MORE_LINE}
+          </Link>
+        ) : (
+          <span className="text-zinc-400">{ADD_MORE_LINE}</span>
+        )}
       </p>
 
       {/* Modelled from typical local video CPMs, not a promise about a
           specific neighbourhood. Said plainly. */}
       <p className="mt-4 text-xs leading-relaxed text-zinc-500">
         This is an estimate based on typical costs for local video ads, not a guarantee. Real results depend on
-        your area, audience and competition. Unused budget stays in your account. No contract.
+        your area, audience and competition.{monthly ? " Pause anytime: no fee and no recharge while paused." : ""} Unused
+        budget stays in your account. No contract.
       </p>
 
       <div className="mt-5">
         <Link href={ctaHref}>
           <Button size="lg">
-            {ctaPrefix} {money(cost.totalTodayCents)}
+            {ctaPrefix} {money(firstMonth.totalTodayCents)}
           </Button>
         </Link>
       </div>
