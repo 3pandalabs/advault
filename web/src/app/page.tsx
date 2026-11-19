@@ -2,7 +2,6 @@ import Link from "next/link";
 import { Wordmark, WordmarkName, WordmarkTag } from "@/components/Wordmark";
 import { Card, CardDescription, CardTitle } from "@/components/ui/card";
 import { CostSimulator } from "@/components/CostSimulator";
-import { PlanPriceLines } from "@/components/PlanPriceLines";
 import { timesShownEstimate } from "@/lib/budget";
 import { ADD_MORE_LINE, googleMinimumSentence, spreadSentence } from "@/lib/spread";
 
@@ -34,14 +33,6 @@ const STEPS = [
   },
 ];
 
-const INCLUDED = [
-  "Script, voiceover and captions written for you",
-  "Your ad in both formats: vertical for Shorts, widescreen for YouTube",
-  "Shown to people near your business, not the whole country",
-  "Views, clicks and cost per view in your dashboard",
-  "Your ad budget is capped. Never a dollar more.",
-];
-
 // Self-hosted (web/public/demo), not YouTube embeds: an embed sets cookies,
 // and the privacy policy says this site sets none. preload="none" so the
 // page costs nothing until someone presses play.
@@ -51,17 +42,6 @@ const DEMOS = [
   { src: "/demo/dentist.mp4", poster: "/demo/dentist.jpg", title: "Dentist", note: "$49 new patient exam" },
   { src: "/demo/bakery.mp4", poster: "/demo/bakery.jpg", title: "Bakery", note: "$2 off coffee + pastry" },
   { src: "/demo/advault.mp4", poster: "/demo/advault.jpg", title: "AdVault itself", note: "Our own ad" },
-];
-
-const FOR_WHOM = [
-  "Real estate agents",
-  "Salons",
-  "Barbershops",
-  "Dentists",
-  "Restaurants",
-  "Bakeries",
-  "Gyms",
-  "Plumbers",
 ];
 
 const FAQ = [
@@ -149,10 +129,8 @@ export default function LandingPage() {
         </p>
         <p className="mt-4 text-xl font-semibold tracking-tight">
           <span className="text-amber-300">From $55 a month.</span> We make your ad and your website, and show your
-          business about {SHOWN} times to people near you.
-        </p>
-        <p className="mt-2 text-sm text-zinc-400">
-          {spreadSentence(3_500)} {ADD_MORE_LINE}
+          business about{" "}
+          <span className="estimate-flash font-semibold text-amber-300">{SHOWN}</span> times to people near you.
         </p>
         <p className="mt-2 text-base text-zinc-300">
           YouTube ads need a website to go live. No website? Don&apos;t worry, we&apos;ve got you covered: we&apos;ll
@@ -160,10 +138,10 @@ export default function LandingPage() {
         </p>
         <div className="mt-8 flex flex-wrap items-center gap-3">
           <Link
-            href="/signup"
+            href="#pricing"
             className="rounded-xl bg-amber-400 px-5 py-3 text-base font-semibold text-zinc-950 hover:bg-amber-300"
           >
-            Make my ad
+            See pricing
           </Link>
           <Link
             href="#ads"
@@ -174,16 +152,6 @@ export default function LandingPage() {
         </div>
         <p className="mt-3 text-sm text-zinc-500">No contract. Cancel any time.</p>
 
-        <div className="mt-8 flex flex-wrap gap-2">
-          {FOR_WHOM.map((w) => (
-            <span
-              key={w}
-              className="rounded-full border border-white/10 bg-white/[0.03] px-3 py-1 text-sm text-zinc-400"
-            >
-              {w}
-            </span>
-          ))}
-        </div>
       </section>
 
       <section id="ads" className="mx-auto w-full max-w-5xl scroll-mt-6 px-6 pb-16">
@@ -216,6 +184,11 @@ export default function LandingPage() {
         </p>
       </section>
 
+      <section id="pricing" className="mx-auto w-full max-w-5xl scroll-mt-6 px-6 pb-16">
+        <h2 className="mb-5 text-2xl font-semibold tracking-tight">Simple pricing</h2>
+        <CostSimulator ctaHref="/signup" />
+      </section>
+
       <section className="mx-auto w-full max-w-5xl px-6 pb-16">
         <div className="rounded-xl border border-white/10 bg-white/[0.02] p-6">
           <h2 className="text-xl font-semibold tracking-tight">What is AdVault?</h2>
@@ -241,66 +214,6 @@ export default function LandingPage() {
               <CardDescription>{step.body}</CardDescription>
             </Card>
           ))}
-        </div>
-      </section>
-
-      <section id="pricing" className="mx-auto w-full max-w-5xl scroll-mt-6 px-6 pb-16">
-        <h2 className="text-2xl font-semibold tracking-tight">Simple pricing</h2>
-        <p className="mt-2 mb-5 text-sm text-zinc-400">
-          From $55 a month: the $20 plan plus your monthly ad budget (from $35), recharged each month; change it
-          anytime; 100% of the budget goes to Google. No setup fee, no contract. Or pay just once.
-        </p>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Card className="border-amber-400/20 bg-amber-400/[0.04]">
-            <CardDescription>First month</CardDescription>
-            <p className="mt-2 text-4xl font-semibold tracking-tight">
-              $55 <span className="text-base font-normal text-zinc-400">to start</span>
-            </p>
-            <p className="mt-3 text-sm text-zinc-400">
-              Your ad $10 (made once: script, voiceover, captions, both video formats) + your website $10 + the
-              AdVault plan $0 (first month included) + your ad budget from $35, 100% to Google. A new ad later is
-              $10 too.
-            </p>
-          </Card>
-          <Card className="border-amber-400/20 bg-amber-400/[0.04]">
-            <CardDescription>Every month after: Keep it running (recommended)</CardDescription>
-            <p className="mt-2 text-4xl font-semibold tracking-tight">
-              from $55 <span className="text-base font-normal text-zinc-400">a month while your ad runs</span>
-            </p>
-            <p className="mt-3 text-sm text-zinc-400">
-              The AdVault plan $20 + your monthly ad budget (from $35), recharged automatically, 100% to Google;
-              change it anytime. Your website stays included. Stop renewing anytime in one click. Pause anytime: no
-              fee and no recharge while paused. Unused budget stays in your account and is refunded if you leave.
-            </p>
-          </Card>
-        </div>
-        <Card className="mt-4">
-          <CardDescription>Or: Just this once</CardDescription>
-          <p className="mt-2 text-sm text-zinc-300">
-            One payment. No renewals. Your ad stops when the budget runs out. The same first payment (your ad, your
-            website and your ad budget), no plan. Your AdVault-made website stays live with a year of Pro.
-          </p>
-        </Card>
-        <Card className="mt-4">
-          <CardDescription>What you pay</CardDescription>
-          <PlanPriceLines className="mt-3" addMoreHref="/signup" />
-        </Card>
-        <Card className="mt-4">
-          <CardDescription>When your ad shows</CardDescription>
-          <p className="mt-2 text-sm text-zinc-300">
-            With a $35 monthly budget, your ad is shown about {SHOWN} times each month to people near you. {TIMING}
-          </p>
-        </Card>
-        <ul className="mt-6 grid gap-2 text-sm text-zinc-300 sm:grid-cols-2">
-          {INCLUDED.map((item) => (
-            <li key={item} className="flex gap-2">
-              <span className="text-emerald-400">✓</span>
-              {item}
-            </li>
-          ))}
-        </ul>
-        <div className="mt-8">
-          <CostSimulator ctaHref="/signup" />
         </div>
       </section>
 
