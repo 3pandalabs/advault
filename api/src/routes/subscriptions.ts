@@ -27,7 +27,9 @@ import {
   changeMonthlyAdBudget,
   firstMonthAvailable,
   hasRunningAd,
+  planChoiceFor,
   planTermsFor,
+  setPlanChoice,
   syncPlanBillingForUser,
 } from "../lib/planBilling/index.js";
 import { PLAN_FOLLOWS_RUNNING_LINE } from "../lib/planBilling/policy.js";
@@ -114,6 +116,8 @@ export async function subscriptionRoutes(app: FastifyInstance) {
       const plan = {
         firstMonthAvailable: await firstMonthAvailable(req.userId!),
         adRunning: await hasRunningAd(req.userId!),
+        // "Keep it running" or "Just this once" (0041).
+        choice: await planChoiceFor(req.userId!),
       };
       if (!sub) return { subscription: null, entitled: false, plan };
 
@@ -279,12 +283,22 @@ export async function subscriptionRoutes(app: FastifyInstance) {
             .set({ providerRef: checkout.providerRef, updatedAt: new Date() })
             .where(eq(subscriptions.id, created.subscription.id));
 
+          // Choosing the plan is choosing "Keep it running".
+          if (plan.line === PLAN_FOLLOWS_RUNNING_LINE) {
+            await db.update(users).set({ planChoice: "monthly" }).where(eq(users.id, req.userId!));
+          }
+
           return reply.code(201).send({
             subscriptionId: created.subscription.id,
             invoiceId: created.invoice.id,
             firstMonthIncluded,
             amountMinor,
             budgetRechargeMinor: terms.budgetRechargeMinor,
+            // For "Renews at $X/month from <date>. Cancel anytime in one click."
+            // (today's charge is $0 with the included month, else the first month).
+            chargedTodayMinor: firstMonthIncluded ? 0 : amountMinor + terms.budgetRechargeMinor,
+            renewalMinor: amountMinor + terms.budgetRechargeMinor,
+            renewsOn: firstMonthIncluded ? created.subscription.includedUntil : created.subscription.currentPeriodEnd,
             provider: provider.name,
             redirectUrl: checkout.redirectUrl,
             clientPayload: checkout.clientPayload,
@@ -325,6 +339,21 @@ export async function subscriptionRoutes(app: FastifyInstance) {
           cancelAtPeriodEnd: updated?.cancelAtPeriodEnd,
           servesUntil: updated?.currentPeriodEnd,
         };
+      },
+    );
+
+    // "Keep it running" vs "Just this once" / "Stop renewing" (0041). 'once'
+    // stops a live plan at the end of its paid period (cancel_at_period_end;
+    // the ad keeps running on its budget until it runs out) and the plan sync
+    // never restarts it. 'monthly' takes a stop back while an ad runs, or
+    // answers checkoutRequired (POST /subscription; charged from day one once
+    // the included month is used).
+    secured.put(
+      "/subscription/choice",
+      { schema: { body: z.object({ choice: z.enum(["monthly", "once"]) }) } },
+      async (req) => {
+        const { choice } = req.body as { choice: "monthly" | "once" };
+        return setPlanChoice(req.userId!, choice);
       },
     );
 

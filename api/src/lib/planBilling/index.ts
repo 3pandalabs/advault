@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, isNotNull, or } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, isNull, or } from "drizzle-orm";
 import { db } from "../../db/index.js";
 import { campaigns, subscriptions, users } from "../../db/schema.js";
 import { notifyOps } from "../ops/notify.js";
@@ -116,6 +116,14 @@ export async function planTermsFor(
   });
 }
 
+export type PlanChoice = "monthly" | "once";
+
+/** "Keep it running" (monthly, the default) or "Just this once" (users.plan_choice, 0041). */
+export async function planChoiceFor(userId: string): Promise<PlanChoice> {
+  const [u] = await db.select({ c: users.planChoice }).from(users).where(eq(users.id, userId)).limit(1);
+  return u?.c === "once" ? "once" : "monthly";
+}
+
 async function firstMonthUsed(userId: string): Promise<boolean> {
   const [u] = await db
     .select({ at: users.planFirstMonthUsedAt })
@@ -141,6 +149,7 @@ export async function planGateFor(userId: string, now = new Date()): Promise<Pla
   const sub = await liveSubscriptionFor(userId);
   return planGate({
     exempt: who.exempt,
+    oneTime: (await planChoiceFor(userId)) === "once",
     sub: asPlanSub(sub),
     firstMonthUsed: await firstMonthUsed(userId),
     buysMedia: (line) => buysMedia(line as ProductLine),
@@ -151,7 +160,12 @@ export async function planGateFor(userId: string, now = new Date()): Promise<Pla
 /** May an automatic restart (a top-up) switch an ad back on? DB only (the renderer calls it). */
 export async function planAllowsRunningFor(userId: string, now = new Date()): Promise<boolean> {
   const who = await billingIdentity(userId);
-  return planAllowsRunning({ exempt: who.exempt, sub: asPlanSub(await liveSubscriptionFor(userId)), now });
+  return planAllowsRunning({
+    exempt: who.exempt,
+    oneTime: (await planChoiceFor(userId)) === "once",
+    sub: asPlanSub(await liveSubscriptionFor(userId)),
+    now,
+  });
 }
 
 /**
@@ -163,6 +177,12 @@ export async function planAllowsRunningFor(userId: string, now = new Date()): Pr
  */
 export async function ensurePlanForRunning(userId: string, now = new Date()): Promise<PlanGate & { restarted?: boolean }> {
   const gate = await planGateFor(userId, now);
+  // "Just this once": the first launch uses up the included month, so a
+  // later switch to Keep it running charges from day one (stated in the UI).
+  if (gate.ok && (await planChoiceFor(userId)) === "once") {
+    await db.update(users).set({ planFirstMonthUsedAt: now }).where(and(eq(users.id, userId), isNull(users.planFirstMonthUsedAt)));
+    return gate;
+  }
   if (gate.ok || gate.error !== "plan_required" || gate.firstMonthIncluded) return gate;
   const r = await restartPlanOffSession(userId, now);
   if (r.ok) return { ok: true, restarted: true };
@@ -284,6 +304,40 @@ export async function changeMonthlyAdBudget(userId: string, amountMinor: number)
     await db.update(subscriptions).set({ budgetRechargeMinor: amountMinor }).where(eq(subscriptions.id, sub.id));
   }
   return { ok: true, budgetRechargeMinor: amountMinor, effectiveFrom: sub.currentPeriodEnd, testMode: false };
+}
+
+export type PlanChoiceResult = {
+  choice: PlanChoice;
+  /** No live plan: Keep it running needs a checkout (POST /subscription). */
+  checkoutRequired: boolean;
+  /** The live plan, if any: renews on currentPeriodEnd unless cancelAtPeriodEnd. */
+  renews: boolean;
+  servesUntil: Date | null;
+};
+
+/**
+ * "Just this once" / "Stop renewing" vs "Keep it running". 'once' stops a
+ * live plan at the end of its paid period (`cancel_at_period_end`, the same
+ * path as the plan sync; the ad keeps running on its budget) and the sync
+ * never un-stops it. 'monthly' takes a stop back when an ad runs (the sync
+ * decides); with no live plan the caller sends the customer to checkout,
+ * which charges from day one once the included month is used.
+ */
+export async function setPlanChoice(userId: string, choice: PlanChoice, now = new Date()): Promise<PlanChoiceResult> {
+  await db.update(users).set({ planChoice: choice }).where(eq(users.id, userId));
+  let sub = await liveSubscriptionFor(userId);
+  if (sub && sub.line === PLAN_FOLLOWS_RUNNING_LINE && (sub.status === "active" || sub.status === "past_due")) {
+    if (choice === "once" && !sub.cancelAtPeriodEnd) await stopAtPeriodEnd(sub);
+    if (choice === "monthly") await syncPlanBillingForUser(userId, now);
+    sub = await liveSubscriptionFor(userId);
+  }
+  const live = !!sub && (sub.status === "active" || sub.status === "past_due");
+  return {
+    choice,
+    checkoutRequired: choice === "monthly" && !live,
+    renews: live && !sub!.cancelAtPeriodEnd,
+    servesUntil: live ? sub!.currentPeriodEnd : null,
+  };
 }
 
 export type RestartResult =
@@ -421,7 +475,13 @@ async function syncOnce(userId: string, now: Date): Promise<PlanSyncResult> {
     waitingForBudget: planRecharges && (await hasAdWaitingForBudget(userId, now)),
     planRecharges,
   });
-  const action = planBillingAction({ exempt: who.exempt, running, sub: asPlanSub(sub), now });
+  const action = planBillingAction({
+    exempt: who.exempt,
+    running,
+    sub: asPlanSub(sub),
+    now,
+    oneTime: (await planChoiceFor(userId)) === "once",
+  });
 
   switch (action.kind) {
     case "none":

@@ -547,6 +547,95 @@ describe("from $55 a month: the customer chooses the monthly ad budget", () => {
   });
 });
 
+describe("Just this once, and Stop renewing", () => {
+  const choose = (userId: string, choice: "monthly" | "once") =>
+    app.inject({ method: "PUT", url: "/subscription/choice", headers: { "x-test-user": userId }, payload: { choice } });
+  const subCount = async (userId: string) =>
+    (await pg.query<{ n: number }>(`select count(*)::int as n from subscriptions where user_id = $1`, [userId])).rows[0]!.n;
+
+  it("a one-time launch creates no subscription and uses up the included month", async () => {
+    const userId = await newUser("once@x.test");
+    const accountId = await account(userId);
+    await campaign(userId, accountId, "ready");
+    expect((await choose(userId, "once")).json()).toMatchObject({ choice: "once", checkoutRequired: false, renews: false });
+    expect(await plan.planGateFor(userId)).toEqual({ ok: true });
+    // Launch / resume go through this gate.
+    expect(await plan.ensurePlanForRunning(userId)).toEqual({ ok: true });
+    expect(await subCount(userId)).toBe(0);
+    expect(holder.createCheckout).not.toHaveBeenCalled();
+    expect(holder.restart).not.toHaveBeenCalled();
+    expect(await plan.firstMonthAvailable(userId)).toBe(false);
+  });
+
+  it("a one-time ad is never paused or billed for lacking a plan", async () => {
+    const userId = await newUser("once-run@x.test");
+    const accountId = await account(userId);
+    await choose(userId, "once");
+    await campaign(userId, accountId, "live");
+    expect(await plan.syncPlanBillingForUser(userId)).toMatchObject({ action: "none", reason: "one_time" });
+    expect(holder.restart).not.toHaveBeenCalled();
+    // The top-up auto-restart (renderer) may switch it back on.
+    expect(await plan.planAllowsRunningFor(userId)).toBe(true);
+    expect(await subCount(userId)).toBe(0);
+  });
+
+  it("switching a one-timer to Keep it running starts billing today (no second included month)", async () => {
+    const userId = await newUser("once-up@x.test");
+    const accountId = await account(userId);
+    await campaign(userId, accountId, "live");
+    await choose(userId, "once");
+    await plan.ensurePlanForRunning(userId);
+    expect((await choose(userId, "monthly")).json()).toMatchObject({ choice: "monthly", checkoutRequired: true });
+    const res = await app.inject({
+      method: "POST",
+      url: "/subscription",
+      headers: { "x-test-user": userId },
+      payload: { planKey: "us-evergreen", adBudgetMinor: 5_000 },
+    });
+    expect(res.statusCode).toBe(201);
+    expect(res.json()).toMatchObject({ firstMonthIncluded: false, amountMinor: 2000, budgetRechargeMinor: 5000, chargedTodayMinor: 7000, renewalMinor: 7000 });
+    expect((holder.createCheckout.mock.calls.at(-1)![0] as { trialEnd: Date | null }).trialEnd).toBeNull();
+    expect((await invoices(userId)).at(-1)).toMatchObject({ amount_minor: 2000, budget_minor: 5000 });
+    const c = await pg.query<{ c: string }>(`select plan_choice as c from users where id = $1`, [userId]);
+    expect(c.rows[0]!.c).toBe("monthly");
+  });
+
+  it("a monthly checkout says when it renews and at how much", async () => {
+    const userId = await newUser("renewline@x.test");
+    const res = await app.inject({
+      method: "POST",
+      url: "/subscription",
+      headers: { "x-test-user": userId },
+      payload: { planKey: "us-evergreen", adBudgetMinor: 10_000 },
+    });
+    const body = res.json() as { renewsOn: string; renewalMinor: number; chargedTodayMinor: number };
+    expect(body).toMatchObject({ firstMonthIncluded: true, chargedTodayMinor: 0, renewalMinor: 12_000 });
+    const days = (new Date(body.renewsOn).getTime() - Date.now()) / 86_400_000;
+    expect(days).toBeGreaterThan(27);
+    expect(days).toBeLessThan(32);
+  });
+
+  it("Stop renewing stops the plan at period end even with an ad running, and the sync never takes it back", async () => {
+    const { userId, accountId } = await startIncluded("stop@x.test");
+    await campaign(userId, accountId, "live");
+    await plan.syncPlanBillingForUser(userId);
+    expect((await subRows(userId))[0]!.cancel_at_period_end).toBe(false);
+    holder.setCancel.mockClear();
+
+    const res = await choose(userId, "once");
+    expect(res.json()).toMatchObject({ choice: "once", renews: false, servesUntil: expect.any(String) });
+    expect(holder.setCancel).toHaveBeenCalledWith("sub_1", true);
+    expect((await subRows(userId))[0]!.cancel_at_period_end).toBe(true);
+    expect(await plan.syncPlanBillingForUser(userId)).toMatchObject({ action: "none", reason: "one_time" });
+    expect((await subRows(userId))[0]!.cancel_at_period_end).toBe(true);
+
+    // Keep it running again, inside the paid period: the stop is taken back, no new charge.
+    expect((await choose(userId, "monthly")).json()).toMatchObject({ choice: "monthly", renews: true, checkoutRequired: false });
+    expect(holder.setCancel).toHaveBeenLastCalledWith("sub_1", false);
+    expect(holder.restart).not.toHaveBeenCalled();
+  });
+});
+
 describe("billing follows running state", () => {
   it("stops at period end when no ad runs, idempotently, then un-cancels when one runs again", async () => {
     const { userId, accountId } = await startIncluded("follow@x.test");

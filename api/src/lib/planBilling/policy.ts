@@ -72,6 +72,8 @@ export function planBillingAction(args: {
   running: boolean;
   sub: PlanSub;
   now: Date;
+  /** "Just this once": never start, restart or un-stop a plan; only stop one. */
+  oneTime?: boolean;
 }): PlanBillingAction {
   const { sub, running, now } = args;
   if (args.exempt) return { kind: "none", reason: "exempt" };
@@ -79,6 +81,13 @@ export function planBillingAction(args: {
   // A checkout is open; its webhook decides.
   if (sub?.status === "pending") return { kind: "none", reason: "checkout_in_progress" };
   const live = !!sub && (sub.status === "active" || sub.status === "past_due");
+
+  // A one-time customer (or one who pressed "Stop renewing") runs on the ad
+  // budget alone: a plan still in its paid period just runs out.
+  if (args.oneTime) {
+    if (live && !sub!.cancelAtPeriodEnd) return { kind: "stop_at_period_end" };
+    return { kind: "none", reason: "one_time" };
+  }
 
   if (!running) {
     if (live && !sub!.cancelAtPeriodEnd) return { kind: "stop_at_period_end" };
@@ -115,8 +124,10 @@ export function planGate(args: {
   firstMonthUsed: boolean;
   buysMedia: (line: string) => boolean;
   now: Date;
+  /** "Just this once": no plan needed; the wallet gates still apply. */
+  oneTime?: boolean;
 }): PlanGate {
-  if (args.exempt) return { ok: true };
+  if (args.exempt || args.oneTime) return { ok: true };
   const { sub } = args;
   if (sub && planCoversNow(sub, args.now)) {
     return args.buysMedia(sub.line) ? { ok: true } : { ok: false, error: "plan_has_no_ads" };
@@ -177,8 +188,8 @@ export function adWantsPlan(args: { running: boolean; waitingForBudget: boolean;
 }
 
 /** May an automatic restart (top-up) switch an ad back on? Only with a plan that covers now. */
-export function planAllowsRunning(args: { exempt: boolean; sub: PlanSub; now: Date }): boolean {
-  return args.exempt || planCoversNow(args.sub, args.now);
+export function planAllowsRunning(args: { exempt: boolean; sub: PlanSub; now: Date; oneTime?: boolean }): boolean {
+  return args.exempt || !!args.oneTime || planCoversNow(args.sub, args.now);
 }
 
 /** The 402 body for a refused gate (launch and resume answer the same shape). */

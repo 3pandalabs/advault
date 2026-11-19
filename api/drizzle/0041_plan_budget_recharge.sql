@@ -17,6 +17,14 @@
 --                                       is the fee and budget_minor becomes a
 --                                       wallet top-up (external ref
 --                                       sub:<invoice>:budget, once per invoice).
+--
+-- users.plan_choice                     "Keep it running" ('monthly', the
+--                                       default) or "Just this once"
+--                                       ('once'): no plan, no recharge, the ad
+--                                       runs on its budget until it runs out.
+--                                       Plan gates let a 'once' account run;
+--                                       the plan sync never restarts or
+--                                       un-stops a plan for it.
 -- Idempotent.
 
 ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS budget_recharge_minor integer NOT NULL DEFAULT 0;
@@ -30,3 +38,9 @@ ALTER TABLE subscriptions ADD CONSTRAINT subscriptions_budget_recharge_check CHE
 ALTER TABLE subscription_invoices DROP CONSTRAINT IF EXISTS sub_invoices_budget_check;
 --> statement-breakpoint
 ALTER TABLE subscription_invoices ADD CONSTRAINT sub_invoices_budget_check CHECK (budget_minor >= 0);
+--> statement-breakpoint
+ALTER TABLE users ADD COLUMN IF NOT EXISTS plan_choice text NOT NULL DEFAULT 'monthly';
+--> statement-breakpoint
+ALTER TABLE users DROP CONSTRAINT IF EXISTS users_plan_choice_check;
+--> statement-breakpoint
+ALTER TABLE users ADD CONSTRAINT users_plan_choice_check CHECK (plan_choice IN ('monthly', 'once'));

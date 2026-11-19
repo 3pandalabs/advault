@@ -70,6 +70,10 @@ export const users = pgTable(
     // The plan's included first month (0038, lib/planBilling): set when
     // it was used. NULL = this account's next plan starts with a free month.
     planFirstMonthUsedAt: timestamp("plan_first_month_used_at", { withTimezone: true }),
+    // "Keep it running" ('monthly') or "Just this once" ('once', 0041): a
+    // one-time customer has no plan and no recharge; the ad runs on its
+    // budget until it runs out (lib/planBilling).
+    planChoice: text("plan_choice").notNull().default("monthly"),
 
     // Set when the user deleted their account (lib/accountDeletion.ts). The row
     // is kept, anonymised, because the financial records point at it.

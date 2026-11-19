@@ -155,3 +155,24 @@ describe("$55 a month: what keeps the plan billing", () => {
     expect(adWantsPlan({ running: false, waitingForBudget: false, planRecharges: true })).toBe(false);
   });
 });
+
+describe("Just this once", () => {
+  const now = new Date("2026-11-19T12:00:00Z");
+  const later = new Date("2026-12-19T12:00:00Z");
+  const live = { line: "evergreen", status: "active", cancelAtPeriodEnd: false, currentPeriodEnd: later };
+
+  it("needs no plan to launch or keep running", () => {
+    const g = { exempt: false, sub: null, firstMonthUsed: true, buysMedia: () => true, now };
+    expect(planGate({ ...g, oneTime: true })).toEqual({ ok: true });
+    expect(planGate(g)).toMatchObject({ ok: false, error: "plan_required" });
+    expect(planAllowsRunning({ exempt: false, sub: null, now, oneTime: true })).toBe(true);
+  });
+
+  it("never starts, restarts or un-stops a plan; only lets a live one run out", () => {
+    expect(planBillingAction({ exempt: false, running: true, sub: null, now, oneTime: true })).toEqual({ kind: "none", reason: "one_time" });
+    expect(planBillingAction({ exempt: false, running: true, sub: live, now, oneTime: true })).toEqual({ kind: "stop_at_period_end" });
+    expect(
+      planBillingAction({ exempt: false, running: true, sub: { ...live, cancelAtPeriodEnd: true }, now, oneTime: true }),
+    ).toEqual({ kind: "none", reason: "one_time" });
+  });
+});

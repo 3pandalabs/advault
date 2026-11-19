@@ -802,6 +802,22 @@ amounts.
   price** on the "AdVault ad budget" product. Missing ids fall back to
   inline prices (checkout) or the previous subscription's products (restart),
   so nothing breaks before the owner creates them.
+- **"Just this once"** (`users.plan_choice` 'once', 0041; `PUT
+  /subscription/choice`): same payment today ($10 ad, $10 website, the
+  budget as an ordinary top-up), NO Stripe subscription, no plan, no
+  recharge; the ad runs until its budget runs out. `planGate` /
+  `planAllowsRunning` let a 'once' account run (the wallet gates still
+  apply); `planBillingAction` never starts, restarts or un-stops a plan for
+  it, only lets a live one run out. The first one-time launch uses up the
+  included month (`ensurePlanForRunning`), so switching to Keep it running
+  later (`PUT /subscription/choice {monthly}` -> `POST /subscription`)
+  charges $20 + the budget that day. **"Stop renewing"** on the subscription
+  page is the same choice: 'once' sets `cancel_at_period_end` (the plan
+  sync's own stop path) even while an ad runs, and the ad keeps running on
+  its budget. 'monthly' inside the paid period takes the stop back (the sync
+  un-stops it while an ad runs). The AdVault-made website keeps the old rule
+  for one-timers: a year of Pro from the $10. Renewal reminder emails: not
+  built (no mailer domain for AdVault).
 - **Website included while the plan runs** (`lib/sitePlanCover`): the plan
   sweep asks SiteVault (`POST /api/internal/sites/<slug>/plan-cover`
   `{until, ref}`) to keep the AdVault-made site on Pro until the plan's paid
