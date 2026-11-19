@@ -21,12 +21,15 @@ export function TopUpPicker({
   mode = "pay",
   value,
   onChange,
+  showEstimate = true,
 }: {
   currency: string;
   campaignId?: string;
   mode?: "pay" | "choose";
   value?: number;
   onChange?: (cents: number) => void;
+  /** False when the caller shows the times-shown estimate itself (CostSimulator). */
+  showEstimate?: boolean;
 }) {
   const presets = topupPresets(currency);
   const min = minTopupCents(currency);
@@ -137,7 +140,7 @@ export function TopUpPicker({
         <p className="mt-1.5 text-xs text-red-300">The smallest top-up is {formatMoney(min, currency)}.</p>
       )}
 
-      {valid && amount !== null && (() => {
+      {showEstimate && valid && amount !== null && (() => {
         // One line, for THIS amount (owner, 2026-11-19): times shown only.
         const est = timesShownEstimate(amount, currency);
         const n = (x: number) => x.toLocaleString("en-US");
