@@ -143,7 +143,11 @@ export function TopUpPicker({
         const n = (x: number) => x.toLocaleString("en-US");
         return (
           <p className="mt-3 text-sm text-zinc-300">
-            Your ad would be shown about {n(est.low)}–{n(est.high)} times to people in your area.
+            Your ad would be shown about{" "}
+            <span key={amount} className="estimate-flash font-semibold text-amber-300">
+              {n(est.low)}–{n(est.high)}
+            </span>{" "}
+            times to people in your area.
           </p>
         );
       })()}
