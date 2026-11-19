@@ -904,7 +904,7 @@ export default function CampaignDetailPage({
       {usesWallet && <AdBudgetCard campaign={campaign} wallet={wallet} />}
 
       {planPrompt && (
-        <Card className="mt-2 mb-4 border-amber-400/30">
+        <Card id="plan-choice" className="mt-2 mb-4 scroll-mt-6 border-amber-400/30">
           <CardTitle>How should your ad run?</CardTitle>
           <div className="mt-3 space-y-2" role="radiogroup" aria-label="How should your ad run?">
             <label
@@ -1141,6 +1141,24 @@ export default function CampaignDetailPage({
                 </Button>
               ))}
             </div>
+            {/* Feedback right under the button: the page-top banners are
+                off-screen from here, so a click looked like it did nothing. */}
+            {!logo && (
+              <p className="mt-2 text-xs text-zinc-400">Add a square logo above to {isTestCustomer ? "do a dry run" : "launch"}.</p>
+            )}
+            {error && (
+              <p className="mt-3 rounded-lg border border-red-400/30 bg-red-400/10 px-3 py-2 text-sm text-red-200">{error}</p>
+            )}
+            {launchNote && (
+              <p className="mt-3 rounded-lg border border-emerald-400/30 bg-emerald-400/10 px-3 py-2 text-sm text-emerald-200">
+                {launchNote}
+              </p>
+            )}
+            {planPrompt && (
+              <p className="mt-3 text-sm text-amber-200">
+                <a href="#plan-choice" className="underline underline-offset-2">Choose how your ad runs</a> first, then press the button again.
+              </p>
+            )}
           </>
         )}
       </Card>
