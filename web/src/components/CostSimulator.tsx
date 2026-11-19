@@ -127,6 +127,14 @@ export function CostSimulator({
       )}
 
       <div className={bare ? "" : "mt-5"}>
+        <p className="mb-2 text-sm font-medium text-zinc-300">How do you want to pay?</p>
+        <div className="flex flex-col gap-2 sm:flex-row" role="group" aria-label="How often">
+          <Choice active={monthly} onClick={() => setMonthly(true)} label="Every month" sub="Recommended. Cancel anytime." />
+          <Choice active={!monthly} onClick={() => setMonthly(false)} label="Just this once" sub="One payment. No renewals." />
+        </div>
+      </div>
+
+      <div className="mt-5">
         <p className="mb-2 text-sm font-medium text-zinc-300">{monthly ? "Your monthly ad budget" : "Your ad budget"}</p>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <TopUpPicker mode="choose" currency={CURRENCY} value={budget} onChange={setBudget} showEstimate={false} />
@@ -151,13 +159,10 @@ export function CostSimulator({
         <Toggle checked={website} onChange={setWebsite} label="Also make me a website" />
       </div>
 
-      <div className="mt-4 flex flex-col gap-2 sm:flex-row" role="group" aria-label="How often">
-        <Choice active={monthly} onClick={() => setMonthly(true)} label="Every month" sub="Recommended. Cancel anytime." />
-        <Choice active={!monthly} onClick={() => setMonthly(false)} label="Just this once" sub="One payment. No renewals." />
-      </div>
 
-      <div className="mt-5 grid gap-3 sm:grid-cols-2">
-        <Column title="First month" total={firstMonth.totalTodayCents}>
+      <p className="mt-6 mb-2 text-sm font-medium text-zinc-300">What you pay</p>
+      <div className={`grid gap-3 ${monthly ? "sm:grid-cols-2" : ""}`}>
+        <Column title={monthly ? "First month" : "You pay once"} total={firstMonth.totalTodayCents}>
           <Line label="Your ad" amount={money(firstMonth.adCents)} note="Made once" />
           {website && (
             <Line
@@ -185,11 +190,7 @@ export function CostSimulator({
               flash
             />
           </Column>
-        ) : (
-          <Column title="Every month after" total={0}>
-            <Line label="Nothing more" amount={money(0)} note="Your ad stops when the budget runs out." />
-          </Column>
-        )}
+        ) : null}
       </div>
       <p className="mt-2 text-xs text-zinc-400">
         {monthly
