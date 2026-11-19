@@ -6,7 +6,6 @@ import { Button } from "@/components/ui/button";
 import { TopUpPicker } from "@/components/TopUpPicker";
 import { timesShownEstimate } from "@/lib/budget";
 import { MIN_AD_BUDGET_CENTS, monthlyBreakdown } from "@/lib/prices";
-import { ADD_MORE_LINE, googleMinimumSentence, spreadSentence } from "@/lib/spread";
 import { formatMoney } from "@/lib/utils";
 
 // "What will this cost?" (owner, 2026-11-19, "from $55 a month"): month one
@@ -101,7 +100,7 @@ export function CostSimulator({
   title?: string;
   /** No card border or title, for use inside another card. */
   bare?: boolean;
-  /** Where "Add to your ad budget anytime" links (logged in); no link when absent. */
+  /** Where "Add a one-time top-up anytime" links (logged in); no link when absent. */
   addMoreHref?: string;
 }) {
   const [budget, setBudget] = useState(MIN_AD_BUDGET_CENTS);
@@ -192,33 +191,16 @@ export function CostSimulator({
           </Column>
         ) : null}
       </div>
-      <p className="mt-2 text-xs text-zinc-400">
+      <p className="mt-3 text-sm text-zinc-300 sm:text-base">
         {monthly
-          ? "Change your monthly ad budget anytime. Want it shown more this month? Add a one-time top-up anytime."
-          : "One payment. No renewals. Your ad stops when the budget runs out. Want it shown more? Add a one-time top-up anytime."}
-      </p>
-
-      <p className="mt-4 text-base text-zinc-200">
-        Your ad is shown about{" "}
-        <span key={budget} className="estimate-flash font-semibold text-amber-300">
-          {n(est.low)}–{n(est.high)}
-        </span>{" "}
-        times {monthly ? "each month" : "in all"} to people near you.
-      </p>
-      <p className="mt-2 text-sm text-zinc-300">
-        {googleMinimumSentence(budget)}{" "}
-        <span key={`spread-${budget}`} className="estimate-flash font-medium text-amber-200">
-          {spreadSentence(budget)}
-        </span>{" "}
-        More budget means more days.
-      </p>
-      <p className="mt-2 text-sm">
+          ? "Change your monthly ad budget anytime. Want it shown more this month? "
+          : "One payment. No renewals. Your ad stops when the budget runs out. Want it shown more? "}
         {addMoreHref ? (
           <Link href={addMoreHref} className="text-amber-300 underline-offset-2 hover:underline">
-            {ADD_MORE_LINE}
+            Add a one-time top-up anytime.
           </Link>
         ) : (
-          <span className="text-zinc-400">{ADD_MORE_LINE}</span>
+          "Add a one-time top-up anytime."
         )}
       </p>
 
