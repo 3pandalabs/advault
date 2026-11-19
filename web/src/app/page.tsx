@@ -72,7 +72,7 @@ const FAQ = [
   },
   {
     q: "How often will my ad be shown?",
-    a: "For $35 (about a week at $5 a day) we estimate your ad is shown 6,000 to 11,500 times to people near you, with roughly 18 to 70 clicks, depending on your area. It's an estimate, not a guarantee. Your results screen shows the real numbers.",
+    a: "For $35 (about a week at $5 a day) we estimate your ad is shown 6,000 to 11,500 times to people near you, depending on your area. It's an estimate, not a guarantee. Your results screen shows the real numbers.",
   },
   {
     q: "Is there a contract?",

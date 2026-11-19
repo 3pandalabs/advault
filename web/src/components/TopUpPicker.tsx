@@ -4,7 +4,7 @@ import { useState } from "react";
 import { ApiError, topUp } from "@/lib/api/browser";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { daysOfBudget, aboutDays, minTopupCents, topupEstimate, topupPresets } from "@/lib/budget";
+import { minTopupCents, timesShownEstimate, topupPresets } from "@/lib/budget";
 import { formatMoney, parseDollarsToCents } from "@/lib/utils";
 
 /**
@@ -17,18 +17,12 @@ import { formatMoney, parseDollarsToCents } from "@/lib/utils";
  */
 export function TopUpPicker({
   currency,
-  dailyCents,
-  balanceCents = 0,
   campaignId,
   mode = "pay",
   value,
   onChange,
 }: {
   currency: string;
-  /** The rate the estimate uses; 0 hides it. */
-  dailyCents: number;
-  /** Money already in the budget, added to the estimate. */
-  balanceCents?: number;
   campaignId?: string;
   mode?: "pay" | "choose";
   value?: number;
@@ -83,8 +77,6 @@ export function TopUpPicker({
     }
   }
 
-  const total = (amount ?? 0) + Math.max(balanceCents, 0);
-  const days = valid && dailyCents > 0 ? daysOfBudget(total, dailyCents) : 0;
 
   return (
     <div>
@@ -143,24 +135,14 @@ export function TopUpPicker({
         <p className="mt-1.5 text-xs text-red-300">The smallest top-up is {formatMoney(min, currency)}.</p>
       )}
 
-      {days > 0 && amount !== null && (() => {
-        // Estimate for THIS amount (shown / clicks); days use the whole budget.
-        const est = topupEstimate(amount, dailyCents, currency);
+      {valid && amount !== null && (() => {
+        // One line, for THIS amount (owner, 2026-11-19): times shown only.
+        const est = timesShownEstimate(amount, currency);
         const n = (x: number) => x.toLocaleString("en-US");
         return (
-          <div className="mt-3 text-sm text-zinc-300">
-            <p>
-              {balanceCents > 0
-                ? `That makes ${formatMoney(total, currency)}: ${aboutDays(days)} at ${formatMoney(dailyCents, currency)} a day.`
-                : `${aboutDays(days).replace(/^a/, "A")} at ${formatMoney(dailyCents, currency)} a day.`}{" "}
-              {balanceCents > 0 ? `For the ${formatMoney(amount, currency)} you add, your` : "Your"} ad would be
-              shown about {n(est.shownLow)}–{n(est.shownHigh)} times to people in your area, with roughly{" "}
-              {n(est.clicks.low)}–{n(est.clicks.high)} clicks.
-            </p>
-            <p className="mt-1 text-xs text-zinc-400">
-              An estimate, not a promise. Real numbers show up on your results screen.
-            </p>
-          </div>
+          <p className="mt-3 text-sm text-zinc-300">
+            Your ad would be shown about {n(est.low)}–{n(est.high)} times to people in your area.
+          </p>
         );
       })()}
 

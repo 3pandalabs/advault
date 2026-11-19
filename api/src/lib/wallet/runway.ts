@@ -117,34 +117,3 @@ export function campaignsToResume<T extends { dailyMinor: number; endsOn: string
   }
   return out;
 }
-
-// ---------------------------------------------------------------------------
-// The live estimate under the top-up picker (2026-11-19): "About 10 days at $5
-// a day. Your ad would be shown about 8,500-16,500 times to people in your
-// area, with roughly 25-100 clicks." An ESTIMATE, and the UI says so.
-// ---------------------------------------------------------------------------
-
-/**
- * Cost per click range, minor units. 2026 industry ranges for Demand Gen
- * video ads on YouTube ($0.50-$2.00). Placeholder: replace with AdVault's own
- * averages (campaign_daily_metrics) once real campaigns have run.
- * Mirrored in web/src/lib/budget.ts.
- */
-export const CPC_RANGE_MINOR: Record<Currency, { low: number; high: number }> = {
-  USD: { low: 50, high: 200 },
-  INR: { low: 4_000, high: 16_000 },
-};
-
-/** Round a count so it does not look more exact than it is. */
-export function roundCount(n: number): number {
-  if (n < 20) return Math.max(0, Math.round(n));
-  if (n < 200) return Math.round(n / 5) * 5;
-  return Math.round(n / 10) * 10;
-}
-
-/** Clicks a budget plausibly buys: amount / high CPC .. amount / low CPC. */
-export function estimateClicks(amountMinor: number, currency: Currency): { low: number; high: number } {
-  const cpc = CPC_RANGE_MINOR[currency] ?? CPC_RANGE_MINOR.USD;
-  if (amountMinor <= 0) return { low: 0, high: 0 };
-  return { low: roundCount(amountMinor / cpc.high), high: roundCount(amountMinor / cpc.low) };
-}

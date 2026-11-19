@@ -1,17 +1,13 @@
 import { estimateReach, type Currency } from "../pricing/index.js";
-import { daysOfBudget, estimateClicks } from "./runway.js";
 
 /**
- * Everything the top-up picker's estimate line says, for one amount. Times
- * shown is estimateReach() (impressions, from CPM ranges: NOT views and NOT
- * unique people). Mirrored in web/src/lib/budget.ts (topupEstimate).
+ * The one estimate line under the top-up picker (owner, 2026-11-19): "Your ad
+ * would be shown about X–Y times to people in your area." for the chosen
+ * amount. Times shown is estimateReach() (CPM-based impressions, rounded to
+ * 500): NOT views and NOT unique people. No days or clicks in that line.
+ * Mirrored in web/src/lib/budget.ts (timesShownEstimate).
  */
-export function topupEstimate(amountMinor: number, dailyMinor: number, currency: Currency) {
-  const shown = estimateReach(Math.max(amountMinor, 0), currency);
-  return {
-    days: daysOfBudget(amountMinor, dailyMinor),
-    shownLow: shown.low,
-    shownHigh: shown.high,
-    clicks: estimateClicks(amountMinor, currency),
-  };
+export function timesShownEstimate(amountMinor: number, currency: Currency): { low: number; high: number } {
+  const r = estimateReach(Math.max(amountMinor, 0), currency);
+  return { low: r.low, high: r.high };
 }
