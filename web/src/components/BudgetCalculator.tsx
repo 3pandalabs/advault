@@ -55,11 +55,11 @@ export function BudgetCalculator() {
 
   return (
     <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-6 backdrop-blur-sm">
-      <h3 className="text-lg font-semibold">How many views does my budget buy?</h3>
+      <h3 className="text-lg font-semibold">How often will my ad be shown?</h3>
 
       <p className="mt-2 text-sm text-zinc-400">
         Pick a monthly ad budget, from $5 a day — Google&apos;s minimum. We&apos;ll show what it reaches in your neighborhood.
- More budget means more views; your ad price stays the same.
+ More budget means your ad is shown more; your ad price stays the same.
       </p>
 
       <div className="mt-5 flex flex-wrap gap-2">
@@ -90,11 +90,11 @@ export function BudgetCalculator() {
       ) : est ? (
         <div className="mt-6 grid gap-4 sm:grid-cols-2">
           <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4">
-            <p className="text-xs tracking-wide text-zinc-500 uppercase">Estimated monthly reach</p>
+            <p className="text-xs tracking-wide text-zinc-500 uppercase">Estimated times shown a month</p>
             <p className="mt-1 text-3xl font-semibold text-amber-300">
               {fmt(est.reach.low)}–{fmt(est.reach.high)}
             </p>
-            <p className="mt-1 text-sm text-zinc-400">views near your business</p>
+            <p className="mt-1 text-sm text-zinc-400">to people near your business</p>
           </div>
           <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4">
             <p className="text-xs tracking-wide text-zinc-500 uppercase">You pay monthly</p>

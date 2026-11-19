@@ -71,8 +71,8 @@ const FAQ = [
     a: "You only pay for what Google actually delivers. Unused ad budget stays in your account for your next ad, and if you leave we refund it.",
   },
   {
-    q: "How many people will see my ad?",
-    a: "For one week at $5 a day ($35) we estimate 6,000 to 11,500 local views, depending on your area. It's an estimate, not a guarantee. Your dashboard shows the real numbers.",
+    q: "How often will my ad be shown?",
+    a: "For $35 (about a week at $5 a day) we estimate your ad is shown 6,000 to 11,500 times to people near you, with roughly 18 to 70 clicks, depending on your area. It's an estimate, not a guarantee. Your results screen shows the real numbers.",
   },
   {
     q: "Is there a contract?",

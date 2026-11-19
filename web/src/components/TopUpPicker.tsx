@@ -4,7 +4,7 @@ import { useState } from "react";
 import { ApiError, topUp } from "@/lib/api/browser";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { daysOfBudget, aboutDays, minTopupCents, topupPresets } from "@/lib/budget";
+import { daysOfBudget, aboutDays, minTopupCents, topupEstimate, topupPresets } from "@/lib/budget";
 import { formatMoney, parseDollarsToCents } from "@/lib/utils";
 
 /**
@@ -143,13 +143,26 @@ export function TopUpPicker({
         <p className="mt-1.5 text-xs text-red-300">The smallest top-up is {formatMoney(min, currency)}.</p>
       )}
 
-      {days > 0 && (
-        <p className="mt-3 text-sm text-zinc-300">
-          {balanceCents > 0
-            ? `That makes ${formatMoney(total, currency)}, which lasts ${aboutDays(days)} at ${formatMoney(dailyCents, currency)} a day.`
-            : `Your ${formatMoney(amount!, currency)} lasts ${aboutDays(days)} at ${formatMoney(dailyCents, currency)} a day.`}
-        </p>
-      )}
+      {days > 0 && amount !== null && (() => {
+        // Estimate for THIS amount (shown / clicks); days use the whole budget.
+        const est = topupEstimate(amount, dailyCents, currency);
+        const n = (x: number) => x.toLocaleString("en-US");
+        return (
+          <div className="mt-3 text-sm text-zinc-300">
+            <p>
+              {balanceCents > 0
+                ? `That makes ${formatMoney(total, currency)}: ${aboutDays(days)} at ${formatMoney(dailyCents, currency)} a day.`
+                : `${aboutDays(days).replace(/^a/, "A")} at ${formatMoney(dailyCents, currency)} a day.`}{" "}
+              {balanceCents > 0 ? `For the ${formatMoney(amount, currency)} you add, your` : "Your"} ad would be
+              shown about {n(est.shownLow)}–{n(est.shownHigh)} times to people in your area, with roughly{" "}
+              {n(est.clicks.low)}–{n(est.clicks.high)} clicks.
+            </p>
+            <p className="mt-1 text-xs text-zinc-400">
+              An estimate, not a promise. Real numbers show up on your results screen.
+            </p>
+          </div>
+        );
+      })()}
 
       {mode === "pay" && (
         <div className="mt-4">
