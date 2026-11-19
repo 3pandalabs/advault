@@ -65,7 +65,9 @@ export function CostSimulator({
   bare?: boolean;
 }) {
   const [budget, setBudget] = useState(MIN_AD_BUDGET_CENTS);
-  const [ownVideo, setOwnVideo] = useState(false);
+  // Own-video uploads are paused for customers (CLAUDE.md 2026-11-16), so the
+  // "I'll upload my own video" toggle is hidden. Restore it when they reopen.
+  const ownVideo = false;
   const [website, setWebsite] = useState(false);
 
   const cost = costToday({ adBudgetCents: budget, ownVideo, website, firstMonthIncluded });
@@ -87,7 +89,6 @@ export function CostSimulator({
       </div>
 
       <div className="mt-4 space-y-2">
-        <Toggle checked={ownVideo} onChange={setOwnVideo} label="I'll upload my own video" />
         <Toggle checked={website} onChange={setWebsite} label="Also make me a website" />
       </div>
 
@@ -96,7 +97,7 @@ export function CostSimulator({
           <Line
             label="Your ad"
             amount={money(cost.adCents)}
-            note={ownVideo ? "Your own video: no fee" : "One-time, per ad"}
+            note="One-time, per ad"
           />
           <Line label="Ad budget" amount={money(cost.adBudgetCents)} note="Goes 100% to Google" />
           {website && (
