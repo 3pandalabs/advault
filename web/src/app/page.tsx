@@ -146,7 +146,9 @@ export default function LandingPage() {
           <span className="text-amber-300">$55 a month.</span> We make your ad and your website, and show your
           business about {SHOWN} times to people near you.
         </p>
-        <p className="mt-2 text-sm text-zinc-400">{ADD_MORE_LINE}</p>
+        <p className="mt-2 text-sm text-zinc-400">
+          {spreadSentence(3_500)} {ADD_MORE_LINE}
+        </p>
         <p className="mt-2 text-base text-zinc-300">
           YouTube ads need a website to go live. No website? Don&apos;t worry, we&apos;ve got you covered: we&apos;ll
           build one in minutes while we make your ad.

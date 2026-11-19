@@ -5,7 +5,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { TopUpPicker } from "@/components/TopUpPicker";
 import { timesShownEstimate } from "@/lib/budget";
-import { MIN_AD_BUDGET_CENTS, monthlyBreakdown } from "@/lib/prices";
+import { MIN_AD_BUDGET_CENTS, MONTHLY_AD_BUDGET_CENTS, monthlyBreakdown } from "@/lib/prices";
 import { ADD_MORE_LINE, googleMinimumSentence, spreadSentence } from "@/lib/spread";
 import { formatMoney } from "@/lib/utils";
 
@@ -13,9 +13,11 @@ import { formatMoney } from "@/lib/utils";
 // ad, the website, the plan's included first month and the ad budget) next to
 // every month after (the plan + the ad budget, recharged automatically), with
 // how often the ad is shown and the honest timing: Google's $5-a-day minimum
-// means $35 covers about 7 days of showing, spread across the month by the ad
-// schedule (lib/spread). The budget is never shown as a daily price and never
-// as views. Prices come from lib/prices.
+// means $35 covers about 6 days of showing, about 2 days a week for most of the
+// month (lib/spread). Only $35 is recharged automatically, so "every month
+// after" is always $20 + $35 = $55; a bigger first-month budget shows the
+// extra as a one-time line. The budget is never shown as a daily price and
+// never as views. Prices come from lib/prices.
 
 const CURRENCY = "USD";
 const n = (x: number) => x.toLocaleString("en-US");
@@ -35,14 +37,19 @@ function Toggle({ checked, onChange, label }: { checked: boolean; onChange: (v: 
   );
 }
 
-function Line({ label, amount, note }: { label: string; amount: string; note?: React.ReactNode }) {
+function Line({ label, amount, note, flash }: { label: string; amount: string; note?: React.ReactNode; flash?: boolean }) {
   return (
     <li className="flex items-baseline justify-between gap-3 py-2">
       <span className="min-w-0">
         <span className="text-zinc-200">{label}</span>
         {note ? <span className="block text-xs text-zinc-400">{note}</span> : null}
       </span>
-      <span className="shrink-0 font-medium tabular-nums text-zinc-100">{amount}</span>
+      <span
+        key={flash ? amount : undefined}
+        className={`shrink-0 font-medium tabular-nums text-zinc-100${flash ? " estimate-flash" : ""}`}
+      >
+        {amount}
+      </span>
     </li>
   );
 }
@@ -88,7 +95,17 @@ export function CostSimulator({
   // On by default: the "$55 a month" price includes the website.
   const [website, setWebsite] = useState(true);
 
-  const { firstMonth, everyMonth } = monthlyBreakdown({ adBudgetCents: budget, ownVideo, website, firstMonthIncluded });
+  const { firstMonth } = monthlyBreakdown({ adBudgetCents: budget, ownVideo, website, firstMonthIncluded });
+  // Every month after is always the $35 recharge (the API adds exactly that),
+  // whatever the slider says; anything above it is a one-time first-month extra.
+  const { everyMonth } = monthlyBreakdown({
+    adBudgetCents: MONTHLY_AD_BUDGET_CENTS,
+    ownVideo,
+    website,
+    firstMonthIncluded,
+  });
+  const recurringBudget = Math.min(firstMonth.adBudgetCents, MONTHLY_AD_BUDGET_CENTS);
+  const extraBudget = Math.max(firstMonth.adBudgetCents - MONTHLY_AD_BUDGET_CENTS, 0);
   const est = timesShownEstimate(budget, CURRENCY);
 
   const body = (
@@ -96,12 +113,12 @@ export function CostSimulator({
       {!bare && (
         <>
           <h3 className="text-lg font-semibold">{title}</h3>
-          <p className="mt-2 text-sm text-zinc-400">Pick a monthly ad budget and see exactly what you pay.</p>
+          <p className="mt-2 text-sm text-zinc-400">Pick an ad budget and see exactly what you pay.</p>
         </>
       )}
 
       <div className={bare ? "" : "mt-5"}>
-        <p className="mb-2 text-sm font-medium text-zinc-300">Ad budget each month</p>
+        <p className="mb-2 text-sm font-medium text-zinc-300">Ad budget for your first month</p>
         <TopUpPicker mode="choose" currency={CURRENCY} value={budget} onChange={setBudget} showEstimate={false} />
       </div>
 
@@ -124,13 +141,22 @@ export function CostSimulator({
             amount={money(firstMonth.planTodayCents)}
             note={firstMonthIncluded ? "First month included" : undefined}
           />
-          <Line label="Ad budget" amount={money(firstMonth.adBudgetCents)} note="100% to Google" />
+          <Line label="Ad budget" amount={money(recurringBudget)} note="100% to Google" />
+          {extraBudget > 0 && (
+            <Line
+              label="Extra ad budget (one-time)"
+              amount={money(extraBudget)}
+              note="100% to Google, this month only"
+              flash
+            />
+          )}
         </Column>
         <Column title="Every month after" total={everyMonth.totalCents}>
           <Line label="AdVault plan" amount={money(everyMonth.planCents)} note="Only while your ad runs" />
           <Line label="Ad budget" amount={money(everyMonth.adBudgetCents)} note="100% to Google, recharged automatically" />
         </Column>
       </div>
+      <p className="mt-2 text-xs text-zinc-400">Only $35 is added automatically each month. Add more anytime.</p>
 
       <p className="mt-4 text-base text-zinc-200">
         Your ad is shown about{" "}
