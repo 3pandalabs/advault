@@ -1,5 +1,27 @@
 import { describe, expect, it } from "vitest";
-import { addOnFor, addOnPriceMinor, maybeAddOnFor, freeFirstAd, freeFirstAdPlacesLeft, buysMedia, hasMonthlyOffers, planByKey, PLANS, PRODUCT_LINES } from "./index.js";
+import { addOnFor, addOnPriceMinor, maybeAddOnFor, freeFirstAd, freeFirstAdPlacesLeft, buysMedia, hasMonthlyOffers, planByKey, PLANS, PRODUCT_LINES, adSpendTotalMinor, runEndDate } from "./index.js";
+
+describe("run length", () => {
+  it("totals: 1 week = daily x 7, 2 weeks = x 14, always on = about a month (x 30.4)", () => {
+    expect(adSpendTotalMinor(500, 7)).toBe(3_500);
+    expect(adSpendTotalMinor(500, 14)).toBe(7_000);
+    expect(adSpendTotalMinor(500, null)).toBe(15_200);
+    expect(adSpendTotalMinor(1_234, null)).toBe(37_514); // rounded to the cent
+  });
+
+  it("Keep it running suggests one week at the $5 floor ($35)", () => {
+    const p = planByKey("us-evergreen")!;
+    expect(p.suggestedAdBudgetMinor).toBe(adSpendTotalMinor(p.minDailyBudgetMinor, 7));
+  });
+
+  it("end date = start + days - 1, across month/year ends; null for always on", () => {
+    expect(runEndDate("2026-11-18", 7)).toBe("2026-11-24");
+    expect(runEndDate("2026-11-18", 14)).toBe("2026-12-01");
+    expect(runEndDate("2026-12-28", 7)).toBe("2027-01-03");
+    expect(runEndDate("2026-11-18", null)).toBeNull();
+    expect(() => runEndDate("nope", 7)).toThrow();
+  });
+});
 
 describe("plans", () => {
   it("every plan's line is a known product line", () => {

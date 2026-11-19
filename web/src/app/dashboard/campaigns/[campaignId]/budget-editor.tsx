@@ -4,7 +4,13 @@ import { useState } from "react";
 import { ApiError, updateCampaign, type Campaign } from "@/lib/api/browser";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { BUDGET_BELOW_MINIMUM_MESSAGE, MAX_DAILY_BUDGET_CENTS, minDailyBudgetCents } from "@/lib/budget";
+import {
+  BUDGET_BELOW_MINIMUM_MESSAGE,
+  MAX_DAILY_BUDGET_CENTS,
+  RUN_CHOICES,
+  minDailyBudgetCents,
+  type RunDays,
+} from "@/lib/budget";
 import { formatMoney, parseDollarsToCents } from "@/lib/utils";
 
 /**
@@ -88,6 +94,60 @@ export function BudgetEditor({
           </Button>
         </div>
       )}
+      {error && <p className="mt-2 text-red-300">{error}</p>}
+    </div>
+  );
+}
+
+/**
+ * "How long should your ad run?" on the launch card, changeable until launch
+ * (PATCH runDays; 409 campaign_already_launched afterwards).
+ */
+export function RunLengthPicker({
+  campaign,
+  onSaved,
+}: {
+  campaign: Campaign;
+  onSaved: (c: Campaign) => void;
+}) {
+  const current: RunDays = campaign.runDays === 7 || campaign.runDays === 14 ? campaign.runDays : null;
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function pick(runDays: RunDays) {
+    if (runDays === current) return;
+    setBusy(true);
+    setError(null);
+    try {
+      onSaved(await updateCampaign(campaign.id, { runDays }));
+    } catch (err) {
+      setError(err instanceof ApiError ? `Could not save (${err.status}).` : "Could not save.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="mt-3 text-sm">
+      <div className="flex flex-wrap items-center gap-2 text-zinc-300">
+        <span>Runs for:</span>
+        {RUN_CHOICES.map((c) => (
+          <button
+            key={c.label}
+            type="button"
+            disabled={busy}
+            aria-pressed={current === c.value}
+            onClick={() => pick(c.value)}
+            className={`rounded-lg border px-3 py-1 text-xs ${
+              current === c.value
+                ? "border-amber-400 bg-amber-400/10 text-amber-200"
+                : "border-white/10 text-zinc-400 hover:border-white/25"
+            }`}
+          >
+            {c.label}
+          </button>
+        ))}
+      </div>
       {error && <p className="mt-2 text-red-300">{error}</p>}
     </div>
   );

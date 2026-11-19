@@ -119,8 +119,8 @@ export default function TermsPage() {
               Each ad includes the first version and up to two redos; a version that
               fails to render is redone at no charge. A video you upload yourself has no
               charge; it runs after we review it.
-              We may show it as one monthly total with your ad budget (for example $49 =
-              $30 ad budget + $19 fee); the split is always shown next to it.
+              We may show it as one monthly total with your ad budget (for example $54 =
+              $35 ad budget + $19 fee); the split is always shown next to it.
             </td>
           </tr>
         </tbody>

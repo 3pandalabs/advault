@@ -527,6 +527,12 @@ export const campaigns = pgTable(
 
     dailyBudgetCents: integer("daily_budget_cents").notNull(),
     currencyCode: text("currency_code").notNull().default("USD"),
+    // How long the ad runs (migration 0033): 7 or 14 days, NULL = always on.
+    // Launch turns it into endsOn and sends Google Campaign.end_date_time so
+    // Google stops the campaign by itself (runDays helpers in lib/pricing).
+    runDays: integer("run_days"),
+    // Last serving day (YYYY-MM-DD), set at launch from runDays. NULL = no end.
+    endsOn: date("ends_on", { mode: "string" }),
 
     // draft     — being built in the wizard
     // rendering — creatives queued or encoding

@@ -232,6 +232,13 @@
       "when": 1795504600000,
       "tag": "0032_internal_accounts",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1795504700000,
+      "tag": "0033_campaign_run_days",
+      "breakpoints": true
     }
   ]
 }

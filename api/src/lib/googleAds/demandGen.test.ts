@@ -50,6 +50,25 @@ describe("buildLaunchOperations", () => {
     );
   });
 
+  // v23+ replaced Campaign.end_date with end_date_time ("yyyy-MM-dd HH:mm:ss",
+  // account time zone; 23:59:59 = daily granularity).
+  it("sends a 1-/2-week run's end date as endDateTime, and none for always on", () => {
+    const [ends] = ofType(ops({ ...basePlan, endDate: "2026-11-24" }), "campaignOperation");
+    expect(ends!.endDateTime).toBe("2026-11-24 23:59:59");
+    expect(ends).not.toHaveProperty("endDate");
+    const [always] = ofType(ops(), "campaignOperation");
+    expect(always).not.toHaveProperty("endDateTime");
+    const [nulled] = ofType(ops({ ...basePlan, endDate: null }), "campaignOperation");
+    expect(nulled).not.toHaveProperty("endDateTime");
+    // The budget stays daily either way.
+    const [budget] = ofType(ops({ ...basePlan, endDate: "2026-11-24" }), "campaignBudgetOperation");
+    expect(budget!.amountMicros).toBe("15000000");
+  });
+
+  it("refuses a malformed end date rather than sending it", () => {
+    expect(() => buildLaunchOperations({ ...basePlan, endDate: "24/11/2026" })).toThrow(/end date/);
+  });
+
   // Off by a thousand here is a 1000x overspend on someone's card.
   it("sends the budget in micros, unshared", () => {
     const [budget] = ofType(ops(), "campaignBudgetOperation");

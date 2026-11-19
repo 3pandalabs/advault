@@ -229,6 +229,19 @@ orphaned a budget on every failure. Don't split it back up.
   `budget_below_minimum`, dry run included) and maps Google's error to the
   same code; the launch card lets an unlaunched campaign raise its budget.
   Don't lower it without a dry run proving Google accepts the new figure.
+- **Run length (2026-11-18, migration 0033).** The wizard asks "How long
+  should your ad run?": 1 week / 2 weeks / Always on, showing the total
+  (daily x 7 / x 14 / about x 30.4 a month; `adSpendTotalMinor` in
+  `lib/pricing`, mirrored in `web/src/lib/budget.ts`). Stored as
+  `campaigns.run_days` (7, 14 or NULL = always on, CHECK constraint),
+  changeable until launch. Launch sends Google `endDateTime` (Campaign
+  `end_date_time`, "yyyy-MM-dd 23:59:59", account time zone; the date-only
+  `end_date` was removed in v23) = UTC today + run_days - 1 and stores it in
+  `campaigns.ends_on`, so Google stops the campaign by itself. Our `status`
+  stays `live` after Google ends it. Keep it on the UTC date: for a US
+  account that is the same day or a day later, so a run is never cut short.
+  Copy sells "From $5 a day — Google's minimum"; Keep it running suggests
+  $35 (one week at $5/day).
 
 **Four of those five links look like success on their own.** Until 2026-10-24
 `POST /campaigns/:id/launch` stopped after the campaign and its geo targeting:

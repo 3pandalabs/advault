@@ -202,6 +202,15 @@ export type LaunchPlan = {
    * guard has already required funds. Defaults to PAUSED.
    */
   campaignStatus?: "PAUSED" | "ENABLED";
+  /**
+   * Last serving day (YYYY-MM-DD) for a 1- or 2-week run; absent = always on.
+   * Sent as Campaign.end_date_time "YYYY-MM-DD 23:59:59" (v23+ replaced the
+   * date-only end_date; the time is read in the account's time zone and
+   * 23:59:59 is Google's "daily granularity"), so Google stops the campaign
+   * by itself. Omitted entirely for always on: on create that means "runs
+   * indefinitely".
+   */
+  endDate?: string | null;
 };
 
 // Temp ids. Negative numbers are Google's convention for "created in this
@@ -235,6 +244,9 @@ export function buildLaunchOperations(plan: LaunchPlan): unknown[] {
     if (forbidden) throw new Error("Refusing a housing launch with age/gender/parental targeting");
   }
   if (plan.videos.length === 0) throw new Error("Refusing to build a launch with no video");
+  if (plan.endDate != null && !/^\d{4}-\d{2}-\d{2}$/.test(plan.endDate)) {
+    throw new Error(`Refusing a launch with a malformed end date: ${plan.endDate}`);
+  }
 
   const c = `customers/${plan.customerId}`;
   const budget = `${c}/campaignBudgets/${BUDGET}`;
@@ -285,6 +297,8 @@ export function buildLaunchOperations(plan: LaunchPlan): unknown[] {
         ...(campaignLevelTargeting
           ? { demandGenCampaignSettings: { upgradedTargeting: false } }
           : {}),
+        // A 1- or 2-week run ends at Google by itself (see LaunchPlan.endDate).
+        ...(plan.endDate ? { endDateTime: `${plan.endDate} 23:59:59` } : {}),
         // PAUSED by default: enabling is the advertiser's deliberate second
         // step in their own Google Ads account. Platform-billed customers have
         // no Google access, so for them Launch is that step (see LaunchPlan).

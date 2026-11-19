@@ -161,9 +161,9 @@ export const PLANS: Record<string, Plan> = {
     monthlyFeeMinor: 1_900, // $19/month platform fee
     // Ads are bought one at a time ($10 each), never bundled into the fee.
     includedCreativesPerMonth: 0,
-    // $30 was sized for the old $1/day floor; at Google's $5/day minimum it
-    // covers about 6 days. Repricing it is a business decision, not made here.
-    suggestedAdBudgetMinor: 3_000,
+    // $35 = one week at Google's $5/day Demand Gen minimum (was $30, sized
+    // for the old $1/day floor, which then covered only 6 days).
+    suggestedAdBudgetMinor: 3_500,
     minDailyBudgetMinor: 500, // $5/day, Google's Demand Gen minimum (see us-managed)
     label: "US — Keep it running",
     blurb: "One ad kept running on YouTube around your business. $10 per ad, no monthly offers.",
@@ -192,6 +192,40 @@ export function minDailyBudgetMinorFor(currency: string): number {
 export function budgetBelowMinimum(dailyBudgetMinor: number, currency: string): BudgetMinimumBody | null {
   const min = minDailyBudgetMinorFor(currency);
   return dailyBudgetMinor >= min ? null : budgetMinimumBody(min, currency);
+}
+
+/**
+ * How long an ad runs: 7 or 14 days, or null = always on (no end date). The
+ * wizard's "How long should your ad run?" (campaigns.run_days, migration 0033).
+ * Mirrored in web/src/lib/budget.ts.
+ */
+export const RUN_DAYS = [7, 14] as const;
+export type RunDays = (typeof RUN_DAYS)[number] | null;
+
+/** Average days in a month, for the "always on" monthly estimate. */
+export const DAYS_PER_MONTH = 30.4;
+
+/**
+ * Total ad spend for a run: daily x 7 / x 14, or for always on about one
+ * month (daily x 30.4, rounded to the minor unit).
+ */
+export function adSpendTotalMinor(dailyBudgetMinor: number, runDays: RunDays): number {
+  return Math.round(dailyBudgetMinor * (runDays ?? DAYS_PER_MONTH));
+}
+
+/**
+ * The last serving day for a run that starts on `startDate` (YYYY-MM-DD):
+ * start + runDays - 1, so a 7-day run serves 7 calendar days. Null for
+ * always on. Google reads it in the ACCOUNT's time zone; launch passes the
+ * UTC date, which is the same day or one day after the date in any US time
+ * zone, so a run is never cut short (at most a day long).
+ */
+export function runEndDate(startDate: string, runDays: RunDays): string | null {
+  if (runDays == null) return null;
+  const d = new Date(`${startDate}T00:00:00Z`);
+  if (Number.isNaN(d.getTime())) throw new Error(`bad start date: ${startDate}`);
+  d.setUTCDate(d.getUTCDate() + runDays - 1);
+  return d.toISOString().slice(0, 10);
 }
 
 /** The 409/400 body for a budget under the floor (also used for Google's own refusal). */

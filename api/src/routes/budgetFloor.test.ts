@@ -159,6 +159,48 @@ describe("PATCH /campaigns/:id", () => {
   });
 });
 
+describe("run length (runDays, migration 0033)", () => {
+  it("the create schema accepts 7, 14, null or absent, nothing else", async () => {
+    const { campaignInput } = await import("./campaigns.js");
+    const ok = { ...base, dailyBudgetCents: 500 };
+    for (const runDays of [7, 14, null, undefined]) {
+      expect(campaignInput.safeParse({ ...ok, runDays }).success).toBe(true);
+    }
+    for (const runDays of [0, 1, 30, 21, "7", 7.5]) {
+      expect(campaignInput.safeParse({ ...ok, runDays }).success).toBe(false);
+    }
+  });
+
+  it("POST stores it (absent = always on) and PATCH changes it before launch only", async () => {
+    const week = await call("POST", "/campaigns", { ...base, dailyBudgetCents: 500, runDays: 7 });
+    expect(week.statusCode).toBe(201);
+    expect(week.json().runDays).toBe(7);
+    const always = await call("POST", "/campaigns", { ...base, dailyBudgetCents: 500 });
+    expect(always.json().runDays).toBeNull();
+
+    const id = week.json().id as string;
+    const two = await call("PATCH", `/campaigns/${id}`, { runDays: 14 });
+    expect(two.statusCode).toBe(200);
+    expect(two.json().runDays).toBe(14);
+    expect((await call("PATCH", `/campaigns/${id}`, { runDays: null })).json().runDays).toBeNull();
+    expect((await call("PATCH", `/campaigns/${id}`, { runDays: 30 })).statusCode).toBe(400);
+
+    // Once it exists at Google (here: launched, then paused) the end date is fixed.
+    await pg.query(
+      `update campaigns set status = 'paused', google_campaign_resource_name = 'customers/1/campaigns/2' where id = $1`,
+      [id],
+    );
+    const late = await call("PATCH", `/campaigns/${id}`, { runDays: 7 });
+    expect(late.statusCode).toBe(409);
+    expect(late.json()).toEqual({ error: "campaign_already_launched" });
+  });
+
+  it("the CHECK constraint refuses other values at the database too", async () => {
+    const id = await campaignWithBudget(500);
+    await expect(pg.query(`update campaigns set run_days = 30 where id = $1`, [id])).rejects.toThrow();
+  });
+});
+
 describe("launch pre-check", () => {
   const adAccountId = "00000000-0000-4000-8000-000000000000";
 

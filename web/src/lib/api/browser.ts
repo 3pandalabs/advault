@@ -181,6 +181,10 @@ export type Campaign = {
   audienceFilters: AudienceFilters | null;
   dailyBudgetCents: number;
   currencyCode: string;
+  /** 7 or 14 days; null = always on (migration 0033). */
+  runDays?: number | null;
+  /** Last serving day (YYYY-MM-DD), set at launch for a 1-/2-week run. */
+  endsOn?: string | null;
   status: CampaignStatus;
   googleCampaignResourceName: string | null;
   launchError: string | null;
@@ -474,6 +478,8 @@ export function createCampaign(input: {
   targetZipCodes: string[];
   radiusMiles: number;
   dailyBudgetCents: number;
+  /** 7 or 14 days; null = always on. */
+  runDays?: 7 | 14 | null;
   targetAddress?: TargetAddress | null;
   audienceFilters?: AudienceFilters | null;
   realty?: Realty | null;
@@ -491,6 +497,8 @@ export function updateCampaign(
     landingUrl: string | null;
     /** 400 `budget_below_minimum` under the currency's floor ($5/day USD). */
     dailyBudgetCents: number;
+    /** 7 / 14 / null (always on). 409 `campaign_already_launched` after launch. */
+    runDays: 7 | 14 | null;
   }>,
 ) {
   return api<Campaign>(`/campaigns/${campaignId}`, { method: "PATCH", body: JSON.stringify(input) });
