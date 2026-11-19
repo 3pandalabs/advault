@@ -46,7 +46,9 @@ import { earlierEndDate, openHouseEndDate, openHouseIsOver } from "../lib/realty
 import { launchReviewGate } from "../lib/uploads/review.js";
 import { getObjectBytes } from "../plugins/r2.js";
 import { loadOwnedAdAccount, loadOwnedCampaign } from "../lib/ownership.js";
-import { canLaunch, MIN_FUNDED_DAYS } from "../lib/wallet/index.js";
+import { canLaunch, getBalance, MIN_FUNDED_DAYS } from "../lib/wallet/index.js";
+import { spreadSchedule } from "../lib/schedule/spread.js";
+import { categoryKey } from "../lib/categories/key.js";
 import { billingGate, requiresWalletCheck } from "../lib/billing/policy.js";
 import { syncCardLimit } from "../lib/billing/managedCard.js";
 
@@ -437,6 +439,19 @@ export async function launchRoutes(app: FastifyInstance) {
           ),
         ]);
 
+        // "$55 a month", option C: a 'spread' campaign the wallet pays for
+        // shows on a few whole days a week all month, chosen from the budget
+        // on hand (lib/schedule/spread.ts). The owner's own schedule
+        // ('custom') is sent as they set it.
+        const launchSchedule =
+          campaign.scheduleMode === "spread" && account.billingMode === "platform"
+            ? spreadSchedule({
+                monthlyBudgetMinor: (await getBalance(req.userId!))?.balanceMinor ?? 0,
+                dailyMinor: campaign.dailyBudgetCents,
+                categoryKey: categoryKey(campaign.businessCategory),
+              })
+            : campaign.adSchedule;
+
         const plan: LaunchPlan = {
           customerId: customerId,
           nameSuffix: campaign.id.slice(0, 8),
@@ -451,7 +466,7 @@ export async function launchRoutes(app: FastifyInstance) {
           housing,
           audienceDimensions: audienceDimensions(campaign.audienceFilters),
           languageConstants: languageConstants(campaign.audienceFilters),
-          adSchedule: adScheduleCriteria(campaign.adSchedule),
+          adSchedule: adScheduleCriteria(launchSchedule),
           copy: buildAdCopy({
             businessName: campaign.businessName,
             businessCategory: campaign.businessCategory,
@@ -521,6 +536,8 @@ export async function launchRoutes(app: FastifyInstance) {
             launchError: null,
             launchedAt: new Date(),
             endsOn: plan.endDate ?? null,
+            // What Google now has (the spread days, or the owner's schedule).
+            adSchedule: launchSchedule,
             updatedAt: new Date(),
             // The ad video joins the SiteVault website now (lib/siteVideo).
             ...(wantsSiteVideo({ requested: videoOnWebsite, sitevaultSlug: slugFromSiteUrl(campaign.landingUrl), advaultMade: Boolean(campaign.sitevaultEditEnc) })

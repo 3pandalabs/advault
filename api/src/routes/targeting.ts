@@ -20,6 +20,9 @@ import {
   targetingViolations,
 } from "../lib/audience/policy.js";
 import { loadOwnedCampaign } from "../lib/ownership.js";
+import { spreadSchedule } from "../lib/schedule/spread.js";
+import { categoryKey } from "../lib/categories/key.js";
+import { getBalance } from "../lib/wallet/index.js";
 
 // ---------------------------------------------------------------------------
 // PUT /campaigns/:id/targeting — "Who should see it" and "When it shows"
@@ -42,10 +45,17 @@ const body = z
     audienceFilters: audienceFiltersSchema.nullable().optional(),
     // null = every day, all day.
     adSchedule: adScheduleSchema.nullable().optional(),
+    // "$55 a month": hand the days back to AdVault, which spreads the ad
+    // budget across the month (lib/schedule/spread.ts). Sending adSchedule
+    // instead makes the schedule the owner's own ('custom').
+    scheduleMode: z.literal("spread").optional(),
   })
   .strict()
-  .refine((b) => b.audienceFilters !== undefined || b.adSchedule !== undefined, {
-    message: "send audienceFilters and/or adSchedule",
+  .refine((b) => b.audienceFilters !== undefined || b.adSchedule !== undefined || b.scheduleMode !== undefined, {
+    message: "send audienceFilters, adSchedule and/or scheduleMode",
+  })
+  .refine((b) => !(b.adSchedule !== undefined && b.scheduleMode !== undefined), {
+    message: "send adSchedule or scheduleMode, not both",
   });
 
 export async function targetingRoutes(app: FastifyInstance) {
@@ -61,9 +71,23 @@ export async function targetingRoutes(app: FastifyInstance) {
       if (!campaign) return;
 
       const touchAudience = input.audienceFilters !== undefined;
-      const touchSchedule = input.adSchedule !== undefined;
+      const spread = input.scheduleMode === "spread";
+      const touchSchedule = input.adSchedule !== undefined || spread;
+      const scheduleMode = spread ? "spread" : input.adSchedule !== undefined ? "custom" : campaign.scheduleMode;
       const audienceFilters = touchAudience ? normalizeAudienceFilters(input.audienceFilters) : campaign.audienceFilters;
-      const adSchedule = touchSchedule ? normalizeAdSchedule(input.adSchedule) : campaign.adSchedule;
+      // Spread before launch: launch picks the days from the budget then.
+      // After launch: from the ad budget on hand now.
+      const adSchedule = spread
+        ? campaign.googleCampaignResourceName
+          ? spreadSchedule({
+              monthlyBudgetMinor: (await getBalance(req.userId!))?.balanceMinor ?? 0,
+              dailyMinor: campaign.dailyBudgetCents,
+              categoryKey: categoryKey(campaign.businessCategory),
+            })
+          : null
+        : touchSchedule
+          ? normalizeAdSchedule(input.adSchedule)
+          : campaign.adSchedule;
       const violations = targetingViolations({ ...campaign, audienceFilters });
       // Only the audience rule is this route's business; a ZIP/address
       // problem on the row is PATCH's and launch's to report.
@@ -78,7 +102,7 @@ export async function targetingRoutes(app: FastifyInstance) {
       if (!launched) {
         const [updated] = await db
           .update(campaigns)
-          .set({ audienceFilters, adSchedule, updatedAt: new Date() })
+          .set({ audienceFilters, adSchedule, scheduleMode, updatedAt: new Date() })
           .where(eq(campaigns.id, campaignId))
           .returning();
         return { campaign: updated, appliedAtGoogle: false };
@@ -138,6 +162,7 @@ export async function targetingRoutes(app: FastifyInstance) {
           .set({
             audienceFilters,
             adSchedule,
+            scheduleMode,
             googleAudienceResourceName: result.audienceResourceName,
             updatedAt: new Date(),
           })

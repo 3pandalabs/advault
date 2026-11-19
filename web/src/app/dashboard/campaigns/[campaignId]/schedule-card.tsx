@@ -107,7 +107,11 @@ export function ScheduleCard({ campaign, onSaved }: { campaign: Campaign; onSave
   const saved = normalizeSchedule(campaign.adSchedule ?? null);
   const presets = schedulePresets(categoryKey(campaign.businessCategory));
   const [editing, setEditing] = useState(false);
-  const [mode, setMode] = useState<"always" | "pick">(saved ? "pick" : "always");
+  // "spread" ("$55 a month"): AdVault picks a few days a week from the ad
+  // budget so it lasts all month (api lib/schedule/spread.ts). The default.
+  const spreadNow = campaign.scheduleMode === "spread";
+  const initialMode = (): "spread" | "always" | "pick" => (spreadNow ? "spread" : saved ? "pick" : "always");
+  const [mode, setMode] = useState<"spread" | "always" | "pick">(initialMode);
   const [draft, setDraft] = useState<AdSchedule>(saved ?? { days: ["mon", "tue", "wed", "thu", "fri"], startHour: 9, endHour: 17 });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -143,7 +147,10 @@ export function ScheduleCard({ campaign, onSaved }: { campaign: Campaign; onSave
     setError(null);
     setDone(null);
     try {
-      const res = await updateTargeting(campaign.id, { adSchedule: mode === "always" ? null : normalizeSchedule(draft) });
+      const res = await updateTargeting(
+        campaign.id,
+        mode === "spread" ? { scheduleMode: "spread" } : { adSchedule: mode === "always" ? null : normalizeSchedule(draft) },
+      );
       onSaved(res.campaign);
       setEditing(false);
       setDone(
@@ -167,7 +174,15 @@ export function ScheduleCard({ campaign, onSaved }: { campaign: Campaign; onSave
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <CardTitle>When it shows</CardTitle>
-          <CardDescription>{describeSchedule(saved)}</CardDescription>
+          <CardDescription>
+            {spreadNow
+              ? launched && saved
+                ? `Spread across the month: ${describeSchedule(saved)}. More budget means more days.`
+                : launched
+                  ? "Every day: your ad budget covers the whole month."
+                  : "Spread across the month: your ad shows on about 2 days a week, all month. We pick the days from your ad budget when it goes live. More budget means more days."
+              : describeSchedule(saved)}
+          </CardDescription>
         </div>
         {!editing && (
           <Button
@@ -175,7 +190,7 @@ export function ScheduleCard({ campaign, onSaved }: { campaign: Campaign; onSave
             variant="ghost"
             onClick={() => {
               setDone(null);
-              setMode(saved ? "pick" : "always");
+              setMode(initialMode());
               if (saved) setDraft(saved);
               setEditing(true);
             }}
@@ -203,6 +218,16 @@ export function ScheduleCard({ campaign, onSaved }: { campaign: Campaign; onSave
 
       {editing && (
         <div className="mt-4 space-y-3 text-sm">
+          <label className="flex items-start gap-2">
+            <input type="radio" className="mt-1" checked={mode === "spread"} onChange={() => setMode("spread")} disabled={busy} />
+            <span>
+              Spread my ad budget across the month (recommended)
+              <span className="block text-xs text-zinc-400">
+                We pick a few days each week, the best ones for your kind of business, so your budget lasts all month.
+                Add to your ad budget and it shows on more days.
+              </span>
+            </span>
+          </label>
           <label className="flex items-center gap-2">
             <input type="radio" checked={mode === "always"} onChange={() => setMode("always")} disabled={busy} />
             Every day, all day

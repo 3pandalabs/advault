@@ -1,5 +1,6 @@
 import { unfreezeCardsForUser } from "../lib/billing/managedCard.js";
 import { resumeAfterTopUp } from "../lib/planBilling/resume.js";
+import { respreadForUser } from "../lib/schedule/respread.js";
 import { budgetState, minTopupMinor } from "../lib/wallet/runway.js";
 import { and, eq, inArray } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
@@ -471,6 +472,8 @@ export async function billingRoutes(app: FastifyInstance) {
         // The plan follows the running ad (lib/planBilling): restart it
         // off-session if it ran out while paused, then un-stop it after.
         void resumeAfterTopUp(payment.userId);
+        // More budget, more days: re-pick a spread ad's days (lib/schedule/respread.ts).
+        void respreadForUser(payment.userId);
       }
 
       return reply.code(200).send({ ok: true });

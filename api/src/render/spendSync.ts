@@ -14,6 +14,7 @@ import { resumeAllFundedCampaigns } from "../lib/billing/resume.js";
 import { notifyOps } from "../lib/ops/notify.js";
 import { daysOfBudget, isLowBalance, lowBalanceEpisode } from "../lib/wallet/runway.js";
 import type { Currency } from "../lib/pricing/index.js";
+import { pauseForFunds } from "../lib/schedule/spread.js";
 
 // Reconciles Google's reported spend into the wallet, and pauses campaigns that
 // have run their balance out.
@@ -84,6 +85,12 @@ export async function runSpendSync(): Promise<{ synced: number; paused: number; 
   let synced = 0;
   let paused = 0;
 
+  // One wallet pays all of a customer's live campaigns.
+  const liveDailyByUser = new Map<string, number>();
+  for (const r of rows) {
+    liveDailyByUser.set(r.campaign.userId, (liveDailyByUser.get(r.campaign.userId) ?? 0) + r.campaign.dailyBudgetCents);
+  }
+
   // Grouped by customer so one Google query covers all of an advertiser's
   // campaigns rather than one query each.
   const byCustomer = new Map<string, typeof rows>();
@@ -141,8 +148,17 @@ export async function runSpendSync(): Promise<{ synced: number; paused: number; 
 
       // Out of money → pause at Google. This is the moment the org stops
       // financing the campaign.
+      // A SCHEDULED campaign (the spread days, "$55 a month") also stops while
+      // money is left but under 2 days of budget: Google may spend 2x on its
+      // next serving day, before this hourly sync sees it (lib/schedule/spread.ts).
       const balance = await getBalance(row.campaign.userId);
-      if ((balance?.balanceMinor ?? 0) <= 0) {
+      if (
+        pauseForFunds({
+          balanceMinor: balance?.balanceMinor ?? 0,
+          scheduled: row.campaign.adSchedule != null,
+          liveDailyMinor: liveDailyByUser.get(row.campaign.userId) ?? row.campaign.dailyBudgetCents,
+        })
+      ) {
         try {
           await pauseCampaign({
             accessToken,

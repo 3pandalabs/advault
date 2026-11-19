@@ -311,6 +311,19 @@ describe("PUT /campaigns/:id/targeting — days and hours", () => {
     });
   });
 
+  it("$55 a month: an owner's schedule is 'custom'; scheduleMode spread hands the days back to AdVault", async () => {
+    const id = await campaign({ launched: false });
+    const mode = async () =>
+      (await pg.query<{ schedule_mode: string; ad_schedule: unknown }>(`select schedule_mode, ad_schedule from campaigns where id = $1`, [id])).rows[0]!;
+    expect((await mode()).schedule_mode).toBe("spread");
+    await put(id, { adSchedule: monFri });
+    expect((await mode()).schedule_mode).toBe("custom");
+    expect((await put(id, { scheduleMode: "spread" })).statusCode).toBe(200);
+    // Before launch: launch picks the days from the budget then.
+    expect(await mode()).toEqual({ schedule_mode: "spread", ad_schedule: null });
+    expect((await put(id, { scheduleMode: "spread", adSchedule: monFri })).statusCode).toBe(400);
+  });
+
   it("refuses an empty body and a backwards window", async () => {
     const id = await campaign({ launched: false });
     expect((await put(id, {})).statusCode).toBe(400);
