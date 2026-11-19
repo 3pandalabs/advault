@@ -15,6 +15,7 @@ import {
 } from "drizzle-orm/pg-core";
 import type { BillingMode } from "../lib/billing/policy.js";
 import type { AudienceFilters, TargetAddress } from "../lib/audience/policy.js";
+import type { AdSchedule } from "../lib/schedule/policy.js";
 import type { Realty } from "../lib/realty/index.js";
 import type { BeforeAfterPair } from "../lib/beforeAfter/policy.js";
 
@@ -524,6 +525,9 @@ export const campaigns = pgTable(
     // household income, language). NULL = everyone, the default. Shape and
     // the housing restrictions: lib/audience/policy.ts.
     audienceFilters: jsonb("audience_filters").$type<AudienceFilters>(),
+    // Days + one hour window the ad may show (migration 0037,
+    // lib/schedule/policy.ts). NULL = every day, all day.
+    adSchedule: jsonb("ad_schedule").$type<AdSchedule>(),
 
     dailyBudgetCents: integer("daily_budget_cents").notNull(),
     currencyCode: text("currency_code").notNull().default("USD"),

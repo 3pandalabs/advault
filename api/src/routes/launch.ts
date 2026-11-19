@@ -41,6 +41,7 @@ import {
   targetingViolations,
 } from "../lib/audience/policy.js";
 import { audienceDimensions, languageConstants } from "../lib/audience/google.js";
+import { adScheduleCriteria } from "../lib/schedule/policy.js";
 import { launchReviewGate } from "../lib/uploads/review.js";
 import { getObjectBytes } from "../plugins/r2.js";
 import { loadOwnedAdAccount, loadOwnedCampaign } from "../lib/ownership.js";
@@ -442,6 +443,7 @@ export async function launchRoutes(app: FastifyInstance) {
           housing,
           audienceDimensions: audienceDimensions(campaign.audienceFilters),
           languageConstants: languageConstants(campaign.audienceFilters),
+          adSchedule: adScheduleCriteria(campaign.adSchedule),
           copy: buildAdCopy({
             businessName: campaign.businessName,
             businessCategory: campaign.businessCategory,

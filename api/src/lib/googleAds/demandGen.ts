@@ -1,6 +1,7 @@
 import { centsToMicros } from "./campaigns.js";
 import { googleAdsCall } from "./client.js";
 import type { TargetAddress } from "../audience/policy.js";
+import type { AdScheduleInfo } from "../schedule/policy.js";
 
 // ---------------------------------------------------------------------------
 // The launch, as ONE atomic Google Ads request.
@@ -192,6 +193,11 @@ export type LaunchPlan = {
   audienceDimensions?: unknown[];
   /** languageConstants/<id>. Empty = every language. */
   languageConstants?: string[];
+  /**
+   * AdScheduleInfo per day (lib/schedule/policy.ts). Empty/absent = every
+   * day, all day. Campaign criteria, account time zone.
+   */
+  adSchedule?: AdScheduleInfo[];
   copy: AdCopy;
   /** One per published creative: an existing asset, or a video to create. */
   videos: ({ existing: string } | { youtubeVideoId: string; title: string })[];
@@ -379,6 +385,12 @@ export function buildLaunchOperations(plan: LaunchPlan): unknown[] {
         ? { campaignCriterionOperation: { create: { campaign, language: { languageConstant } } } }
         : { adGroupCriterionOperation: { create: { adGroup, language: { languageConstant } } } },
     );
+  }
+
+  // Days and hours: campaign criteria, one per day (validated for Demand Gen
+  // against the test customer, 2026-11-20).
+  for (const adSchedule of plan.adSchedule ?? []) {
+    ops.push({ campaignCriterionOperation: { create: { campaign, adSchedule } } });
   }
 
   if (dims.length > 0) {

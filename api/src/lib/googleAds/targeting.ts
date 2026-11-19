@@ -1,5 +1,6 @@
 import { googleAdsCall } from "./client.js";
 import type { GoogleCtx } from "./demandGen.js";
+import { scheduleKey, type AdScheduleInfo } from "../schedule/policy.js";
 
 // ---------------------------------------------------------------------------
 // Changing a LAUNCHED campaign's targeting at Google (2026-11-20).
@@ -19,6 +20,8 @@ import type { GoogleCtx } from "./demandGen.js";
 //   * Languages: LanguageInfo criteria, on the ad group (upgraded targeting,
 //     the default) or on the campaign (real estate / proximity launches,
 //     upgraded_targeting = false). Removed and created to match.
+//   * Days and hours (0037): AdSchedule campaign criteria, one per day.
+//     Unchanged ones stay; the rest are removed and the new ones created.
 //
 // Read from Google, not from our row, because campaigns launched before
 // migration 0036 never stored the Audience, and Google is the truth for what
@@ -36,6 +39,8 @@ export type TargetingState = {
   audienceCriterion: { resourceName: string; audience: string } | null;
   /** Language criteria wherever they live. */
   languageCriteria: { resourceName: string; languageConstant: string; level: "adGroup" | "campaign" }[];
+  /** AdSchedule campaign criteria. */
+  scheduleCriteria: ({ resourceName: string } & Partial<AdScheduleInfo>)[];
 };
 
 type SearchRow = {
@@ -50,6 +55,7 @@ type SearchRow = {
     resourceName?: string;
     type?: string;
     language?: { languageConstant?: string };
+    adSchedule?: Partial<AdScheduleInfo>;
   };
 };
 
@@ -84,7 +90,7 @@ export async function fetchTargetingState(
     ),
     search(
       ctx,
-      `SELECT campaign_criterion.resource_name, campaign_criterion.type, campaign_criterion.language.language_constant FROM campaign_criterion WHERE campaign.resource_name = '${q(refs.campaignResourceName)}' AND campaign_criterion.type IN ('LANGUAGE') AND campaign_criterion.status != 'REMOVED'`,
+      `SELECT campaign_criterion.resource_name, campaign_criterion.type, campaign_criterion.language.language_constant, campaign_criterion.ad_schedule.day_of_week, campaign_criterion.ad_schedule.start_hour, campaign_criterion.ad_schedule.start_minute, campaign_criterion.ad_schedule.end_hour, campaign_criterion.ad_schedule.end_minute FROM campaign_criterion WHERE campaign.resource_name = '${q(refs.campaignResourceName)}' AND campaign_criterion.type IN ('LANGUAGE', 'AD_SCHEDULE') AND campaign_criterion.status != 'REMOVED'`,
     ),
   ]);
   return parseTargetingState(campaignRows, adGroupRows, campaignCriteriaRows);
@@ -109,13 +115,16 @@ export function parseTargetingState(
       languageCriteria.push({ resourceName: c.resourceName, languageConstant: c.language.languageConstant, level: "adGroup" });
     }
   }
+  const scheduleCriteria: TargetingState["scheduleCriteria"] = [];
   for (const r of campaignCriteriaRows) {
     const c = r.campaignCriterion;
     if (c?.resourceName && c.type === "LANGUAGE" && c.language?.languageConstant) {
       languageCriteria.push({ resourceName: c.resourceName, languageConstant: c.language.languageConstant, level: "campaign" });
+    } else if (c?.resourceName && c.type === "AD_SCHEDULE" && c.adSchedule) {
+      scheduleCriteria.push({ resourceName: c.resourceName, ...c.adSchedule });
     }
   }
-  return { upgradedTargeting: upgraded !== false, audienceCriterion, languageCriteria };
+  return { upgradedTargeting: upgraded !== false, audienceCriterion, languageCriteria, scheduleCriteria };
 }
 
 export type AudienceEdit = {
@@ -201,28 +210,68 @@ export function buildAudienceEditOperations(state: TargetingState, edit: Audienc
   return ops;
 }
 
+/**
+ * Operations turning the campaign's AdSchedule criteria into `wanted`
+ * ([] = every day, all day). Identical criteria are left alone. Pure, tested.
+ */
+export function buildScheduleEditOperations(
+  state: Pick<TargetingState, "scheduleCriteria">,
+  campaignResourceName: string,
+  wanted: AdScheduleInfo[],
+): unknown[] {
+  const want = new Map(wanted.map((w) => [scheduleKey(w), w]));
+  const kept = new Set<string>();
+  const ops: unknown[] = [];
+  for (const c of state.scheduleCriteria) {
+    const k = scheduleKey(c);
+    if (want.has(k) && !kept.has(k)) {
+      kept.add(k);
+      continue;
+    }
+    ops.push({ campaignCriterionOperation: { remove: c.resourceName } });
+  }
+  for (const [k, adSchedule] of want) {
+    if (kept.has(k)) continue;
+    ops.push({ campaignCriterionOperation: { create: { campaign: campaignResourceName, adSchedule } } });
+  }
+  return ops;
+}
+
 type MutateResponse = { mutateOperationResponses?: { audienceResult?: { resourceName?: string } }[] };
+
+export type TargetingEdit = {
+  /** Who: undefined = leave the audience and languages as they are. */
+  audience?: AudienceEdit;
+  /** When: undefined = leave; [] = every day, all day. */
+  adSchedule?: AdScheduleInfo[];
+};
 
 /**
  * Reads the campaign's targeting at Google and applies the edit in one atomic
- * mutate (all or nothing). Returns the Audience now serving (null = none) and
- * whether anything was sent. Throws GoogleAdsApiError on a refusal; nothing
- * changed at Google then.
+ * mutate (all or nothing). Returns the Audience now serving (null = none;
+ * `currentAudience` when the audience was not part of the edit) and whether
+ * anything was sent. Throws GoogleAdsApiError on a refusal; nothing changed
+ * at Google then.
  */
-export async function applyAudienceEdit(
+export async function applyTargetingEdit(
   ctx: GoogleCtx,
-  edit: AudienceEdit,
+  refs: { customerId: string; campaignResourceName: string; adGroupResourceName: string },
+  edit: TargetingEdit,
 ): Promise<{ audienceResourceName: string | null; changed: boolean }> {
-  const state = await fetchTargetingState(ctx, edit);
-  const ops = buildAudienceEditOperations(state, edit);
-  const keep = edit.audienceDimensions.length > 0 ? (state.audienceCriterion?.audience ?? null) : null;
+  const state = await fetchTargetingState(ctx, refs);
+  const ops = [
+    ...(edit.audience ? buildAudienceEditOperations(state, edit.audience) : []),
+    ...(edit.adSchedule ? buildScheduleEditOperations(state, refs.campaignResourceName, edit.adSchedule) : []),
+  ];
+  const current = state.audienceCriterion?.audience ?? null;
+  const keep = edit.audience ? (edit.audience.audienceDimensions.length > 0 ? current : null) : current;
   if (ops.length === 0) return { audienceResourceName: keep, changed: false };
   const body = await googleAdsCall<MutateResponse>(`/customers/${ctx.customerId}/googleAds:mutate`, ctx.accessToken, {
     method: "POST",
     loginCustomerId: ctx.loginCustomerId,
     body: { mutateOperations: ops },
   });
-  if (edit.audienceDimensions.length > 0 && !state.audienceCriterion) {
+  if (edit.audience && edit.audience.audienceDimensions.length > 0 && !state.audienceCriterion) {
     // A new Audience was created: its real name is in the response.
     const created = (body.mutateOperationResponses ?? [])
       .map((r) => r.audienceResult?.resourceName)

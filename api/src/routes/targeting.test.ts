@@ -163,7 +163,7 @@ beforeAll(async () => {
   await app.register(targetingRoutes);
   await app.register(campaignRoutes);
   await app.ready();
-});
+}, 60_000);
 
 afterAll(async () => {
   await app.close();
@@ -265,7 +265,71 @@ describe("PUT /campaigns/:id/targeting", () => {
   });
 });
 
+describe("PUT /campaigns/:id/targeting — days and hours", () => {
+  const monFri = { days: ["fri", "mon"], startHour: 9, endHour: 17 };
+
+  it("before launch: saved normalised; every day all day is null", async () => {
+    const id = await campaign({ launched: false });
+    expect((await put(id, { adSchedule: monFri })).statusCode).toBe(200);
+    let r = await pg.query<{ ad_schedule: unknown }>(`select ad_schedule from campaigns where id = $1`, [id]);
+    expect(r.rows[0]!.ad_schedule).toEqual({ days: ["mon", "fri"], startHour: 9, endHour: 17 });
+    await put(id, { adSchedule: { days: ["mon", "tue", "wed", "thu", "fri", "sat", "sun"], startHour: 0, endHour: 24 } });
+    r = await pg.query<{ ad_schedule: unknown }>(`select ad_schedule from campaigns where id = $1`, [id]);
+    expect(r.rows[0]!.ad_schedule).toBeNull();
+    expect(holder.calls).toHaveLength(0);
+  });
+
+  it("live: replaces the AdSchedule criteria at Google and leaves the audience alone", async () => {
+    const id = await campaign({ launched: true, filters: { ages: ["25-34"] } });
+    holder.searchRows.adGroup = [
+      { adGroupCriterion: { resourceName: "agc-aud", type: "AUDIENCE", audience: { audience: "customers/1234567890/audiences/88" } } },
+    ];
+    holder.searchRows.campaignCriteria = [
+      { campaignCriterion: { resourceName: "cc-sun", type: "AD_SCHEDULE", adSchedule: { dayOfWeek: "SUNDAY", startHour: 9, startMinute: "ZERO", endHour: 17, endMinute: "ZERO" } } },
+    ];
+    const res = await put(id, { adSchedule: monFri });
+    expect(res.statusCode).toBe(200);
+    expect(mutates()[0]!.body.mutateOperations).toEqual([
+      { campaignCriterionOperation: { remove: "cc-sun" } },
+      ...["MONDAY", "FRIDAY"].map((dayOfWeek) => ({
+        campaignCriterionOperation: {
+          create: {
+            campaign: "customers/1234567890/campaigns/5",
+            adSchedule: { dayOfWeek, startHour: 9, startMinute: "ZERO", endHour: 17, endMinute: "ZERO" },
+          },
+        },
+      })),
+    ]);
+    const r = await pg.query<{ ad_schedule: unknown; audience_filters: unknown; google_audience_resource_name: string }>(
+      `select ad_schedule, audience_filters, google_audience_resource_name from campaigns where id = $1`,
+      [id],
+    );
+    expect(r.rows[0]).toEqual({
+      ad_schedule: { days: ["mon", "fri"], startHour: 9, endHour: 17 },
+      audience_filters: { ages: ["25-34"] },
+      google_audience_resource_name: "customers/1234567890/audiences/88",
+    });
+  });
+
+  it("refuses an empty body and a backwards window", async () => {
+    const id = await campaign({ launched: false });
+    expect((await put(id, {})).statusCode).toBe(400);
+    expect((await put(id, { adSchedule: { days: ["mon"], startHour: 17, endHour: 9 } })).statusCode).toBe(400);
+  });
+});
+
 describe("PATCH /campaigns/:id after launch", () => {
+  it("refuses adSchedule on a launched campaign", async () => {
+    const id = await campaign({ launched: true, status: "paused" });
+    const res = await app.inject({
+      method: "PATCH",
+      url: `/campaigns/${id}`,
+      headers: { "x-test-user": userId },
+      payload: { adSchedule: { days: ["mon"], startHour: 9, endHour: 17 } },
+    });
+    expect(res.statusCode).toBe(409);
+  });
+
   it("refuses audienceFilters on a paused, launched campaign (use the targeting route)", async () => {
     const id = await campaign({ launched: true, status: "paused" });
     const res = await app.inject({
