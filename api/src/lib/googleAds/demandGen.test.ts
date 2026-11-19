@@ -315,7 +315,21 @@ describe("parseLaunchResponse", () => {
       campaignResourceName: "c",
       adGroupResourceName: "g",
       adResourceName: "a",
+      audienceResourceName: null,
     });
+  });
+
+  it("also picks the Audience when the launch created one", () => {
+    const result = parseLaunchResponse({
+      mutateOperationResponses: [
+        { campaignBudgetResult: { resourceName: "b" } },
+        { campaignResult: { resourceName: "c" } },
+        { adGroupResult: { resourceName: "g" } },
+        { audienceResult: { resourceName: "customers/1/audiences/7" } },
+        { adGroupAdResult: { resourceName: "a" } },
+      ],
+    });
+    expect(result.audienceResourceName).toBe("customers/1/audiences/7");
   });
 
   it("throws when Google returns no ad", () => {

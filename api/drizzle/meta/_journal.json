@@ -253,6 +253,13 @@
       "when": 1795504900000,
       "tag": "0035_campaign_segment_metrics",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1795505000000,
+      "tag": "0036_campaign_google_audience",
+      "breakpoints": true
     }
   ]
 }

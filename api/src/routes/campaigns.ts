@@ -201,6 +201,11 @@ export async function campaignRoutes(app: FastifyInstance) {
       if (body.runDays !== undefined && campaign.googleCampaignResourceName) {
         return reply.code(409).send({ error: "campaign_already_launched" });
       }
+      // Same for the audience of a paused-but-launched campaign: the row would
+      // diverge from Google. PUT /campaigns/:id/targeting applies it at Google.
+      if (body.audienceFilters !== undefined && campaign.googleCampaignResourceName) {
+        return reply.code(409).send({ error: "campaign_already_launched" });
+      }
       // Same floor as create, against the row as it will be.
       const below = budgetBelowMinimum(
         body.dailyBudgetCents ?? campaign.dailyBudgetCents,

@@ -773,8 +773,10 @@ export default function CampaignDetailPage({
         siteOfferRev={siteOfferRev}
       />
 
-      {/* Parked for MVP2; still shown for a campaign that already has filters. */}
-      {(AUDIENCE_FILTERS_ENABLED || campaign.audienceFilters) && (
+      {/* The wizard's filters are parked for MVP2; the card still shows for a
+          campaign that has filters, and for any launched campaign, whose
+          audience can now be changed at Google (PUT /campaigns/:id/targeting). */}
+      {(AUDIENCE_FILTERS_ENABLED || campaign.audienceFilters || campaign.googleCampaignResourceName) && (
         <AudienceCard
           campaign={campaign}
           onSaved={(c) => setCampaign((prev) => (prev ? { ...prev, ...c } : prev))}

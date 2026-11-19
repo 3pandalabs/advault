@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ApiError, updateCampaign, type Campaign } from "@/lib/api/browser";
+import { ApiError, updateTargeting, type Campaign } from "@/lib/api/browser";
 import { AudienceFiltersEditor, HOUSING_NOTICE, NARROWING_WARNING } from "@/components/AudienceFiltersEditor";
 import { Card, CardDescription, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -15,9 +15,10 @@ import {
 } from "@/lib/audience";
 
 /**
- * "Who should see it" on the campaign page. Editable until launch; after that
- * it is read-only, because PATCH refuses a live campaign (what is serving at
- * Google would silently diverge from this row).
+ * "Who should see it" on the campaign page. Editable before AND after launch
+ * (2026-11-20): PUT /campaigns/:id/targeting applies a launched campaign's
+ * change at Google first, so the row never diverges from what is serving.
+ * Success and failure are both said in plain words.
  */
 export function AudienceCard({
   campaign,
@@ -27,8 +28,9 @@ export function AudienceCard({
   onSaved: (c: Campaign) => void;
 }) {
   const housing = isHousingCategory(campaign.businessCategory);
-  const locked = campaign.status === "live" || Boolean(campaign.googleCampaignResourceName);
+  const launched = Boolean(campaign.googleCampaignResourceName);
   const [editing, setEditing] = useState(false);
+  const [done, setDone] = useState<string | null>(null);
   const [draft, setDraft] = useState<AudienceFilters>(campaign.audienceFilters ?? {});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -39,16 +41,21 @@ export function AudienceCard({
   async function save() {
     setBusy(true);
     setError(null);
+    setDone(null);
     try {
-      onSaved(await updateCampaign(campaign.id, { audienceFilters: filtersForSave(draft, housing) }));
+      const res = await updateTargeting(campaign.id, { audienceFilters: filtersForSave(draft, housing) });
+      onSaved(res.campaign);
       setEditing(false);
+      setDone(
+        res.appliedAtGoogle
+          ? "Saved. Google now shows your ad to this audience. It can take a few hours to settle."
+          : "Saved. Your ad will use this when it launches.",
+      );
     } catch (err) {
       setError(
         err instanceof ApiError && err.detail
-          ? err.detail
-          : err instanceof ApiError && err.code === "campaign_is_live"
-            ? "This campaign is live, so its audience can't be changed here."
-            : "Could not save. Please try again.",
+          ? `Not changed. ${err.detail}`
+          : "Not changed: we couldn't reach Google. Your ad keeps its current audience. Please try again.",
       );
     } finally {
       setBusy(false);
@@ -66,18 +73,28 @@ export function AudienceCard({
               : "Everyone in your target area, unless you narrow it below."}
           </CardDescription>
         </div>
-        {!locked && !editing && (
-          <Button size="sm" variant="ghost" onClick={() => setEditing(true)}>
+        {!editing && (
+          <Button size="sm" variant="ghost" onClick={() => {
+              setDone(null);
+              setDraft(campaign.audienceFilters ?? {});
+              setEditing(true);
+            }}>
             Edit
           </Button>
         )}
       </div>
 
       {error && <p className="mt-3 text-sm text-red-300">{error}</p>}
+      {done && <p className="mt-3 text-sm text-emerald-300">{done}</p>}
 
       {editing ? (
         <div className="mt-4">
           <AudienceFiltersEditor value={draft} onChange={setDraft} housing={housing} disabled={busy} />
+          {launched && (
+            <p className="mt-3 text-xs text-zinc-400">
+              Your ad is already running, so this changes it at Google straight away.
+            </p>
+          )}
           <div className="mt-4 flex justify-end gap-2">
             <Button
               variant="ghost"

@@ -554,6 +554,18 @@ export function updateCampaign(
   return api<Campaign>(`/campaigns/${campaignId}`, { method: "PATCH", body: JSON.stringify(input) });
 }
 
+/**
+ * "Who should see it", before or after launch (PUT /campaigns/:id/targeting).
+ * After launch Google gets it first; 502 `google_ads_error` (with `detail`)
+ * means Google refused and nothing changed.
+ */
+export function updateTargeting(campaignId: string, input: { audienceFilters: AudienceFilters | null }) {
+  return api<{ campaign: Campaign; appliedAtGoogle: boolean; changedAtGoogle?: boolean }>(
+    `/campaigns/${campaignId}/targeting`,
+    { method: "PUT", body: JSON.stringify(input) },
+  );
+}
+
 /** One before & after pair (api lib/beforeAfter), with the photos' keys for thumbnails. */
 export type BeforeAfterPair = { beforeAssetId: string; afterAssetId: string; beforeKey: string; afterKey: string };
 export type BeforeAfterState = { allowed: boolean; pairs: BeforeAfterPair[]; attestedAt: string | null };
