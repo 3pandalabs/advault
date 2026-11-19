@@ -20,12 +20,18 @@ type StripeObject = {
   mode?: string;
   metadata?: Record<string, string> | null;
   subscription_details?: { metadata?: Record<string, string> | null } | null;
+  // Invoices on Stripe API versions from 2025-03-31 carry it here instead.
+  parent?: { subscription_details?: { metadata?: Record<string, string> | null } | null } | null;
 };
 
 export function routeStripeEvent(event: { type?: string; data?: { object?: StripeObject } }): StripeRoute {
   const type = event.type ?? "";
   const obj = event.data?.object ?? {};
-  const meta = { ...(obj.metadata ?? {}), ...(obj.subscription_details?.metadata ?? {}) };
+  const meta = {
+    ...(obj.metadata ?? {}),
+    ...(obj.parent?.subscription_details?.metadata ?? {}),
+    ...(obj.subscription_details?.metadata ?? {}),
+  };
 
   // Created by another 3PandaLabs app. Older AdVault sessions have no app tag.
   if (meta.app && meta.app !== STRIPE_APP) return "ignore";

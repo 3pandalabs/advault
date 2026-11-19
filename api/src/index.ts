@@ -25,6 +25,8 @@ import { startSiteOfferSweep } from "./lib/siteOffer/index.js";
 import { startWebsiteSweep } from "./lib/websiteFee/index.js";
 import { startSiteVideoSweep } from "./lib/siteVideo/index.js";
 import { launchRoutes } from "./routes/launch.js";
+import { campaignRunStateRoutes } from "./routes/campaignRunState.js";
+import { startPlanBillingSweep } from "./lib/planBilling/index.js";
 import { metricsRoutes } from "./routes/metrics.js";
 import { subscriptionRoutes } from "./routes/subscriptions.js";
 import { cinematicRoutes } from "./routes/cinematic.js";
@@ -82,6 +84,7 @@ startCpuSampler();
 startSiteOfferSweep();
 startWebsiteSweep();
 startSiteVideoSweep();
+startPlanBillingSweep();
 app.addHook("onResponse", async (req) => {
   if (req.url !== "/metrics" && req.url !== "/health") recordRequest();
 });
@@ -146,6 +149,7 @@ await app.register(sitevaultAuthRoutes, { db });
 // is deliberate — see routes/launch.ts.
 await app.register(youtubeRoutes);
 await app.register(launchRoutes);
+await app.register(campaignRunStateRoutes);
 await app.register(metricsRoutes);
 
 app.listen({ port: env.PORT, host: "0.0.0.0" }).catch((err) => {

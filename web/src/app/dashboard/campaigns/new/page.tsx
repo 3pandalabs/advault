@@ -30,6 +30,7 @@ import {
   wizardTopupKey,
 } from "@/lib/budget";
 import { TopUpPicker } from "@/components/TopUpPicker";
+import { PlanPriceLines } from "@/components/PlanPriceLines";
 import { SuggestionChips } from "@/components/SuggestionChips";
 import { callToActionSuggestions, campaignNameSuggestions } from "@/lib/suggestions";
 import { AudienceFiltersEditor, HOUSING_NOTICE } from "@/components/AudienceFiltersEditor";
@@ -162,6 +163,8 @@ export default function NewCampaignPage() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
+  // Admin testing as a customer / test customer: prices shown at the test price.
+  const [testMode, setTestMode] = useState(false);
   // Internal accounts (our own apps) may also use their own video (#121); it
   // still waits for admin review and uses the customer limits.
   const [isInternal, setIsInternal] = useState(false);
@@ -242,6 +245,7 @@ export default function NewCampaignPage() {
         setIsAdmin(actsAsAdmin(me));
         setIsInternal(me.isInternal === true);
         const testing = me.isTestCustomer === true || (me.role === "admin" && me.testAsCustomer === true);
+        setTestMode(testing);
         const answered = new URLSearchParams(window.location.search).has(CHOSEN_PARAM);
         if (testing && !answered) {
           setAskWho({ currentName: me.isTestCustomer ? (me.businessName ?? me.displayName ?? "this test customer") : null });
@@ -1330,7 +1334,11 @@ export default function NewCampaignPage() {
               Making your ad costs {newAdPrice}, including up to two redos. You pay now, then we
               write the script and render your videos. Nothing runs until you launch.
             </p>
-          ) : (
+          ) : null}
+          {newAdPrice && !freeAd ? (
+            <PlanPriceLines className="mt-4 rounded-lg border border-white/10 p-3" testMode={testMode} />
+          ) : null}
+          {freeAd || newAdPrice ? null : (
             <p className="mt-5 text-sm text-zinc-400">
               We will write the script and render your videos. Nothing is charged and no ad runs
               until you connect Google Ads and launch — and even then the campaign is created

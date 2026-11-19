@@ -31,6 +31,12 @@ export type SubscriptionCheckoutRequest = {
   /** 3PandaLabs' own account (0032): full price, Stripe tags it `internal=1`. */
   internal?: boolean;
   internalLabel?: string | null;
+  /**
+   * The included first month (0038, lib/planBilling): nothing is charged
+   * until this instant (Stripe `subscription_data[trial_end]`); the card is
+   * saved for when the plan starts charging.
+   */
+  trialEnd?: Date | null;
 };
 
 export type SubscriptionCheckout = {
@@ -54,6 +60,16 @@ export type SubscriptionEvent =
       amountMinor: number;
       currency: Currency;
       raw: unknown;
+      /**
+       * The provider's first payment for this subscription. Stripe reports it
+       * TWICE (checkout.session.completed and invoice.paid with
+       * billing_reason subscription_create); whichever lands second is a
+       * duplicate, not month two.
+       */
+      firstPayment?: boolean;
+      /** Provider subscription / customer ids (Stripe sub_ / cus_), when present. */
+      providerSubscriptionRef?: string | null;
+      providerCustomerRef?: string | null;
     }
   | { kind: "failed"; invoiceId: string; reason: string; raw: unknown }
   | { kind: "canceled"; subscriptionId: string; raw: unknown }

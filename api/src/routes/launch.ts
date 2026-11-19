@@ -7,7 +7,7 @@ import { z } from "zod";
 import { requireAuth } from "../auth/plugin.js";
 import { db } from "../db/index.js";
 import { adAccounts, assets, campaigns, creatives } from "../db/schema.js";
-import { liveSubscriptionFor } from "../lib/subscriptions/index.js";
+import { ensurePlanForRunning, syncPlanBillingForUser } from "../lib/planBilling/index.js";
 import {
   budgetBelowMinimum,
   budgetMinimumBody,
@@ -17,7 +17,7 @@ import {
   type RunDays,
 } from "../lib/pricing/index.js";
 import { billingIdentity } from "../lib/testMode/index.js";
-import { launchPlanBlock } from "../lib/subscriptions/policy.js";
+import { planGateBody } from "../lib/planBilling/policy.js";
 import { decryptToken } from "../lib/crypto.js";
 import { isGoogleAdsConfigured } from "../lib/googleAds/env.js";
 import { mccAccessToken } from "../lib/googleAds/mcc.js";
@@ -154,14 +154,16 @@ export async function launchRoutes(app: FastifyInstance) {
       }
       const finalUrl = campaign.landingUrl;
 
-      // A paid plan that includes ads. Skipped on a dry run, like the billing
-      // and wallet gates: nothing can spend.
+      // The $19 plan (lib/planBilling): "$19 a month while your ad runs,
+      // first month included". Skipped on a dry run, like the billing and
+      // wallet gates: nothing can spend. Admins and at_cost skip it, unless
+      // the admin is testing as a customer. A stopped plan whose included
+      // month is spent is restarted here off-session with the saved card;
+      // otherwise 402 plan_required sends the customer to the plan checkout
+      // ($0 today when firstMonthIncluded).
       if (!validateOnly) {
-        // Admins and at_cost skip it, unless the admin is testing as a customer.
-        const who = await billingIdentity(req.userId!);
-        const sub = await liveSubscriptionFor(req.userId!);
-        const block = launchPlanBlock({ role: who.role, marginMode: who.marginMode, sub });
-        if (block) return reply.code(402).send({ error: block });
+        const gate = await ensurePlanForRunning(req.userId!);
+        if (!gate.ok) return reply.code(402).send(planGateBody(gate));
       }
 
       const account = await loadOwnedAdAccount(adAccountId, req.userId!, reply);
@@ -526,6 +528,9 @@ export async function launchRoutes(app: FastifyInstance) {
 
         // Fire-and-forget: a SiteVault failure never fails the launch; the sweep retries.
         if (updated?.siteVideoWanted) pushSiteVideoSoon(campaignId);
+
+        // An ad runs now: the plan bills (un-stops a stopping one). Never throws.
+        await syncPlanBillingForUser(req.userId!);
 
         // A platform customer's card limit tracks what they have live. Never
         // throws; a failure is logged and the old limit stays.

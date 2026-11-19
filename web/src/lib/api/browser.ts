@@ -15,6 +15,8 @@ export class ApiError extends Error {
     readonly code: string,
     readonly detail?: string,
     readonly fields?: string[],
+    /** The whole error body, for codes that carry more (plan_required: firstMonthIncluded). */
+    readonly body?: Record<string, unknown> | null,
   ) {
     super(code);
   }
@@ -100,7 +102,7 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
     const fields = (body?.details ?? [])
       .map((d) => (d.instancePath ? d.instancePath.split("/")[1] : String(d.path?.[0] ?? "")))
       .filter(Boolean);
-    throw new ApiError(res.status, body?.error ?? "request_failed", body?.detail, fields);
+    throw new ApiError(res.status, body?.error ?? "request_failed", body?.detail, fields, body as Record<string, unknown> | null);
   }
   return res.status === 204 ? (undefined as T) : res.json();
 }
@@ -1097,8 +1099,12 @@ export type SubscriptionView = {
     currentPeriodEnd: string | null;
     cancelAtPeriodEnd: boolean;
     pastDue: boolean;
+    /** The included first month: nothing is charged until this date. */
+    includedUntil?: string | null;
   } | null;
   entitled: boolean;
+  /** The $19 plan follows the running ad (2026-11-19). */
+  plan?: { firstMonthAvailable: boolean; adRunning: boolean };
   invoices?: {
     id: string;
     amountMinor: number;
@@ -1114,14 +1120,29 @@ export function getSubscription() {
   return api<SubscriptionView>("/subscription");
 }
 
-export function subscribe(planKey: string) {
+export function subscribe(planKey: string, campaignId?: string) {
   return api<{
     subscriptionId: string;
     invoiceId: string;
+    firstMonthIncluded?: boolean;
     provider: string;
     redirectUrl: string | null;
     clientPayload: Record<string, unknown>;
-  }>("/subscription", { method: "POST", body: JSON.stringify({ planKey }) });
+  }>("/subscription", { method: "POST", body: JSON.stringify({ planKey, ...(campaignId ? { campaignId } : {}) }) });
+}
+
+/** "Pause anytime: no fee while paused." Pausing the last running ad stops the plan at period end. */
+export function pauseCampaign(campaignId: string) {
+  return api<{ campaign: Campaign }>(`/campaigns/${campaignId}/pause`, { method: "POST" });
+}
+
+/**
+ * Restarts a paused ad. ApiError 402 plan_required (body.firstMonthIncluded)
+ * when the plan must be (re)started through checkout; 402 insufficient_funds
+ * when the ad budget can't cover it.
+ */
+export function resumeCampaign(campaignId: string) {
+  return api<{ campaign: Campaign; planRestarted?: boolean }>(`/campaigns/${campaignId}/resume`, { method: "POST" });
 }
 
 export type DeletionPreview = {

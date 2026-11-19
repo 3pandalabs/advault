@@ -115,7 +115,7 @@ Server to server from the SiteVault Worker, bearer `SITEVAULT_INTERNAL_TOKEN`
 
 | Method | Path | Notes |
 |---|---|---|
-| — | (launch) | `POST /campaigns/:id/launch` answers **402 `plan_required`** without a live plan, **402 `plan_has_no_ads`** on the offer line. Admins and at_cost accounts are exempt; skipped on `validateOnly`. |
+| — | (launch) | `POST /campaigns/:id/launch` (and `/resume`) answer **402 `plan_required`** `{firstMonthIncluded, detail}` when no plan covers now and none could be restarted off-session (see "The $19 plan follows the running ad" below), **402 `plan_pending`** while a just-paid plan checkout's webhook is in flight, **402 `plan_has_no_ads`** on the offer line. Admins (not in test mode) and at_cost accounts are exempt; skipped on `validateOnly`. |
 | POST | `/campaigns/:campaignId/creatives/generate` | **202.** Writes the scripts, queues the renders, returns. One creative per requested aspect ratio. **402 `new_ad_payment_required`** (`{display, rendersPerAd}`) for any advertiser (not admin / `at_cost`) whose campaign has no paid `new_ad` with renders left. Spends one of the paid ad's `RENDERS_PER_AD` (3: first + 2 redos, `purchases.renders_used`), given back if generation is refused. No free first ad since 2026-11-13. |
 | GET | `/new-ad/quote` | `{required, display, redosLeft}` (on the campaign route; `redosLeft` null when not metered): does this user pay per ad (everyone but admins and `at_cost`), and how much. |
 | GET | `/campaigns/:campaignId/new-ad` | `{required, display, order, siteOffer}`: the campaign's latest new-ad order. `siteOffer` (offer combo, `lib/siteOffer`) is `{offered: paid|credit|free, offer, credits, addonDisplay}` when the campaign's link is a SiteVault site with offer text and SiteVault's `offer-status` answered (site live or in grace), else null (hide the box). |
@@ -194,6 +194,28 @@ Deployment config: `ADVAULT_BILLING_MODES` (`platform`, `customer`, or both,
 comma separated; defaults to both). Platform is additionally gated on the MCC
 being configured. An unparseable value falls back to both rather than taking
 signup offline.
+
+## The $19 plan follows the running ad (2026-11-19, migration 0038, `lib/planBilling`)
+
+"$19 a month while your ad is running. Pause anytime: no fee while paused." First month included with the first ad, once per account.
+
+| Method | Path | Notes |
+|---|---|---|
+| POST | `/subscription` | Body `{ planKey, campaignId? }`. With `campaignId` (the caller's own; else 404) checkout returns to that campaign page (`?subscribed=1`). For `us-evergreen` when `users.plan_first_month_used_at` is NULL: **the included month**, a Stripe trial (`subscription_data[trial_end]` = the first period's end), $0 invoice, `subscriptions.first_month_included`/`included_until`; the response has `firstMonthIncluded: true`. Paying that $0 invoice (webhook) sets `plan_first_month_used_at` (once). An open but unpaid (`pending`) plan is replaced (its checkout session expired) instead of 409 `already_subscribed`. |
+| GET | `/subscription` | Adds `plan: {firstMonthAvailable, adRunning}` and `subscription.includedUntil` (only while the included month lasts). |
+| POST | `/subscription/cancel` | **409 `plan_follows_ads`** for the $19 plan while an ad runs (the sync would undo it; pausing the ad is how to stop paying). |
+| POST | `/campaigns/:campaignId/pause` | Owner. Pauses a launched, live campaign at Google (status PAUSED via the MCC; managed accounts only, else 409 `ad_account_unavailable`), sets `status = 'paused'`, syncs the card limit, then `syncPlanBillingForUser`: with no other ad running the plan stops at the end of its paid period. `{campaign, plan}`. 409 `not_running`; 502 `google_ads_error` (row unchanged). Already paused = 200 `alreadyPaused`. |
+| POST | `/campaigns/:campaignId/resume` | Owner. Re-enables a paused launched campaign: 409 `campaign_ended` past `ends_on`, 402 `insufficient_funds` (platform accounts, same 3-day rule as launch), then the plan gate (`ensurePlanForRunning`: a stopping plan inside its period passes and is un-stopped, no charge; a plan whose period is over is restarted off-session with the saved card; else 402 `plan_required`), then ENABLED at Google, `status = 'live'` (clears `paused_for_funds_at`), sync. `{campaign, plan, planRestarted}`. Already live = 200 `alreadyRunning`. |
+
+How it maps to Stripe (`lib/planBilling/index.ts`, pure rules in `policy.ts`):
+- **Running** = `status = 'live'` AND a Google campaign AND `ends_on` NULL or >= today (UTC). Paused for any reason, ended by its end date, or never launched = not running. No Google call.
+- **No ad running** → `cancel_at_period_end=true` on the Stripe subscription (and locally). The paid period is served out; Stripe then ends it (`customer.subscription.deleted` → `canceled`).
+- **An ad runs again inside the paid period** → `cancel_at_period_end=false`. No charge.
+- **An ad runs after the period ended** → a NEW Stripe subscription on the same customer with the previous plan's card (`payment_behavior=error_if_incomplete`, charged now, same metadata/test/internal tags; test mode uses an inline 50-cent price on the previous product), recorded paid immediately with the same `stripe:in_…` ref the webhook later brings. No saved card / decline → 402 `plan_required` (checkout).
+- `syncPlanBillingForUser(userId)` is the one function: called after launch, pause, resume, a plan payment, and a top-up that restarted an ad (`resumeAfterTopUp`), and by an API sweep every 10 minutes for everyone with a live plan or live campaign (covers the renderer's own changes: empty-budget pauses, end dates, hourly auto-restart; the renderer has no Stripe key). The renderer's auto-restart only switches an ad back on when a plan covers now (`planAllowsRunningFor`).
+- Stripe's first payment arrives twice (`checkout.session.completed` and `invoice.paid` with `billing_reason: subscription_create`); the second copy is a duplicate (`firstPayment`), never month two (before 0038 it opened and paid month two). `sub_`/`cus_` ids are stored from either (`provider_subscription_ref`/`provider_customer_ref`; older rows resolve them from the `cs_` session on first use). `parent.subscription_details` (Stripe API 2025-03-31+) is read too.
+- The $19 fee is always externally funded (`feeFunding('evergreen', *) = external`): it never draws on the ad budget.
+- Account deletion also cancels the Stripe plan immediately.
 
 ## Launch
 

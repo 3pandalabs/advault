@@ -65,6 +65,9 @@ export const users = pgTable(
     // ("INTERNAL · ", Stripe `internal=1`). `internalLabel` is the product.
     isInternal: boolean("is_internal").notNull().default(false),
     internalLabel: text("internal_label"),
+    // The $19 plan's included first month (0038, lib/planBilling): set when
+    // it was used. NULL = this account's next plan starts with a free month.
+    planFirstMonthUsedAt: timestamp("plan_first_month_used_at", { withTimezone: true }),
 
     // Set when the user deleted their account (lib/accountDeletion.ts). The row
     // is kept, anonymised, because the financial records point at it.
@@ -970,6 +973,14 @@ export const subscriptions = pgTable(
     // therefore carries the Indian GST/OIDAR obligation instead of us.
     provider: text("provider").notNull(),
     providerRef: text("provider_ref"),
+    // Stripe sub_... / cus_... (0038), captured from the webhook so the plan
+    // can follow the running ad (lib/planBilling): stopped at period end,
+    // un-stopped, restarted off-session with the saved card.
+    providerSubscriptionRef: text("provider_subscription_ref"),
+    providerCustomerRef: text("provider_customer_ref"),
+    // First period is the included month (0038): a $0 invoice / Stripe trial.
+    firstMonthIncluded: boolean("first_month_included").notNull().default(false),
+    includedUntil: timestamp("included_until", { withTimezone: true }),
 
     // pending  — created, first payment not yet confirmed
     // active   — paid and current
@@ -1071,7 +1082,8 @@ export const subscriptionInvoices = pgTable(
     uniqueIndex("uq_sub_invoices_period").on(t.subscriptionId, t.periodStart),
     check("sub_invoices_currency_check", sql`${t.currencyCode} in ('INR','USD')`),
     check("sub_invoices_status_check", sql`${t.status} in ('pending','paid','failed','voided')`),
-    check("sub_invoices_amount_check", sql`${t.amountMinor} > 0`),
+    // >= 0 since 0038: the included first month is a $0 invoice.
+    check("sub_invoices_amount_check", sql`${t.amountMinor} >= 0`),
     check("sub_invoices_period_check", sql`${t.periodEnd} > ${t.periodStart}`),
   ],
 );
