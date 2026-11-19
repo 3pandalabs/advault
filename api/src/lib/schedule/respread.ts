@@ -1,5 +1,5 @@
 // "More budget means more days" ("$55 a month", option C). When ad budget is
-// added (a top-up, or a plan month's $35 recharge), re-pick the days of every
+// added (a top-up, or a plan month's ad budget recharge), re-pick the days of every
 // launched 'spread' campaign the wallet pays for, from the balance now on
 // hand, and send the change to Google as a schedule edit (the same atomic
 // targeting mutate the owner's own edits use). 'custom' schedules are never
