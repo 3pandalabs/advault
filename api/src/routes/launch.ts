@@ -160,7 +160,7 @@ export async function launchRoutes(app: FastifyInstance) {
       }
       const finalUrl = campaign.landingUrl;
 
-      // The plan (lib/planBilling): "$20 a month + $35 ad budget while your ad runs,
+      // The plan (lib/planBilling): "$20 a month + the monthly ad budget while your ad runs,
       // first month included". Skipped on a dry run, like the billing and
       // wallet gates: nothing can spend. Admins and at_cost skip it, unless
       // the admin is testing as a customer. A stopped plan whose included

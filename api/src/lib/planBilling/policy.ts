@@ -1,6 +1,6 @@
 // The plan follows the running ad (owner decision 2026-11-19, option B).
 //
-//   "$20 a month plus your $35 monthly ad budget while your ad is running. Pause anytime: no fee while paused."
+//   "$20 a month plus your monthly ad budget (from $35) while your ad is running. Pause anytime: no fee while paused."
 //   First month included with the first ad, once per account.
 //
 // Every pure decision lives here and is tested (policy.test.ts); ./index.ts is
