@@ -109,3 +109,26 @@ describe("campaignsToResume", () => {
     expect(out.map((x) => x.id)).toEqual(["b"]);
   });
 });
+
+describe("top-up estimate", () => {
+  it("clicks are amount / $2.00 .. amount / $0.50, rounded", async () => {
+    const { estimateClicks, roundCount } = await import("./runway.js");
+    expect(estimateClicks(5_000, "USD")).toEqual({ low: 25, high: 100 });
+    expect(estimateClicks(3_500, "USD")).toEqual({ low: 18, high: 70 });
+    expect(estimateClicks(10_000, "USD")).toEqual({ low: 50, high: 200 });
+    expect(estimateClicks(0, "USD")).toEqual({ low: 0, high: 0 });
+    expect(roundCount(123)).toBe(125);
+    expect(roundCount(1_234)).toBe(1_230);
+  });
+  it("$50 at $5 a day: 10 days, times shown from estimateReach, 25-100 clicks", async () => {
+    const { topupEstimate } = await import("./topupEstimate.js");
+    expect(topupEstimate(5_000, 500, "USD")).toEqual({
+      days: 10,
+      shownLow: 8_500,
+      shownHigh: 16_500,
+      clicks: { low: 25, high: 100 },
+    });
+    // The FAQ's $35 figure.
+    expect(topupEstimate(3_500, 500, "USD")).toMatchObject({ days: 7, shownLow: 6_000, shownHigh: 11_500 });
+  });
+});

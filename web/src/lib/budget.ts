@@ -91,3 +91,37 @@ export function lastsSentence(amountCents: number, dailyCents: number, currency:
 
 /** sessionStorage key for the top-up amount picked in the wizard (nothing is charged there). */
 export const wizardTopupKey = (campaignId: string) => `advault:topup:${campaignId}`;
+
+// The live estimate under the top-up picker, mirrored from
+// api/src/lib/wallet/runway.ts + topupEstimate.ts and estimateReach() in
+// api/src/lib/pricing (tested there). An ESTIMATE; the copy says so.
+// "Times shown" = impressions from CPM ranges, not views or unique people.
+const CPM_CENTS: Record<string, { low: number; high: number }> = {
+  USD: { low: 300, high: 600 },
+  INR: { low: 8_000, high: 15_000 },
+};
+// 2026 industry cost-per-click ranges for Demand Gen video ads on YouTube
+// ($0.50-$2.00). Replace with AdVault's own averages once real campaigns run.
+const CPC_CENTS: Record<string, { low: number; high: number }> = {
+  USD: { low: 50, high: 200 },
+  INR: { low: 4_000, high: 16_000 },
+};
+
+function roundCount(n: number): number {
+  if (n < 20) return Math.max(0, Math.round(n));
+  if (n < 200) return Math.round(n / 5) * 5;
+  return Math.round(n / 10) * 10;
+}
+
+export function topupEstimate(amountCents: number, dailyCents: number, currency: string) {
+  const cpm = CPM_CENTS[currency] ?? CPM_CENTS.USD;
+  const cpc = CPC_CENTS[currency] ?? CPC_CENTS.USD;
+  const amt = Math.max(amountCents, 0);
+  const r500 = (n: number) => Math.round(n / 500) * 500;
+  return {
+    days: daysOfBudget(amt, dailyCents),
+    shownLow: r500((amt / cpm.high) * 1000),
+    shownHigh: r500((amt / cpm.low) * 1000),
+    clicks: amt > 0 ? { low: roundCount(amt / cpc.high), high: roundCount(amt / cpc.low) } : { low: 0, high: 0 },
+  };
+}
