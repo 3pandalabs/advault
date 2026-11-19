@@ -148,6 +148,8 @@ export async function campaignRoutes(app: FastifyInstance) {
         ...body,
         runDays: body.runDays ?? null,
         adSchedule: normalizeAdSchedule(body.adSchedule),
+        // An owner-chosen schedule is theirs; otherwise AdVault spreads the budget (lib/schedule/spread.ts).
+        scheduleMode: body.adSchedule ? "custom" : "spread",
         targetAddress: body.targetAddress ?? null,
         audienceFilters: targeting.audienceFilters,
         realty: body.realty ?? null,
@@ -253,7 +255,7 @@ export async function campaignRoutes(app: FastifyInstance) {
         .set({
           ...body,
           ...(body.audienceFilters !== undefined ? { audienceFilters: targeting.audienceFilters } : {}),
-          ...(body.adSchedule !== undefined ? { adSchedule: normalizeAdSchedule(body.adSchedule) } : {}),
+          ...(body.adSchedule !== undefined ? { adSchedule: normalizeAdSchedule(body.adSchedule), scheduleMode: "custom" as const } : {}),
           updatedAt: new Date(),
         })
         .where(eq(campaigns.id, campaignId))

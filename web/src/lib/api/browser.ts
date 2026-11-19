@@ -187,6 +187,11 @@ export type Campaign = {
   audienceFilters: AudienceFilters | null;
   /** Days + hours the ad may show; null = every day, all day (migration 0037). */
   adSchedule?: AdSchedule | null;
+  /**
+   * "spread" = AdVault picks the days from the ad budget (api
+   * lib/schedule/spread.ts, migration 0042); "custom" = the owner's schedule.
+   */
+  scheduleMode?: "spread" | "custom";
   /** Real estate only: listing or agent ad (api lib/realty). */
   realty?: Realty | null;
   dailyBudgetCents: number;
@@ -588,7 +593,7 @@ export function updateCampaign(
  */
 export function updateTargeting(
   campaignId: string,
-  input: { audienceFilters?: AudienceFilters | null; adSchedule?: AdSchedule | null },
+  input: { audienceFilters?: AudienceFilters | null; adSchedule?: AdSchedule | null; scheduleMode?: "spread" },
 ) {
   return api<{ campaign: Campaign; appliedAtGoogle: boolean; changedAtGoogle?: boolean }>(
     `/campaigns/${campaignId}/targeting`,

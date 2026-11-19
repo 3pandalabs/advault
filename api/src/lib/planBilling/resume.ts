@@ -3,6 +3,7 @@ import { db } from "../../db/index.js";
 import { campaigns } from "../../db/schema.js";
 import { unfreezeCardsForUser } from "../billing/managedCard.js";
 import { resumeFundedCampaigns } from "../billing/resume.js";
+import { respreadForUser } from "../schedule/respread.js";
 import { ensurePlanForRunning, syncPlanBillingForUser } from "./index.js";
 
 /**
@@ -38,5 +39,6 @@ export async function afterPlanBudgetCredit(userId: string): Promise<number> {
   await unfreezeCardsForUser(userId).catch((err) =>
     console.log(JSON.stringify({ job: "plan-billing", msg: "card unfreeze after budget recharge failed", extra: { userId, error: String(err) } })),
   );
+  void respreadForUser(userId);
   return resumeAfterTopUp(userId);
 }

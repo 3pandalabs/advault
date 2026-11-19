@@ -545,6 +545,9 @@ export const campaigns = pgTable(
     // Days + one hour window the ad may show (migration 0037,
     // lib/schedule/policy.ts). NULL = every day, all day.
     adSchedule: jsonb("ad_schedule").$type<AdSchedule>(),
+    // 'spread' = AdVault spreads the ad budget over the month by picking the
+    // days (migration 0042, lib/schedule/spread.ts); 'custom' = the owner's.
+    scheduleMode: text("schedule_mode").$type<"spread" | "custom">().notNull().default("spread"),
 
     dailyBudgetCents: integer("daily_budget_cents").notNull(),
     currencyCode: text("currency_code").notNull().default("USD"),

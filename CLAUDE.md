@@ -824,6 +824,24 @@ amounts.
   period end. Needs that SiteVault route; until it exists pushes 404 and are
   retried every sweep.
 
+### Spreading the budget across the month (option C, migration 0042, `lib/schedule/spread.ts`)
+
+`campaigns.schedule_mode`: `spread` (default for new campaigns) or `custom`
+(every campaign before 0042, and any schedule the owner saves). For a
+`spread` campaign the wallet pays for, launch picks whole days from the
+balance: `round(balance / daily / 4.35)` days a week ($35 at $5 -> 2, $70 ->
+3, $150+ -> every day = no schedule), best days per category first
+(`SPREAD_DAY_ORDER`: restaurants Fri/Sat, landscaping and real estate
+Sat/Sun, dentistry Tue/Thu, others evenly spaced). A top-up or a plan
+month's recharge re-picks the days (`respreadForUser`, a schedule edit at
+Google; `custom` is never touched). The owner can switch back with
+`PUT /campaigns/:id/targeting {scheduleMode: "spread"}` ("When it shows").
+**Overspend:** Google may spend 2x daily on a serving day, and with a
+schedule it tends to. `spendSync` pauses a SCHEDULED campaign once the
+balance is under 2 x the live daily total (`pauseForFunds`), so the wallet
+cannot go negative; at exactly $5/day $35 shows 6 days and $5 rolls over, and
+at Google's 2x worst case 3 days. Resume still needs 3 days of budget.
+
 ## Admin "Test as customer" (2026-11-17, migration 0027, `lib/testMode`)
 
 `users.test_as_customer`, switched by an admin in Settings (`PATCH
