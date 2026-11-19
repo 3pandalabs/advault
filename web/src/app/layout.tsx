@@ -6,7 +6,7 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "AdVault by 3PandaLabs",
   description:
-    "Self-serve YouTube and Shorts ads for local businesses. Upload a few photos, pick your ZIP codes, set a daily budget.",
+    "Self-serve YouTube and Shorts ads for local businesses. Upload a few photos, pick your ZIP codes, add an ad budget.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

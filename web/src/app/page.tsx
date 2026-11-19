@@ -20,7 +20,7 @@ const STEPS = [
   },
   {
     title: "Top up and go live",
-    body: "Top up from $35. Your ad runs at $5 a day (Google's minimum) on YouTube and Shorts for people near you, until your budget runs out. You never open Google Ads.",
+    body: "Top up from $35. Your ad shows on YouTube and Shorts to people near you until your budget runs out. You never open Google Ads.",
   },
 ];
 
@@ -65,7 +65,7 @@ const FAQ = [
   },
   {
     q: "What does it cost to keep my ad running?",
-    a: "Your ad is $10 once. Your ad budget is from $35, and 100% of it goes to Google: your ad runs at $5 a day (Google's minimum) until it runs out, so $35 lasts about a week and $50 about 10 days. The AdVault plan is $19 a month while your ad runs, and the first month is included. Every dollar of your ad budget goes to Google. AdVault earns only the $10 and the $19.",
+    a: "Your ad is $10 once. Your ad budget is from $35, and 100% of it goes to Google: your ad runs until it runs out. For $35 we estimate it is shown 6,000 to 11,500 times to people near you. The AdVault plan is $19 a month while your ad runs, and the first month is included. Every dollar of your ad budget goes to Google. AdVault earns only the $10 and the $19.",
   },
   {
     q: "What happens to ad budget I don't use?",
@@ -73,7 +73,7 @@ const FAQ = [
   },
   {
     q: "How often will my ad be shown?",
-    a: "For $35 (about a week at $5 a day) we estimate your ad is shown 6,000 to 11,500 times to people near you, depending on your area. It's an estimate, not a guarantee. Your results screen shows the real numbers.",
+    a: "For $35 we estimate your ad is shown 6,000 to 11,500 times to people near you, depending on your area. It's an estimate, not a guarantee. Your results screen shows the real numbers.",
   },
   {
     q: "Is there a contract?",
@@ -249,8 +249,7 @@ export default function LandingPage() {
             </p>
             <p className="mt-3 text-sm text-zinc-400">
               First month included with your first ad. Pause anytime: no fee while paused. Plus
-              your ad budget from $35: it runs at $5 a day (Google&apos;s minimum) until it runs
-              out, and unused budget stays in your account and is refunded if you leave.
+              your ad budget from $35: your ad runs until it runs out, and unused budget stays in your account and is refunded if you leave.
             </p>
           </Card>
         </div>

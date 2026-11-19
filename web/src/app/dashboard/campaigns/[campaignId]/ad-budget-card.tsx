@@ -4,7 +4,7 @@ import { useState } from "react";
 import type { Campaign, Wallet } from "@/lib/api/browser";
 import { Card, CardDescription, CardTitle } from "@/components/ui/card";
 import { TopUpPicker } from "@/components/TopUpPicker";
-import { aboutDays, daysOfBudget, wizardTopupKey } from "@/lib/budget";
+import { wizardTopupKey } from "@/lib/budget";
 import { formatMoney } from "@/lib/utils";
 
 /**
@@ -25,20 +25,14 @@ export function AdBudgetCard({ campaign, wallet }: { campaign: Campaign; wallet:
   });
 
   if (!wallet) return null;
-  const daily = campaign.dailyBudgetCents;
   const balance = wallet.balanceMinor;
-  // Live: the shared budget is split across every live campaign.
-  const liveDaily = wallet.budget?.liveCampaignIds.includes(campaign.id) ? wallet.budget.liveDailyMinor : daily;
-  const days = daysOfBudget(balance, liveDaily);
 
   return (
     <Card className="mt-2 mb-4" id="ad-budget">
       <CardTitle>Your ad budget</CardTitle>
       <p className="mt-2 text-3xl font-semibold">{formatMoney(balance, wallet.currencyCode)}</p>
       <CardDescription className="mt-1">
-        {balance > 0
-          ? `Lasts ${aboutDays(days)} at ${formatMoney(liveDaily, wallet.currencyCode)} a day.`
-          : `Your ad runs at ${formatMoney(daily, wallet.currencyCode)} a day until your budget runs out.`}{" "}
+        Your ad runs until your budget runs out.{" "}
         You only pay for what Google delivers. Unused budget stays in your account.
       </CardDescription>
       <p className="mt-4 text-sm font-medium text-zinc-200">Add to your ad budget</p>

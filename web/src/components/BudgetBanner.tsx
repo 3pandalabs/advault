@@ -1,6 +1,5 @@
 import Link from "next/link";
 import type { Wallet } from "@/lib/api/browser";
-import { aboutDays } from "@/lib/budget";
 
 /**
  * The low / ran-out ad budget banner (top-up-first model, 2026-11-19). State
@@ -39,7 +38,7 @@ export function BudgetBanner({
     return (
       <div className="mb-4 rounded-lg border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-sm text-amber-200">
         <strong>Your ad budget is running low</strong>
-        {b.daysLeft ? ` — ${aboutDays(b.daysLeft)} left` : ""}. Add more to keep your ad running.{" "}
+        . Add more to keep your ad running.{" "}
         <Link href={href} className="font-medium underline underline-offset-4">
           Add to my ad budget
         </Link>

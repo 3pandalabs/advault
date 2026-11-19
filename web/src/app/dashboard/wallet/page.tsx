@@ -5,7 +5,6 @@ import { getWallet, type Wallet } from "@/lib/api/browser";
 import { Badge, Card, CardDescription, CardTitle } from "@/components/ui/card";
 import { BudgetBanner } from "@/components/BudgetBanner";
 import { TopUpPicker } from "@/components/TopUpPicker";
-import { aboutDays } from "@/lib/budget";
 import { formatDate } from "@/lib/utils";
 
 // The ad balance. Under the managed (MCC) model, ads run against 3PandaLabs'
@@ -85,14 +84,9 @@ export default function WalletPage() {
             <Badge tone="success">Funded</Badge>
           )}
         </div>
-        {budget?.daysLeft ? (
-          <p className="mt-2 text-sm text-zinc-300">
-            Lasts {aboutDays(budget.daysLeft)} at {fmt(budget.liveDailyMinor, wallet.currencyCode)} a day.
-          </p>
-        ) : null}
 
         <CardDescription className="mt-4">
-          Your ad runs every day at its daily budget until this runs out. You only pay for
+          Your ad runs until this runs out. You only pay for
           what Google delivers, and you can never be charged more than you added. Unused
           budget stays here for your next ad, and if you leave we refund it.
         </CardDescription>

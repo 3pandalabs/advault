@@ -8,7 +8,7 @@ import { getMe, getWallet, listCampaigns, type Campaign, type CampaignStatus, ty
 import { BudgetBanner } from "@/components/BudgetBanner";
 import { Badge, Card, CardDescription, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { formatDate, formatMoney } from "@/lib/utils";
+import { formatDate } from "@/lib/utils";
 
 const STATUS_TONE: Record<CampaignStatus, "neutral" | "pending" | "success" | "danger"> = {
   draft: "neutral",
@@ -85,7 +85,7 @@ export default function CampaignsPage() {
       <Card className="text-center">
         <CardTitle>No campaigns yet</CardTitle>
         <CardDescription>
-          Upload a few photos, choose the ZIP codes you serve, and set a daily budget. It takes
+          Upload a few photos, choose the ZIP codes you serve, and add an ad budget. It takes
           about three minutes.
         </CardDescription>
         <div className="mt-5">
@@ -132,7 +132,6 @@ export default function CampaignsPage() {
                 <div>
                   <CardTitle>{c.name}</CardTitle>
                   <CardDescription>
-                    {formatMoney(c.dailyBudgetCents, c.currencyCode)}/day &middot;{" "}
                     {c.targetAddress
                       ? `${c.radiusMiles} miles around a listing`
                       : `${c.targetZipCodes.length} ZIP${c.targetZipCodes.length === 1 ? "" : "s"} within ${c.radiusMiles} miles`}{" "}
