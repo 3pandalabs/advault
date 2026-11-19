@@ -37,6 +37,13 @@ export type SubscriptionCheckoutRequest = {
    * saved for when the plan starts charging.
    */
   trialEnd?: Date | null;
+  /**
+   * "$55 a month" (0041): ad budget charged with every paid month as a second
+   * recurring line on the same subscription, credited to the wallet when the
+   * invoice is paid. 0/absent = none. Stripe only (the plan it applies to is
+   * US-only).
+   */
+  budgetMinor?: number;
 };
 
 export type SubscriptionCheckout = {

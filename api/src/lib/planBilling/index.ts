@@ -1,9 +1,16 @@
 import { and, desc, eq, inArray, isNotNull, or } from "drizzle-orm";
 import { db } from "../../db/index.js";
-import { campaigns, subscriptions, users } from "../../db/schema.js";
+import { campaigns, subscriptionInvoices, subscriptions, users } from "../../db/schema.js";
 import { notifyOps } from "../ops/notify.js";
-import { buysMedia, chargeMinor, planByKey, type Currency, type ProductLine } from "../pricing/index.js";
-import { createSubscription, liveSubscriptionFor, markInvoicePaid, userCurrency } from "../subscriptions/index.js";
+import {
+  buysMedia,
+  MONTHLY_AD_BUDGET_RECHARGE_MINOR,
+  planByKey,
+  type Currency,
+  type Plan,
+  type ProductLine,
+} from "../pricing/index.js";
+import { billingModeFor, createSubscription, liveSubscriptionFor, markInvoicePaid, userCurrency } from "../subscriptions/index.js";
 import { subscriptionProviderFor } from "../subscriptions/providers/index.js";
 import {
   StripeApiError,
@@ -14,15 +21,19 @@ import {
   stripeSubscriptions,
 } from "../subscriptions/providers/stripe.js";
 import { billingIdentity } from "../testMode/index.js";
+import { syncSitePlanCover } from "../sitePlanCover/index.js";
 import {
+  adWantsPlan,
   isRunning,
   PLAN_FOLLOWS_RUNNING_LINE,
   planAllowsRunning,
   planBillingAction,
   planGate,
+  planTerms,
   type PlanBillingAction,
   type PlanGate,
   type PlanSub,
+  type PlanTerms,
 } from "./policy.js";
 
 // The $19 plan follows the running ad (owner decision 2026-11-19, option B).
@@ -60,6 +71,57 @@ export async function hasRunningAd(userId: string, now = new Date()): Promise<bo
     .from(campaigns)
     .where(and(eq(campaigns.userId, userId), eq(campaigns.status, "live"), isNotNull(campaigns.googleCampaignResourceName)));
   return rows.some((c) => isRunning(c, todayIso(now)));
+}
+
+/**
+ * An ad paused ONLY because its budget ran out (spendSync), launched and not
+ * past its end date: on a plan with a monthly recharge, the next paid month
+ * refills the budget and switches it back on.
+ */
+export async function hasAdWaitingForBudget(userId: string, now = new Date()): Promise<boolean> {
+  const rows = await db
+    .select({ endsOn: campaigns.endsOn })
+    .from(campaigns)
+    .where(
+      and(
+        eq(campaigns.userId, userId),
+        eq(campaigns.status, "paused"),
+        isNotNull(campaigns.pausedForFundsAt),
+        isNotNull(campaigns.googleCampaignResourceName),
+      ),
+    );
+  return rows.some((c) => !c.endsOn || c.endsOn >= todayIso(now));
+}
+
+/**
+ * The terms a NEW plan subscription for this user starts on ("$55 a month",
+ * policy.ts planTerms): $20 + the $35 monthly ad budget, or the grandfathered
+ * $19 with no recharge for an account that ever paid a $19 plan.
+ */
+export async function planTermsFor(
+  userId: string,
+  plan: Plan,
+  who: { testMode: boolean },
+): Promise<PlanTerms> {
+  const prior = await db
+    .selectDistinct({ amountMinor: subscriptions.amountMinor })
+    .from(subscriptions)
+    .innerJoin(subscriptionInvoices, eq(subscriptionInvoices.subscriptionId, subscriptions.id))
+    .where(
+      and(
+        eq(subscriptions.userId, userId),
+        eq(subscriptions.line, PLAN_FOLLOWS_RUNNING_LINE),
+        eq(subscriptionInvoices.status, "paid"),
+      ),
+    );
+  return planTerms({
+    line: plan.line,
+    listFeeMinor: plan.monthlyFeeMinor,
+    rechargeMinor: MONTHLY_AD_BUDGET_RECHARGE_MINOR[plan.currency] ?? 0,
+    priorPaidPlanFeesMinor: prior.map((p) => p.amountMinor),
+    billingMode: await billingModeFor(userId),
+    testMode: who.testMode,
+  });
 }
 
 async function firstMonthUsed(userId: string): Promise<boolean> {
@@ -178,7 +240,7 @@ async function uncancel(sub: SubRow): Promise<"ok" | "gone" | "failed"> {
 }
 
 export type RestartResult =
-  | { ok: true }
+  | { ok: true; budgetCreditedMinor?: number }
   | { ok: false; reason: "exempt" | "checkout_required" | "no_saved_card" | "card_declined" | "stripe_error" | "already_live" };
 
 /**
@@ -217,10 +279,19 @@ export async function restartPlanOffSession(userId: string, now = new Date()): P
   const prevRef = await stripeRefFor(prev);
   if (!prevRef) return { ok: false, reason: "no_saved_card" };
 
-  const amountMinor = chargeMinor(plan.monthlyFeeMinor, who.testMode);
+  const terms = await planTermsFor(userId, plan, who);
+  const amountMinor = terms.feeMinor;
+  const budgetMinor = terms.budgetRechargeMinor;
   let created;
   try {
-    created = await createSubscription({ userId, planKey: plan.key, provider: "stripe", amountMinor, now });
+    created = await createSubscription({
+      userId,
+      planKey: plan.key,
+      provider: "stripe",
+      amountMinor,
+      budgetRechargeMinor: budgetMinor,
+      now,
+    });
   } catch {
     return { ok: false, reason: "already_live" };
   }
@@ -235,6 +306,7 @@ export async function restartPlanOffSession(userId: string, now = new Date()): P
     invoiceId: created.invoice.id,
     internal: who.internal,
     internalLabel: who.internalLabel,
+    budgetMinor,
   });
   if (!r.ok) {
     await db
@@ -249,11 +321,11 @@ export async function restartPlanOffSession(userId: string, now = new Date()): P
     .update(subscriptions)
     .set({ providerRef: r.subscriptionRef, providerSubscriptionRef: r.subscriptionRef, providerCustomerRef: r.customerRef })
     .where(eq(subscriptions.id, created.subscription.id));
-  if (r.amountPaidMinor !== amountMinor) {
-    log("restart charged a different amount than the invoice", { userId, expected: amountMinor, got: r.amountPaidMinor });
+  if (r.amountPaidMinor !== amountMinor + budgetMinor) {
+    log("restart charged a different amount than the invoice", { userId, expected: amountMinor + budgetMinor, got: r.amountPaidMinor });
   }
   // Same external ref the invoice.paid webhook will carry, so that copy is a duplicate.
-  await markInvoicePaid({
+  const paid = await markInvoicePaid({
     invoiceId: created.invoice.id,
     externalRef: `stripe:${r.invoiceRef ?? r.subscriptionRef}`,
     providerPayload: { restartedOffSession: true },
@@ -261,7 +333,7 @@ export async function restartPlanOffSession(userId: string, now = new Date()): P
     providerCustomerRef: r.customerRef,
   });
   log("plan restarted off-session", { userId, subscriptionId: created.subscription.id });
-  return { ok: true };
+  return { ok: true, budgetCreditedMinor: paid.budgetCreditedMinor };
 }
 
 // One sync per user at a time in this process (launch + sweep racing). The
@@ -292,7 +364,15 @@ export function syncPlanBillingForUser(userId: string, now = new Date()): Promis
 async function syncOnce(userId: string, now: Date): Promise<PlanSyncResult> {
   const who = await billingIdentity(userId);
   const sub = await liveSubscriptionFor(userId);
-  const running = await hasRunningAd(userId, now);
+  // "$55 a month": on a plan with a monthly budget recharge, an ad paused only
+  // because its budget ran out keeps the plan going, so the next month's
+  // recharge refills the budget and switches it back on (policy adWantsPlan).
+  const planRecharges = (sub?.budgetRechargeMinor ?? 0) > 0;
+  const running = adWantsPlan({
+    running: await hasRunningAd(userId, now),
+    waitingForBudget: planRecharges && (await hasAdWaitingForBudget(userId, now)),
+    planRecharges,
+  });
   const action = planBillingAction({ exempt: who.exempt, running, sub: asPlanSub(sub), now });
 
   switch (action.kind) {
@@ -331,7 +411,15 @@ async function syncOnce(userId: string, now: Date): Promise<PlanSyncResult> {
 
 async function restartAndReport(userId: string, now: Date): Promise<PlanSyncResult> {
   const r = await restartPlanOffSession(userId, now);
-  if (r.ok) return { action: "restart", ok: true };
+  if (r.ok) {
+    // The new month's ad budget landed: unfreeze and switch back on what an
+    // empty budget paused. Not awaited: it runs its own plan sync, which
+    // queues behind this one.
+    if ((r.budgetCreditedMinor ?? 0) > 0) {
+      void import("./resume.js").then((m) => m.afterPlanBudgetCredit(userId));
+    }
+    return { action: "restart", ok: true };
+  }
   // An ad runs with no plan and no way to charge for it (no saved card, a
   // decline). Launch and resume refuse this; it can only come from a renewal
   // that failed dunning. Tell ops at most once a day per customer.
@@ -340,7 +428,7 @@ async function restartAndReport(userId: string, now: Date): Promise<PlanSyncResu
     alertedAt.set(userId, Date.now());
     await notifyOps({
       title: "AdVault: ad running without a plan",
-      message: `User ${userId} has a running ad and no paid plan; restarting the $19 plan failed (${r.reason}).`,
+      message: `User ${userId} has a running ad and no paid plan; restarting the plan failed (${r.reason}).`,
       priority: 3,
       tags: ["moneybag"],
     }).catch(() => undefined);
@@ -363,6 +451,11 @@ export async function syncAllPlanBilling(now = new Date()): Promise<Record<strin
   for (const id of ids) {
     const r = await syncPlanBillingForUser(id, now);
     if (r.action !== "none") counts[`${r.action}:${r.ok ? "ok" : "failed"}`] = (counts[`${r.action}:${r.ok ? "ok" : "failed"}`] ?? 0) + 1;
+  }
+  // "$55 a month": the AdVault-made website stays on Pro while the plan runs.
+  for (const { userId } of withPlan) {
+    const c = await syncSitePlanCover(userId, now);
+    if (c === "pushed" || c === "failed") counts[`siteCover:${c}`] = (counts[`siteCover:${c}`] ?? 0) + 1;
   }
   return counts;
 }

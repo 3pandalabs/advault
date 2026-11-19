@@ -1,0 +1,32 @@
+-- "$55 a month" (owner decision 2026-11-19): the AdVault plan goes from $19 to
+-- $20 for NEW subscriptions, and each month the subscription also charges $35
+-- of ad budget, credited to the customer's ad budget wallet (lib/planBilling,
+-- lib/subscriptions). Existing subscriptions keep $19 and no recharge: their
+-- rows are untouched and both new columns default to 0.
+--
+-- subscriptions.budget_recharge_minor   ad budget charged with every PAID
+--                                       month of this subscription (3500 =
+--                                       $35; 0 = none, grandfathered $19).
+--                                       Fixed when the subscription starts,
+--                                       like amount_minor, so a later price
+--                                       change never reaches it.
+-- subscription_invoices.budget_minor    the ad budget part of THIS invoice
+--                                       (0 for the included first month).
+--                                       The provider charges amount_minor +
+--                                       budget_minor; on payment amount_minor
+--                                       is the fee and budget_minor becomes a
+--                                       wallet top-up (external ref
+--                                       sub:<invoice>:budget, once per invoice).
+-- Idempotent.
+
+ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS budget_recharge_minor integer NOT NULL DEFAULT 0;
+--> statement-breakpoint
+ALTER TABLE subscription_invoices ADD COLUMN IF NOT EXISTS budget_minor integer NOT NULL DEFAULT 0;
+--> statement-breakpoint
+ALTER TABLE subscriptions DROP CONSTRAINT IF EXISTS subscriptions_budget_recharge_check;
+--> statement-breakpoint
+ALTER TABLE subscriptions ADD CONSTRAINT subscriptions_budget_recharge_check CHECK (budget_recharge_minor >= 0);
+--> statement-breakpoint
+ALTER TABLE subscription_invoices DROP CONSTRAINT IF EXISTS sub_invoices_budget_check;
+--> statement-breakpoint
+ALTER TABLE subscription_invoices ADD CONSTRAINT sub_invoices_budget_check CHECK (budget_minor >= 0);

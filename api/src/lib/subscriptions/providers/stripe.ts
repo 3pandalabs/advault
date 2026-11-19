@@ -26,6 +26,34 @@ const PRICE_IDS: Record<string, string | undefined> = {
 };
 
 /**
+ * The fixed Stripe price for a plan at a given monthly amount, or null (the
+ * caller then sends an inline monthly price).
+ *
+ * Keep it running has two live amounts since "$55 a month" (2026-11-19):
+ * $19 (`STRIPE_PRICE_US_EVERGREEN`, the original price; grandfathered
+ * subscriptions keep it, and Stripe keeps charging them on it) and $20
+ * (`STRIPE_PRICE_US_EVERGREEN_20`, new subscriptions). Picking by amount
+ * means a grandfathered restart can never land on the $20 price. Read at call
+ * time so the env can be set without a code change.
+ */
+export function stripePlanPriceId(planKey: string, amountMinor: number): string | null {
+  if (planKey === "us-evergreen") {
+    if (amountMinor === 1_900) return process.env.STRIPE_PRICE_US_EVERGREEN || null;
+    if (amountMinor === 2_000) return process.env.STRIPE_PRICE_US_EVERGREEN_20 || null;
+    return null;
+  }
+  return PRICE_IDS[planKey] || null;
+}
+
+/** The $35/month ad budget price ("AdVault ad budget"), or null = inline price. */
+export function stripeAdBudgetPriceId(amountMinor: number): string | null {
+  return amountMinor === 3_500 ? process.env.STRIPE_PRICE_US_AD_BUDGET || null : null;
+}
+
+const PLAN_PRODUCT_NAME = "AdVault Keep it running";
+const BUDGET_PRODUCT_NAME = "AdVault ad budget (100% goes to Google)";
+
+/**
  * Stripe signs `${timestamp}.${rawBody}` and sends
  * `t=<ts>,v1=<hex>[,v1=<hex>]`. Multiple v1 values appear during a secret
  * rotation, so any match is a pass.
@@ -56,17 +84,45 @@ function verifySignature(rawBody: string, header: string | undefined): boolean {
  * so no test price object has to exist in Stripe.
  */
 export function stripeSubscriptionLine(req: SubscriptionCheckoutRequest): Record<string, string> {
+  const inline = (i: number, amountMinor: number, name: string): Record<string, string> => ({
+    [`line_items[${i}][price_data][currency]`]: req.currency.toLowerCase(),
+    [`line_items[${i}][price_data][unit_amount]`]: String(amountMinor),
+    [`line_items[${i}][price_data][recurring][interval]`]: "month",
+    [`line_items[${i}][price_data][product_data][name]`]: name,
+    [`line_items[${i}][quantity]`]: "1",
+  });
+
+  let plan: Record<string, string>;
   if (req.testMode) {
-    return {
-      "line_items[0][price_data][currency]": req.currency.toLowerCase(),
-      "line_items[0][price_data][unit_amount]": String(req.amountMinor),
-      "line_items[0][price_data][recurring][interval]": "month",
-      "line_items[0][price_data][product_data][name]": "AdVault plan (test)",
-    };
+    plan = inline(0, req.amountMinor, "AdVault plan (test)");
+  } else {
+    const priceId = stripePlanPriceId(req.planKey, req.amountMinor);
+    if (priceId) {
+      plan = { "line_items[0][price]": priceId, "line_items[0][quantity]": "1" };
+    } else if (req.planKey === "us-evergreen") {
+      // The $20 price not created yet: charge the right amount inline rather
+      // than refuse every new customer's plan (and with it every launch).
+      console.warn(
+        JSON.stringify({ msg: "no Stripe price for this plan amount; using an inline price", planKey: req.planKey, amountMinor: req.amountMinor }),
+      );
+      plan = inline(0, req.amountMinor, PLAN_PRODUCT_NAME);
+    } else {
+      throw new Error(`No Stripe price configured for ${req.planKey}`);
+    }
   }
-  const priceId = PRICE_IDS[req.planKey];
-  if (!priceId) throw new Error(`No Stripe price configured for ${req.planKey}`);
-  return { "line_items[0][price]": priceId };
+
+  // "$55 a month": the monthly ad budget is a second recurring line on the
+  // SAME subscription, so one invoice a month carries both, the included-month
+  // trial covers both, and stopping the plan (cancel_at_period_end) stops both.
+  const budget = req.budgetMinor ?? 0;
+  if (budget <= 0) return plan;
+  const budgetPrice = req.testMode ? null : stripeAdBudgetPriceId(budget);
+  return {
+    ...plan,
+    ...(budgetPrice
+      ? { "line_items[1][price]": budgetPrice, "line_items[1][quantity]": "1" }
+      : inline(1, budget, req.testMode ? "AdVault ad budget (test)" : BUDGET_PRODUCT_NAME)),
+  };
 }
 
 export const stripeSubscriptions: SubscriptionProvider = {
@@ -80,7 +136,6 @@ export const stripeSubscriptions: SubscriptionProvider = {
     const form = new URLSearchParams({
       mode: "subscription",
       ...stripeSubscriptionLine(req),
-      "line_items[0][quantity]": "1",
       // A test customer's *.invalid address (0030) is left off; Stripe asks for one.
       ...(isUndeliverableEmail(req.userEmail) ? {} : { customer_email: req.userEmail }),
       success_url: `${req.returnUrl}?subscribed=1`,
@@ -259,7 +314,7 @@ type StripeSubscriptionObject = {
   customer: string;
   cancel_at_period_end: boolean;
   default_payment_method: string | null;
-  items?: { data?: { price?: { id?: string; product?: string } }[] };
+  items?: { data?: { price?: { id?: string; product?: string; unit_amount?: number } }[] };
 };
 
 /** The sub_ and cus_ a completed subscription checkout created (older rows stored only the cs_). */
@@ -305,22 +360,34 @@ export function stripeRestartForm(args: {
   invoiceId: string;
   internal?: boolean;
   internalLabel?: string | null;
+  /** "$55 a month": the monthly ad budget line (0/absent = none). */
+  budgetMinor?: number;
+  budgetPriceId?: string | null;
+  /** Product for an inline budget price (test mode / no budget price id). */
+  budgetProductId?: string | null;
 }): Record<string, string> {
+  const inline = (i: number, amountMinor: number, product: string | null): Record<string, string> => ({
+    [`items[${i}][price_data][currency]`]: args.currency.toLowerCase(),
+    [`items[${i}][price_data][unit_amount]`]: String(amountMinor),
+    [`items[${i}][price_data][recurring][interval]`]: "month",
+    [`items[${i}][price_data][product]`]: product ?? "",
+  });
   const line: Record<string, string> =
-    args.testMode || !args.priceId
-      ? {
-          "items[0][price_data][currency]": args.currency.toLowerCase(),
-          "items[0][price_data][unit_amount]": String(args.amountMinor),
-          "items[0][price_data][recurring][interval]": "month",
-          "items[0][price_data][product]": args.productId ?? "",
-        }
-      : { "items[0][price]": args.priceId };
+    args.testMode || !args.priceId ? inline(0, args.amountMinor, args.productId) : { "items[0][price]": args.priceId };
+  const budget = args.budgetMinor ?? 0;
+  const budgetLine: Record<string, string> =
+    budget <= 0
+      ? {}
+      : !args.testMode && args.budgetPriceId
+        ? { "items[1][price]": args.budgetPriceId }
+        : inline(1, budget, args.budgetProductId ?? args.productId);
   return {
     customer: args.customerRef,
     default_payment_method: args.paymentMethod,
     payment_behavior: "error_if_incomplete",
     off_session: "true",
     ...line,
+    ...budgetLine,
     "metadata[subscription_id]": args.subscriptionId,
     "metadata[invoice_id]": args.invoiceId,
     "metadata[app]": "advault",
@@ -347,6 +414,8 @@ export async function stripeRestartOffSession(args: {
   invoiceId: string;
   internal?: boolean;
   internalLabel?: string | null;
+  /** "$55 a month": the monthly ad budget line (0/absent = none). */
+  budgetMinor?: number;
 }): Promise<StripeRestart> {
   try {
     const prev = await stripeCall<StripeSubscriptionObject>("GET", `/subscriptions/${args.previousSubscriptionRef}`);
@@ -359,11 +428,16 @@ export async function stripeRestartOffSession(args: {
       paymentMethod = stripeIdOf(cus.invoice_settings?.default_payment_method);
     }
     if (!paymentMethod) return { ok: false, reason: "no_saved_card" };
-    const priceId = PRICE_IDS[args.planKey] ?? null;
-    const productId = stripeIdOf(prev.items?.data?.[0]?.price?.product);
+    const priceId = stripePlanPriceId(args.planKey, args.amountMinor);
+    const items = prev.items?.data ?? [];
+    const productId = stripeIdOf(items[0]?.price?.product);
     if ((args.testMode || !priceId) && !productId) {
       return { ok: false, reason: "stripe_error", detail: "previous plan has no product to reuse" };
     }
+    // An inline budget price reuses the previous plan's budget product (its
+    // second line); without one it falls back to the plan's product.
+    const budgetPriceId = stripeAdBudgetPriceId(args.budgetMinor ?? 0);
+    const budgetProductId = stripeIdOf(items[1]?.price?.product);
 
     const created = await stripeCall<{
       id: string;
@@ -373,7 +447,15 @@ export async function stripeRestartOffSession(args: {
     }>(
       "POST",
       "/subscriptions",
-      stripeRestartForm({ ...args, customerRef: stripeIdOf(prev.customer)!, paymentMethod, priceId, productId }),
+      stripeRestartForm({
+        ...args,
+        customerRef: stripeIdOf(prev.customer)!,
+        paymentMethod,
+        priceId,
+        productId,
+        budgetPriceId,
+        budgetProductId,
+      }),
     );
     if (created.status !== "active") {
       // error_if_incomplete makes this unreachable; never leave one half made.
@@ -386,7 +468,10 @@ export async function stripeRestartOffSession(args: {
       subscriptionRef: created.id,
       customerRef: stripeIdOf(created.customer) ?? stripeIdOf(prev.customer)!,
       invoiceRef: stripeIdOf(inv),
-      amountPaidMinor: typeof inv === "object" && inv && typeof inv.amount_paid === "number" ? inv.amount_paid : args.amountMinor,
+      amountPaidMinor:
+        typeof inv === "object" && inv && typeof inv.amount_paid === "number"
+          ? inv.amount_paid
+          : args.amountMinor + (args.budgetMinor ?? 0),
     };
   } catch (err) {
     if (err instanceof StripeApiError && err.status === 402) {

@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { isRunning, planAllowsRunning, planBillingAction, planGate, planGateBody, type PlanSub } from "./policy.js";
+import {
+  adWantsPlan,
+  isRunning,
+  planAllowsRunning,
+  planBillingAction,
+  planGate,
+  planGateBody,
+  planTerms,
+  type PlanSub,
+} from "./policy.js";
 
 const now = new Date("2026-11-19T12:00:00Z");
 const later = new Date("2026-12-19T12:00:00Z");
@@ -101,5 +110,52 @@ describe("planAllowsRunning (automatic restart after a top-up)", () => {
     expect(planAllowsRunning({ exempt: false, sub: sub({ cancelAtPeriodEnd: true, currentPeriodEnd: earlier }), now })).toBe(false);
     expect(planAllowsRunning({ exempt: false, sub: null, now })).toBe(false);
     expect(planAllowsRunning({ exempt: true, sub: null, now })).toBe(true);
+  });
+});
+
+describe("$55 a month: plan terms and grandfathering", () => {
+  const base = {
+    line: "evergreen",
+    listFeeMinor: 2_000,
+    rechargeMinor: 3_500,
+    priorPaidPlanFeesMinor: [] as number[],
+    billingMode: "platform" as string | null,
+    testMode: false,
+  };
+
+  it("a new plan is $20 plus a $35 monthly ad budget", () => {
+    expect(planTerms(base)).toEqual({ feeMinor: 2_000, budgetRechargeMinor: 3_500, grandfathered: false });
+    // No ad account yet (the default is platform-billed): same.
+    expect(planTerms({ ...base, billingMode: null })).toEqual({ feeMinor: 2_000, budgetRechargeMinor: 3_500, grandfathered: false });
+    // An earlier $20 plan is not grandfathering.
+    expect(planTerms({ ...base, priorPaidPlanFeesMinor: [2_000] }).grandfathered).toBe(false);
+  });
+
+  it("an account that ever paid the $19 plan keeps $19 with no recharge", () => {
+    expect(planTerms({ ...base, priorPaidPlanFeesMinor: [1_900] })).toEqual({ feeMinor: 1_900, budgetRechargeMinor: 0, grandfathered: true });
+    expect(planTerms({ ...base, priorPaidPlanFeesMinor: [2_000, 1_900] }).grandfathered).toBe(true);
+  });
+
+  it("no recharge when Google bills the customer's own card", () => {
+    expect(planTerms({ ...base, billingMode: "customer" })).toEqual({ feeMinor: 2_000, budgetRechargeMinor: 0, grandfathered: false });
+  });
+
+  it("test mode charges both lines at the 50-cent test price and never grandfathers", () => {
+    expect(planTerms({ ...base, testMode: true })).toEqual({ feeMinor: 50, budgetRechargeMinor: 50, grandfathered: false });
+    expect(planTerms({ ...base, testMode: true, priorPaidPlanFeesMinor: [1_900] }).feeMinor).toBe(50);
+  });
+
+  it("other lines get their list fee and no recharge", () => {
+    expect(planTerms({ ...base, line: "offer", listFeeMinor: 3_900 })).toEqual({ feeMinor: 3_900, budgetRechargeMinor: 0, grandfathered: false });
+  });
+});
+
+describe("$55 a month: what keeps the plan billing", () => {
+  it("a running ad, or an ad waiting for budget on a recharging plan; never a customer pause", () => {
+    expect(adWantsPlan({ running: true, waitingForBudget: false, planRecharges: false })).toBe(true);
+    expect(adWantsPlan({ running: false, waitingForBudget: true, planRecharges: true })).toBe(true);
+    // Grandfathered (no recharge): an empty budget stops the plan as before.
+    expect(adWantsPlan({ running: false, waitingForBudget: true, planRecharges: false })).toBe(false);
+    expect(adWantsPlan({ running: false, waitingForBudget: false, planRecharges: true })).toBe(false);
   });
 });

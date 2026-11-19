@@ -22,7 +22,9 @@ Product catalogue → Add product:
 
 | Product | Price | Env var on `advault-api` |
 |---|---|---|
-| AdVault Keep it running | $19.00 USD, recurring monthly | `STRIPE_PRICE_US_EVERGREEN` |
+| AdVault Keep it running | $19.00 USD, recurring monthly (grandfathered plans only, keep it) | `STRIPE_PRICE_US_EVERGREEN` |
+| AdVault Keep it running (same product) | $20.00 USD, recurring monthly | `STRIPE_PRICE_US_EVERGREEN_20` |
+| AdVault ad budget | $35.00 USD, recurring monthly | `STRIPE_PRICE_US_AD_BUDGET` |
 | AdVault Managed | $79.00 USD, recurring monthly | `STRIPE_PRICE_US_MANAGED` (only if sold) |
 | AdVault Monthly offer | $39.00 USD, recurring monthly | `STRIPE_PRICE_US_OFFER` (only if sold) |
 

@@ -15,14 +15,15 @@ import {
   NoSuchPlan,
   resolveInvoiceForPayment,
 } from "../lib/subscriptions/index.js";
-import { entitlesToService, type SubscriptionStatus } from "../lib/subscriptions/policy.js";
+import { entitlesToService, invoiceChargeMinor, type SubscriptionStatus } from "../lib/subscriptions/policy.js";
+import { afterPlanBudgetCredit } from "../lib/planBilling/resume.js";
 import {
   subscriptionProviderByName,
   subscriptionProviderFor,
 } from "../lib/subscriptions/providers/index.js";
 import { billingIdentity } from "../lib/testMode/index.js";
 import { stripeExpireSession } from "../lib/subscriptions/providers/stripe.js";
-import { firstMonthAvailable, hasRunningAd, syncPlanBillingForUser } from "../lib/planBilling/index.js";
+import { firstMonthAvailable, hasRunningAd, planTermsFor, syncPlanBillingForUser } from "../lib/planBilling/index.js";
 import { PLAN_FOLLOWS_RUNNING_LINE } from "../lib/planBilling/policy.js";
 import {
   chargeMinor,
@@ -123,6 +124,9 @@ export async function subscriptionRoutes(app: FastifyInstance) {
           line: sub.line,
           status: sub.status,
           amountMinor: sub.amountMinor,
+          // "$55 a month" (0041): ad budget charged with each paid month and
+          // added to the wallet. 0 = none (a grandfathered $19 plan).
+          budgetRechargeMinor: sub.budgetRechargeMinor,
           currencyCode: sub.currencyCode,
           display: formatMinor(sub.amountMinor, sub.currencyCode as Currency),
           currentPeriodStart: sub.currentPeriodStart,
@@ -176,7 +180,10 @@ export async function subscriptionRoutes(app: FastifyInstance) {
         // people pay us" without a filter someone will forget.
         // Admin "Test as customer" is billed as standard, at the test price.
         const who = await billingIdentity(req.userId!);
-        const amountMinor = chargeMinor(plan.monthlyFeeMinor, who.testMode);
+        // "$55 a month" (planTerms): $20 + the $35 monthly ad budget for new
+        // plans; an account that ever paid the $19 plan keeps $19, no recharge.
+        const terms = await planTermsFor(req.userId!, plan, who);
+        const amountMinor = terms.feeMinor;
         if (who.marginMode === "at_cost") {
           return reply.code(409).send({ error: "at_cost_account", message: "No fee is charged on this account." });
         }
@@ -208,6 +215,7 @@ export async function subscriptionRoutes(app: FastifyInstance) {
             provider: provider.name,
             amountMinor,
             firstMonthIncluded,
+            budgetRechargeMinor: terms.budgetRechargeMinor,
             // An abandoned checkout no longer blocks the customer for ever.
             replacePending: true,
           });
@@ -239,6 +247,7 @@ export async function subscriptionRoutes(app: FastifyInstance) {
             internalLabel: who.internalLabel,
             returnUrl,
             trialEnd: firstMonthIncluded ? created.subscription.includedUntil : null,
+            budgetMinor: terms.budgetRechargeMinor,
           });
 
           await db
@@ -250,6 +259,8 @@ export async function subscriptionRoutes(app: FastifyInstance) {
             subscriptionId: created.subscription.id,
             invoiceId: created.invoice.id,
             firstMonthIncluded,
+            amountMinor,
+            budgetRechargeMinor: terms.budgetRechargeMinor,
             provider: provider.name,
             redirectUrl: checkout.redirectUrl,
             clientPayload: checkout.clientPayload,
@@ -385,12 +396,14 @@ export async function subscriptionRoutes(app: FastifyInstance) {
           // we opened the invoice for means something is wrong enough to refuse
           // rather than reconcile — a price drift between our plan table and
           // the provider's price object surfaces exactly here.
+          // "$55 a month": the provider collects the fee AND the invoice's
+          // monthly ad budget (0041) in one charge.
           if (
-            event.amountMinor !== invoice.amountMinor ||
+            event.amountMinor !== invoiceChargeMinor(invoice) ||
             event.currency !== invoice.currencyCode
           ) {
             req.log.error(
-              { invoiceId: invoice.id, expected: invoice.amountMinor, got: event.amountMinor },
+              { invoiceId: invoice.id, expected: invoiceChargeMinor(invoice), got: event.amountMinor },
               "subscription amount mismatch",
             );
             return reply.code(409).send({ error: "amount_mismatch" });
@@ -406,6 +419,9 @@ export async function subscriptionRoutes(app: FastifyInstance) {
           // A plan paid for with no ad running stops at the end of this
           // period (lib/planBilling). Not awaited: Stripe wants its 200.
           void syncPlanBillingForUser(invoice.userId);
+          // The month's ad budget landed in the wallet: like a top-up, undo a
+          // card freeze and switch back on what the empty budget paused.
+          if (result.budgetCreditedMinor > 0) void afterPlanBudgetCredit(invoice.userId);
           return reply.code(200).send({ ok: true, ...result });
         }
 

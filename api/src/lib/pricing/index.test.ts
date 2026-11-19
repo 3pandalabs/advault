@@ -28,11 +28,11 @@ describe("plans", () => {
     for (const p of Object.values(PLANS)) expect(PRODUCT_LINES).toContain(p.line);
   });
 
-  it("Keep it running is $19/month, US only, from $5/day", () => {
+  it("Keep it running is $20/month for new plans, US only, from $5/day", () => {
     const p = planByKey("us-evergreen")!;
     expect(p.line).toBe("evergreen");
     expect(p.currency).toBe("USD");
-    expect(p.monthlyFeeMinor).toBe(1_900);
+    expect(p.monthlyFeeMinor).toBe(2_000);
     expect(p.minDailyBudgetMinor).toBe(500);
     expect(planByKey("in-evergreen")).toBeNull();
   });

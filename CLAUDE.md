@@ -755,6 +755,43 @@ only the $10 and the $19."). Applies to the `evergreen` line only
   duplicate, renewal, stop/un-stop, pause/resume routes, off-session restart,
   decline, test mode, exempt), `lib/subscriptions/providers/stripe.test.ts`.
 
+## "$55 a month" (2026-11-19, migration 0041)
+
+Owner decision: month one = $10 ad + $10 website + $0 plan (included) + $35
+ad budget; every month after = $20 plan + $35 ad budget. The section above
+still describes the lifecycle; this changes the amounts.
+
+- **Grandfathering** (`planTerms` in `lib/planBilling/policy.ts`, pure,
+  tested): an account that ever PAID a $19 evergreen plan keeps $19 and gets
+  no recharge, on restart and on a new checkout. Live $19 Stripe
+  subscriptions are never touched; their rows keep `amount_minor` 1900 and
+  `budget_recharge_minor` 0. Customer-billed ad accounts get no recharge.
+  Test mode: both lines at 50 cents.
+- **Recharge = a second recurring line on the same Stripe subscription**
+  (`stripeSubscriptionLine` / `stripeRestartForm`). One invoice a month, the
+  included-month trial covers both, `cancel_at_period_end` stops both, so
+  "no fee and no recharge while paused" needs no extra code.
+  `subscriptions.budget_recharge_minor` is fixed at start;
+  `subscription_invoices.budget_minor` per invoice (0 in the included month).
+  The webhook expects `amount_minor + budget_minor` (`invoiceChargeMinor`);
+  `markInvoicePaid` posts the fee as before and credits `budget_minor` as a
+  wallet `topup` with ref `subinv:<invoice>:budget`, once per invoice, then
+  `afterPlanBudgetCredit` unfreezes cards and resumes funds-paused ads. MRR
+  and revenue still read `amount_minor` only: the budget is never revenue.
+- **An ad paused only for funds keeps a recharging plan billing**
+  (`adWantsPlan`): the next month refills it and switches it back on. A
+  customer pause still stops the plan.
+- **Stripe prices by amount** (`stripePlanPriceId`): $19 =
+  `STRIPE_PRICE_US_EVERGREEN` (unchanged), $20 = `STRIPE_PRICE_US_EVERGREEN_20`,
+  $35 budget = `STRIPE_PRICE_US_AD_BUDGET`. Missing ids fall back to inline
+  prices (checkout) or the previous subscription's products (restart), so
+  nothing breaks before the owner creates them.
+- **Website included while the plan runs** (`lib/sitePlanCover`): the plan
+  sweep asks SiteVault (`POST /api/internal/sites/<slug>/plan-cover`
+  `{until, ref}`) to keep the AdVault-made site on Pro until the plan's paid
+  period end. Needs that SiteVault route; until it exists pushes 404 and are
+  retried every sweep.
+
 ## Admin "Test as customer" (2026-11-17, migration 0027, `lib/testMode`)
 
 `users.test_as_customer`, switched by an admin in Settings (`PATCH

@@ -193,6 +193,13 @@ export function feeFunding(line: ProductLine, billingMode: BillingMode | null): 
  * on (wallet_id, external_ref) — without it the second insert collides with the
  * first and the fee silently never lands.
  */
-export function feeLedgerRefs(invoiceId: string): { credit: string; fee: string } {
-  return { credit: `subinv:${invoiceId}`, fee: `subinv:${invoiceId}:fee` };
+export function feeLedgerRefs(invoiceId: string): { credit: string; fee: string; budget: string } {
+  // `:budget` (0041, "$55 a month"): the invoice's monthly ad budget, credited
+  // to the wallet exactly once per invoice whatever replays.
+  return { credit: `subinv:${invoiceId}`, fee: `subinv:${invoiceId}:fee`, budget: `subinv:${invoiceId}:budget` };
+}
+
+/** What the provider must have collected for an invoice: the fee plus its monthly ad budget. */
+export function invoiceChargeMinor(invoice: { amountMinor: number; budgetMinor?: number | null }): number {
+  return invoice.amountMinor + Math.max(0, invoice.budgetMinor ?? 0);
 }

@@ -101,6 +101,12 @@ export async function createSubscription(args: {
    * replaced row is returned so the caller can expire its checkout.
    */
   replacePending?: boolean;
+  /**
+   * "$55 a month" (0041): ad budget charged with every PAID month and
+   * credited to the wallet (lib/planBilling planTerms). Not in the included
+   * first month, whose invoice stays $0.
+   */
+  budgetRechargeMinor?: number;
 }) {
   const plan = planByKey(args.planKey);
   if (!plan) throw new NoSuchPlan(args.planKey);
@@ -122,6 +128,8 @@ export async function createSubscription(args: {
   const period = firstPeriod(now);
   const monthly = args.amountMinor ?? plan.monthlyFeeMinor;
   const firstAmount = args.firstMonthIncluded ? 0 : monthly;
+  const recharge = Math.max(0, args.budgetRechargeMinor ?? 0);
+  const firstBudget = args.firstMonthIncluded ? 0 : recharge;
 
   try {
     return await db.transaction(async (tx) => {
@@ -139,6 +147,7 @@ export async function createSubscription(args: {
           currentPeriodEnd: period.end,
           firstMonthIncluded: args.firstMonthIncluded === true,
           includedUntil: args.firstMonthIncluded ? period.end : null,
+          budgetRechargeMinor: recharge,
         })
         .returning();
 
@@ -148,6 +157,7 @@ export async function createSubscription(args: {
           subscriptionId: sub.id,
           userId: args.userId,
           amountMinor: firstAmount,
+          budgetMinor: firstBudget,
           currencyCode: plan.currency,
           periodStart: period.start,
           periodEnd: period.end,
@@ -187,7 +197,7 @@ export async function markInvoicePaid(args: {
   /** Stripe sub_ / cus_ (0038), stored on the subscription when present. */
   providerSubscriptionRef?: string | null;
   providerCustomerRef?: string | null;
-}): Promise<{ alreadyApplied: boolean }> {
+}): Promise<{ alreadyApplied: boolean; budgetCreditedMinor: number }> {
   const now = args.now ?? new Date();
 
   const [invoice] = await db
@@ -196,7 +206,7 @@ export async function markInvoicePaid(args: {
     .where(eq(subscriptionInvoices.id, args.invoiceId))
     .limit(1);
   if (!invoice) throw new Error(`unknown_invoice:${args.invoiceId}`);
-  if (invoice.status === "paid") return { alreadyApplied: true };
+  if (invoice.status === "paid") return { alreadyApplied: true, budgetCreditedMinor: 0 };
 
   const [sub] = await db
     .select()
@@ -247,8 +257,28 @@ export async function markInvoicePaid(args: {
       allowOverdraft: false,
     });
   } catch (err) {
-    if (err instanceof DuplicateLedgerEntry) return { alreadyApplied: true };
+    if (err instanceof DuplicateLedgerEntry) return { alreadyApplied: true, budgetCreditedMinor: 0 };
     throw err;
+  }
+
+  // "$55 a month" (0041): the invoice's monthly ad budget goes to the wallet,
+  // 100% of it for Google. Its own idempotency key, so a replayed webhook or a
+  // retry after a crash credits it once per invoice.
+  let budgetCreditedMinor = 0;
+  if (invoice.budgetMinor > 0) {
+    try {
+      await applyEntry({
+        userId: invoice.userId,
+        currency,
+        type: "topup",
+        amountMinor: invoice.budgetMinor,
+        description: "Monthly ad budget (AdVault plan)",
+        externalRef: refs.budget,
+      });
+      budgetCreditedMinor = invoice.budgetMinor;
+    } catch (err) {
+      if (!(err instanceof DuplicateLedgerEntry)) throw err;
+    }
   }
 
   const period: Period = { start: invoice.periodStart, end: invoice.periodEnd };
@@ -288,7 +318,7 @@ export async function markInvoicePaid(args: {
     }
   });
 
-  return { alreadyApplied: false };
+  return { alreadyApplied: false, budgetCreditedMinor };
 }
 
 /**
@@ -377,6 +407,7 @@ export async function openNextInvoice(subscriptionId: string, now = new Date()) 
         subscriptionId: sub.id,
         userId: sub.userId,
         amountMinor: sub.amountMinor,
+        budgetMinor: sub.budgetRechargeMinor,
         currencyCode: sub.currencyCode,
         periodStart: period.start,
         periodEnd: period.end,

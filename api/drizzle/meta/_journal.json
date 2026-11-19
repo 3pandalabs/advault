@@ -288,6 +288,13 @@
       "when": 1795505400000,
       "tag": "0040_campaign_category_extras",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1795505500000,
+      "tag": "0041_plan_budget_recharge",
+      "breakpoints": true
     }
   ]
 }

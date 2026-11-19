@@ -991,6 +991,10 @@ export const subscriptions = pgTable(
     // First period is the included month (0038): a $0 invoice / Stripe trial.
     firstMonthIncluded: boolean("first_month_included").notNull().default(false),
     includedUntil: timestamp("included_until", { withTimezone: true }),
+    // Ad budget charged with every paid month (0041, "$55 a month"): 3500 =
+    // $35 credited to the wallet each month; 0 = none (grandfathered $19
+    // plans and every line other than evergreen).
+    budgetRechargeMinor: integer("budget_recharge_minor").notNull().default(0),
 
     // pending  — created, first payment not yet confirmed
     // active   — paid and current
@@ -1062,6 +1066,9 @@ export const subscriptionInvoices = pgTable(
       .references(() => users.id, { onDelete: "cascade" }),
 
     amountMinor: integer("amount_minor").notNull(),
+    // The ad budget part of this invoice (0041): charged on top of
+    // amount_minor and credited to the wallet when paid. 0 = none.
+    budgetMinor: integer("budget_minor").notNull().default(0),
     currencyCode: text("currency_code").notNull(),
     periodStart: timestamp("period_start", { withTimezone: true }).notNull(),
     periodEnd: timestamp("period_end", { withTimezone: true }).notNull(),

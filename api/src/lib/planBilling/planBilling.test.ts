@@ -36,7 +36,7 @@ const holder = vi.hoisted(() => {
       subscriptionRef: "sub_2",
       customerRef: "cus_1",
       invoiceRef: "in_2",
-      amountPaidMinor: 1900,
+      amountPaidMinor: 5500,
     })),
     createCheckout: vi.fn(async (_req: Record<string, unknown>) => ({
       redirectUrl: "https://checkout.invalid",
@@ -257,7 +257,7 @@ describe("first month included", () => {
     });
     expect(res.json()).toMatchObject({ firstMonthIncluded: true });
     const req = holder.createCheckout.mock.calls[0]![0] as { trialEnd: Date; returnUrl: string; amountMinor: number };
-    expect(req.amountMinor).toBe(1900);
+    expect(req).toMatchObject({ amountMinor: 2000, budgetMinor: 3500 });
     expect(req.returnUrl.endsWith(`/dashboard/campaigns/${campaignId}`)).toBe(true);
     const days = (req.trialEnd.getTime() - Date.now()) / 86_400_000;
     expect(days).toBeGreaterThan(27);
@@ -305,7 +305,7 @@ describe("first month included", () => {
     expect(await plan.firstMonthAvailable(userId)).toBe(false);
   });
 
-  it("the first $19 after the included month lands as the next period (renewal path intact)", async () => {
+  it("the first $20 + $35 after the included month lands as the next period (renewal path intact)", async () => {
     const { userId, subscriptionId, invoiceId } = await startIncluded("renew@x.test");
     const res = await webhook({
       type: "invoice.paid",
@@ -313,7 +313,7 @@ describe("first month included", () => {
         object: {
           id: "in_cycle_1",
           billing_reason: "subscription_cycle",
-          amount_paid: 1900,
+          amount_paid: 5500,
           currency: "usd",
           subscription: "sub_1",
           subscription_details: { metadata: { subscription_id: subscriptionId, invoice_id: invoiceId, app: "advault" } },
@@ -324,8 +324,151 @@ describe("first month included", () => {
     const inv = await invoices(userId);
     expect(inv.map((i) => [i.amount_minor, i.status])).toEqual([
       [0, "paid"],
-      [1900, "paid"],
+      [2000, "paid"],
     ]);
+  });
+});
+
+describe("$55 a month: the monthly $35 ad budget recharge", () => {
+  const cycle = (id: string, amount: number, subscriptionId: string, invoiceId: string) =>
+    webhook({
+      type: "invoice.paid",
+      data: {
+        object: {
+          id,
+          billing_reason: "subscription_cycle",
+          amount_paid: amount,
+          currency: "usd",
+          subscription: "sub_1",
+          subscription_details: { metadata: { subscription_id: subscriptionId, invoice_id: invoiceId, app: "advault" } },
+        },
+      },
+    });
+  const wallet = async (userId: string) =>
+    (await pg.query<{ balance_minor: number }>(`select balance_minor from wallets where user_id = $1`, [userId])).rows[0]?.balance_minor ?? 0;
+  const budgetRows = async (userId: string) =>
+    (
+      await pg.query<{ n: number }>(
+        `select count(*)::int as n from ledger_entries where external_ref like 'subinv:%:budget' and wallet_id in (select id from wallets where user_id = $1)`,
+        [userId],
+      )
+    ).rows[0]!.n;
+
+  it("a new plan records $20 + $35 a month; the included month charges neither", async () => {
+    const { userId } = await startIncluded("terms@x.test");
+    const [s] = await pg.query<{ amount_minor: number; budget_recharge_minor: number }>(
+      `select amount_minor, budget_recharge_minor from subscriptions where user_id = $1`,
+      [userId],
+    ).then((r) => r.rows);
+    expect(s).toEqual({ amount_minor: 2000, budget_recharge_minor: 3500 });
+    const [first] = await pg.query<{ amount_minor: number; budget_minor: number }>(
+      `select amount_minor, budget_minor from subscription_invoices where user_id = $1`,
+      [userId],
+    ).then((r) => r.rows);
+    expect(first).toEqual({ amount_minor: 0, budget_minor: 0 });
+    expect(await budgetRows(userId)).toBe(0);
+  });
+
+  it("each paid month credits $35 to the ad budget exactly once per invoice, whatever replays", async () => {
+    const { userId, subscriptionId, invoiceId } = await startIncluded("recharge@x.test");
+    const before = await wallet(userId);
+    expect((await cycle("in_c1", 5500, subscriptionId, invoiceId)).json()).toMatchObject({ alreadyApplied: false, budgetCreditedMinor: 3500 });
+    expect(await wallet(userId)).toBe(before + 3500);
+    // Stripe retries the same event: a duplicate, no second $35.
+    expect((await cycle("in_c1", 5500, subscriptionId, invoiceId)).json()).toMatchObject({ alreadyApplied: true });
+    expect(await wallet(userId)).toBe(before + 3500);
+    expect(await budgetRows(userId)).toBe(1);
+    // Even marking the same invoice paid again directly (a crash-retry) adds nothing.
+    const paidId = (await invoices(userId)).at(-1)!.id;
+    expect(await (await import("../subscriptions/index.js")).markInvoicePaid({ invoiceId: paidId, externalRef: "stripe:in_c1" })).toMatchObject({
+      alreadyApplied: true,
+      budgetCreditedMinor: 0,
+    });
+    // The next month is its own invoice: one more $35.
+    expect((await cycle("in_c2", 5500, subscriptionId, invoiceId)).json()).toMatchObject({ budgetCreditedMinor: 3500 });
+    expect(await wallet(userId)).toBe(before + 7000);
+    expect(await budgetRows(userId)).toBe(2);
+    // The fee is still exactly the $20 (the budget is never revenue).
+    const fees = await pg.query<{ s: number }>(
+      `select coalesce(sum(amount_minor), 0)::int as s from ledger_entries where type = 'fee' and wallet_id in (select id from wallets where user_id = $1)`,
+      [userId],
+    );
+    expect(fees.rows[0]!.s).toBe(-4000);
+  });
+
+  it("a charge for the fee alone (no budget) is refused as a mismatch", async () => {
+    const { userId, subscriptionId, invoiceId } = await startIncluded("mismatch@x.test");
+    const res = await cycle("in_bad", 2000, subscriptionId, invoiceId);
+    expect(res.statusCode).toBe(409);
+    expect(await budgetRows(userId)).toBe(0);
+  });
+
+  it("an ad paused only because its budget ran out keeps a recharging plan going (the recharge restarts it)", async () => {
+    const { userId, accountId } = await startIncluded("waiting@x.test");
+    const id = await campaign(userId, accountId, "live");
+    await plan.syncPlanBillingForUser(userId);
+    await pg.query(`update campaigns set status = 'paused', paused_for_funds_at = now() where id = $1`, [id]);
+    expect(await plan.syncPlanBillingForUser(userId)).toMatchObject({ action: "none", reason: "running_and_billing" });
+    expect((await subRows(userId))[0]!.cancel_at_period_end).toBe(false);
+    // The customer's own pause is a real pause: no fee, no recharge.
+    await pg.query(`update campaigns set paused_for_funds_at = null where id = $1`, [id]);
+    expect(await plan.syncPlanBillingForUser(userId)).toMatchObject({ action: "stop_at_period_end", ok: true });
+  });
+});
+
+describe("$55 a month: existing $19 subscribers are grandfathered", () => {
+  /** An account that paid the old $19 plan, now ended. */
+  async function legacy(email: string) {
+    const userId = await newUser(email, "advertiser", "plan_first_month_used_at = now()");
+    const accountId = await account(userId);
+    const s = await pg.query<{ id: string }>(
+      `insert into subscriptions (user_id, plan_key, line, currency_code, amount_minor, provider, status, provider_ref,
+         provider_subscription_ref, provider_customer_ref, current_period_start, current_period_end)
+       values ($1, 'us-evergreen', 'evergreen', 'USD', 1900, 'stripe', 'canceled', $2, $2, 'cus_old',
+         now() - interval '40 days', now() - interval '10 days') returning id`,
+      [userId, email.startsWith("gf-restart") ? "sub_old" : `sub_old_${email}`],
+    );
+    await pg.query(
+      `insert into subscription_invoices (subscription_id, user_id, amount_minor, currency_code, period_start, period_end, status, external_ref)
+       values ($1, $2, 1900, 'USD', now() - interval '40 days', now() - interval '10 days', 'paid', 'stripe:in_old')`,
+      [s.rows[0]!.id, userId],
+    );
+    await pg.query(`insert into wallets (user_id, currency_code, balance_minor) values ($1, 'USD', 10000)`, [userId]);
+    return { userId, accountId };
+  }
+
+  it("a restart keeps $19 and adds no recharge", async () => {
+    const { userId, accountId } = await legacy("gf-restart@x.test");
+    const id = await campaign(userId, accountId, "paused");
+    holder.restart.mockResolvedValueOnce({ ok: true, subscriptionRef: "sub_gf", customerRef: "cus_old", invoiceRef: "in_gf", amountPaidMinor: 1900 });
+    const res = await app.inject({ method: "POST", url: `/campaigns/${id}/resume`, headers: { "x-test-user": userId } });
+    expect(res.json()).toMatchObject({ planRestarted: true });
+    expect(holder.restart.mock.calls[0]![0]).toMatchObject({ previousSubscriptionRef: "sub_old", amountMinor: 1900, budgetMinor: 0 });
+    const subs = await pg.query<{ amount_minor: number; budget_recharge_minor: number }>(
+      `select amount_minor, budget_recharge_minor from subscriptions where user_id = $1 and status = 'active'`,
+      [userId],
+    );
+    expect(subs.rows).toEqual([{ amount_minor: 1900, budget_recharge_minor: 0 }]);
+    expect((await invoices(userId)).at(-1)).toMatchObject({ amount_minor: 1900, budget_minor: 0, status: "paid" });
+  });
+
+  it("a new checkout keeps $19 and adds no recharge", async () => {
+    const { userId } = await legacy("gf-checkout@x.test");
+    const res = await app.inject({ method: "POST", url: "/subscription", headers: { "x-test-user": userId }, payload: { planKey: "us-evergreen" } });
+    expect(res.json()).toMatchObject({ amountMinor: 1900, budgetRechargeMinor: 0, firstMonthIncluded: false });
+    expect(holder.createCheckout.mock.calls.at(-1)![0]).toMatchObject({ amountMinor: 1900, budgetMinor: 0 });
+  });
+
+  it("an existing live $19 subscription is never repriced: renewals stay $19 with no budget", async () => {
+    const userId = await newUser("gf-live@x.test", "advertiser", "plan_first_month_used_at = now()");
+    const s = await pg.query<{ id: string }>(
+      `insert into subscriptions (user_id, plan_key, line, currency_code, amount_minor, provider, status, current_period_start, current_period_end)
+       values ($1, 'us-evergreen', 'evergreen', 'USD', 1900, 'stripe', 'active', now() - interval '31 days', now() - interval '1 day') returning id`,
+      [userId],
+    );
+    const { openNextInvoice } = await import("../subscriptions/index.js");
+    const next = await openNextInvoice(s.rows[0]!.id);
+    expect(next!.invoice).toMatchObject({ amountMinor: 1900, budgetMinor: 0 });
   });
 });
 
@@ -390,18 +533,19 @@ describe("billing follows running state", () => {
     expect(resumed.statusCode).toBe(200);
     expect(resumed.json()).toMatchObject({ planRestarted: true });
     expect(holder.restart).toHaveBeenCalledOnce();
-    expect(holder.restart.mock.calls[0]![0]).toMatchObject({ previousSubscriptionRef: "sub_1", amountMinor: 1900, testMode: false });
+    expect(holder.restart.mock.calls[0]![0]).toMatchObject({ previousSubscriptionRef: "sub_1", amountMinor: 2000, budgetMinor: 3500, testMode: false });
 
     const subs = await subRows(userId);
     expect(subs.map((s) => s.status)).toEqual(["canceled", "active"]);
     expect(subs[1]).toMatchObject({ provider_subscription_ref: "sub_2", first_month_included: false, cancel_at_period_end: false });
     const inv = await invoices(userId);
-    expect(inv.at(-1)).toMatchObject({ amount_minor: 1900, status: "paid", external_ref: "stripe:in_2" });
-    const fee = await pg.query(`select count(*)::int as n from ledger_entries where type = 'fee' and amount_minor = -1900 and wallet_id in (select id from wallets where user_id = $1)`, [userId]);
+    expect(inv.at(-1)).toMatchObject({ amount_minor: 2000, budget_minor: 3500, status: "paid", external_ref: "stripe:in_2" });
+    const fee = await pg.query(`select count(*)::int as n from ledger_entries where type = 'fee' and amount_minor = -2000 and wallet_id in (select id from wallets where user_id = $1)`, [userId]);
     expect((fee.rows[0] as { n: number }).n).toBe(1);
-    // A card charge: the ad budget is untouched (paired credit + fee net to zero).
+    // A card charge: the fee nets to zero (paired credit + fee) and the
+    // month's $35 ad budget lands in the wallet.
     const bal = await pg.query(`select balance_minor from wallets where user_id = $1`, [userId]);
-    expect((bal.rows[0] as { balance_minor: number }).balance_minor).toBe(10000);
+    expect((bal.rows[0] as { balance_minor: number }).balance_minor).toBe(13500);
 
     // Stripe's own invoice.paid for the restart is a duplicate.
     const dup = await webhook({
@@ -410,7 +554,7 @@ describe("billing follows running state", () => {
         object: {
           id: "in_2",
           billing_reason: "subscription_create",
-          amount_paid: 1900,
+          amount_paid: 5500,
           currency: "usd",
           subscription: "sub_2",
           subscription_details: { metadata: { subscription_id: subs[1]!.id, invoice_id: inv.at(-1)!.id, app: "advault" } },
@@ -436,7 +580,7 @@ describe("billing follows running state", () => {
     // ...and that checkout charges $19 now: no second free month.
     await app.inject({ method: "POST", url: "/subscription", headers: { "x-test-user": userId }, payload: { planKey: "us-evergreen" } });
     expect((holder.createCheckout.mock.calls.at(-1)![0] as { trialEnd: Date | null }).trialEnd).toBeNull();
-    expect((await invoices(userId)).at(-1)!.amount_minor).toBe(1900);
+    expect((await invoices(userId)).at(-1)!.amount_minor).toBe(2000);
   });
 
   it("the customer cannot cancel the plan while an ad runs (pausing is how)", async () => {
@@ -454,7 +598,7 @@ describe("test mode, admins, at_cost", () => {
     expect(await plan.planGateFor(userId)).toMatchObject({ error: "plan_required", firstMonthIncluded: true });
     await app.inject({ method: "POST", url: "/subscription", headers: { "x-test-user": userId }, payload: { planKey: "us-evergreen" } });
     const req = holder.createCheckout.mock.calls[0]![0] as { amountMinor: number; testMode: boolean; trialEnd: Date | null };
-    expect(req).toMatchObject({ amountMinor: 50, testMode: true });
+    expect(req).toMatchObject({ amountMinor: 50, budgetMinor: 50, testMode: true });
     expect(req.trialEnd).toBeInstanceOf(Date);
   });
 

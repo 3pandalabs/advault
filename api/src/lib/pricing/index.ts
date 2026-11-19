@@ -158,7 +158,11 @@ export const PLANS: Record<string, Plan> = {
     key: "us-evergreen",
     currency: "USD",
     line: "evergreen",
-    monthlyFeeMinor: 1_900, // $19/month platform fee
+    // $20/month platform fee for NEW subscriptions ("$55 a month", owner
+    // decision 2026-11-19; $19 until then). Subscriptions started at $19 keep
+    // it: the amount is fixed on the subscription row and on its Stripe price
+    // (EVERGREEN_GRANDFATHERED_FEE_MINOR, lib/planBilling planTerms).
+    monthlyFeeMinor: 2_000,
     // Ads are bought one at a time ($10 each), never bundled into the fee.
     includedCreativesPerMonth: 0,
     // $35 = one week at Google's $5/day Demand Gen minimum (was $30, sized
@@ -169,6 +173,23 @@ export const PLANS: Record<string, Plan> = {
     blurb: "One ad kept running on YouTube around your business. $10 per ad, no monthly offers.",
   },
 };
+
+/**
+ * The Keep it running fee before "$55 a month" (2026-11-19). Accounts that
+ * ever paid a plan at this price keep it, with no monthly budget recharge
+ * (lib/planBilling planTerms).
+ */
+export const EVERGREEN_GRANDFATHERED_FEE_MINOR = 1_900;
+
+/**
+ * "$55 a month" (2026-11-19): every PAID month of a new Keep it running plan
+ * also charges this much ad budget, credited to the customer's ad budget
+ * wallet (100% goes to Google). $35 = about 7 days at Google's $5/day minimum,
+ * spread across the month by the ad schedule (lib/schedule/spread.ts). Not in
+ * the included first month: that month's $35 is the customer's first top-up.
+ * US only, like the plan.
+ */
+export const MONTHLY_AD_BUDGET_RECHARGE_MINOR: Partial<Record<Currency, number>> = { USD: 3_500 };
 
 /**
  * The lowest daily budget a campaign in this currency may have: the highest
@@ -422,7 +443,7 @@ export const ADD_ONS: Record<string, AddOn> = {
     key: "us-website",
     sku: "website",
     currency: "USD",
-    priceMinor: 1_000, // $10, first year of SiteVault Pro included (then $49/yr on SiteVault)
+    priceMinor: 1_000, // $10; Pro included while the AdVault plan runs (lib/sitePlanCover), else a year of Pro then $49/yr on SiteVault
     firstPurchasePriceMinor: 1_000,
     generatedSeconds: 0,
     label: "US — Your website",

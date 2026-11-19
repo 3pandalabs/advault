@@ -1,6 +1,7 @@
 import { and, eq, isNotNull } from "drizzle-orm";
 import { db } from "../../db/index.js";
 import { campaigns } from "../../db/schema.js";
+import { unfreezeCardsForUser } from "../billing/managedCard.js";
 import { resumeFundedCampaigns } from "../billing/resume.js";
 import { ensurePlanForRunning, syncPlanBillingForUser } from "./index.js";
 
@@ -26,4 +27,16 @@ export async function resumeAfterTopUp(userId: string): Promise<number> {
     console.log(JSON.stringify({ job: "plan-billing", msg: "resume after top-up threw", extra: { userId, error: String(err) } }));
     return 0;
   }
+}
+
+/**
+ * "$55 a month": a paid plan month just credited its ad budget to the wallet
+ * (subscriptions markInvoicePaid). Same as a top-up landing: undo a card
+ * freeze, then restart what the empty budget paused. Never throws.
+ */
+export async function afterPlanBudgetCredit(userId: string): Promise<number> {
+  await unfreezeCardsForUser(userId).catch((err) =>
+    console.log(JSON.stringify({ job: "plan-billing", msg: "card unfreeze after budget recharge failed", extra: { userId, error: String(err) } })),
+  );
+  return resumeAfterTopUp(userId);
 }
