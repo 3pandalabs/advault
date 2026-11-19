@@ -8,6 +8,12 @@ import { requireAuth } from "../auth/plugin.js";
 import { db } from "../db/index.js";
 import { adAccounts, assets, campaigns, creatives } from "../db/schema.js";
 import { liveSubscriptionFor } from "../lib/subscriptions/index.js";
+import {
+  budgetBelowMinimum,
+  budgetMinimumBody,
+  minDailyBudgetMinorFor,
+  type BudgetMinimumBody,
+} from "../lib/pricing/index.js";
 import { billingIdentity } from "../lib/testMode/index.js";
 import { launchPlanBlock } from "../lib/subscriptions/policy.js";
 import { decryptToken } from "../lib/crypto.js";
@@ -127,6 +133,13 @@ export async function launchRoutes(app: FastifyInstance) {
       if (campaign.googleCampaignResourceName) {
         return reply.code(409).send({ error: "already_launched" });
       }
+
+      // Google refuses a Demand Gen budget under its per-day minimum ($5 in
+      // USD) with BUDGET_BELOW_PER_DAY_MINIMUM. Campaigns saved while our floor
+      // was $1 (2026-11-10 to 2026-11-19) exist, so say it plainly here, dry
+      // run included, rather than surface Google's error after the gates.
+      const belowMin = budgetBelowMinimum(campaign.dailyBudgetCents, campaign.currencyCode);
+      if (belowMin) return reply.code(409).send(belowMin);
 
       // Ads can be MADE without a website (since 2026-11-15), but Demand Gen
       // needs a final URL, so launching is where a website becomes required.
@@ -521,6 +534,15 @@ export async function launchRoutes(app: FastifyInstance) {
               : "Campaign created in PAUSED state with its ad attached. Review it in Google Ads and enable it when ready.",
         };
       } catch (err) {
+        // Google's own minimum, should it ever differ from ours: same plain
+        // message as the pre-check. The mutate is atomic, so nothing was
+        // created and the campaign is not marked failed; raising the budget
+        // is the whole fix.
+        const budgetMin = googleBudgetMinimumError(err, campaign.currencyCode);
+        if (budgetMin) {
+          req.log.warn({ campaignId, validateOnly, budgetMin }, "Google refused the budget as below its per-day minimum");
+          return reply.code(409).send(budgetMin);
+        }
         const detail = describeGoogleAdsError(err);
         req.log.error({ err, campaignId, validateOnly }, "Google Ads campaign creation failed");
         // A dry run changes nothing, including this campaign's status.
@@ -534,9 +556,39 @@ export async function launchRoutes(app: FastifyInstance) {
 type GoogleAdsFailure = {
   errors?: {
     message?: string;
+    errorCode?: Record<string, string>;
     location?: { fieldPathElements?: { fieldName?: string }[] };
+    details?: {
+      budgetPerDayMinimumErrorDetails?: {
+        currencyCode?: string;
+        budgetPerDayMinimumMicros?: string | number;
+      };
+    };
   }[];
 };
+
+/**
+ * Google's campaignBudgetError BUDGET_BELOW_PER_DAY_MINIMUM, turned into the
+ * same 409 body as the launch pre-check (budget_below_minimum), with Google's
+ * own minimum when it says one. Null for any other error.
+ */
+export function googleBudgetMinimumError(
+  err: unknown,
+  campaignCurrency: string,
+): BudgetMinimumBody | null {
+  if (!(err instanceof GoogleAdsApiError) || !Array.isArray(err.details)) return null;
+  const hit = (err.details as GoogleAdsFailure[])
+    .flatMap((d) => d.errors ?? [])
+    .find((e) => e.errorCode?.campaignBudgetError === "BUDGET_BELOW_PER_DAY_MINIMUM");
+  if (!hit) return null;
+  const info = hit.details?.budgetPerDayMinimumErrorDetails;
+  const micros = Number(info?.budgetPerDayMinimumMicros);
+  const currency = info?.currencyCode ?? campaignCurrency;
+  // Google's figure when it gives one (minor units = micros / 10,000), else ours.
+  const minMinor =
+    Number.isFinite(micros) && micros > 0 ? Math.ceil(micros / 10_000) : minDailyBudgetMinorFor(currency);
+  return budgetMinimumBody(minMinor, currency);
+}
 
 // Google's top-level message is always "Request contains an invalid argument";
 // the useful part is the per-field list underneath. Kept on the campaign row

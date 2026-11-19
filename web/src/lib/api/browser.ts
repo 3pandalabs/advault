@@ -489,6 +489,8 @@ export function updateCampaign(
     targetAddress: TargetAddress | null;
     radiusMiles: number;
     landingUrl: string | null;
+    /** 400 `budget_below_minimum` under the currency's floor ($5/day USD). */
+    dailyBudgetCents: number;
   }>,
 ) {
   return api<Campaign>(`/campaigns/${campaignId}`, { method: "PATCH", body: JSON.stringify(input) });

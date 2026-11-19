@@ -30,6 +30,8 @@ import { SquareLogo } from "./square-logo";
 import { VideoUpload } from "./video-upload";
 import { PerformanceCard } from "./performance-card";
 import { AudienceCard } from "./audience-card";
+import { BudgetEditor } from "./budget-editor";
+import { BUDGET_BELOW_MINIMUM_MESSAGE } from "@/lib/budget";
 import { WebsiteCard } from "./website-card";
 import { BeforeAfterCard } from "./before-after-card";
 import { SiteOfferOption, payLabel } from "./site-offer-option";
@@ -122,6 +124,9 @@ const LAUNCH_ERRORS: Record<string, string> = {
     "Your uploaded video is waiting for AdVault's review — usually within a day. Launch unlocks once it's approved.",
   video_rejected:
     "Your uploaded video wasn't approved, so there's nothing to launch. See the reason on the video, then upload a new one or remove it.",
+  // Google's Demand Gen per-day minimum ($5 USD); campaigns saved under the
+  // old $1 floor hit it. The API's detail (currency-aware) wins when present.
+  budget_below_minimum: BUDGET_BELOW_MINIMUM_MESSAGE,
 };
 
 // Google reviews every ad again after launch. Raw enums from
@@ -338,7 +343,8 @@ export default function CampaignDetailPage({
       // that showed before: "Launch failed (google_ads_error)".
       const detail = err instanceof ApiError ? err.detail : undefined;
       setError(
-        LAUNCH_ERRORS[code] ??
+        (code === "budget_below_minimum" && detail) ||
+          LAUNCH_ERRORS[code] ||
           (code === "google_ads_error" && detail
             ? `Google Ads rejected the campaign: ${detail}`
             : `Launch failed (${code}).`),
@@ -840,6 +846,10 @@ export default function CampaignDetailPage({
                 ? `Launching starts your ads with a ${formatMoney(campaign.dailyBudgetCents, campaign.currencyCode)} daily budget, paid from your AdVault balance. Google reviews new ads first, usually within a day.`
                 : `This creates a paused campaign in your Google Ads account with a ${formatMoney(campaign.dailyBudgetCents, campaign.currencyCode)} daily budget. It does not start spending until you enable it there.`}
             </CardDescription>
+            <BudgetEditor
+              campaign={campaign}
+              onSaved={(c) => setCampaign((prev) => (prev ? { ...prev, ...c } : prev))}
+            />
             <SquareLogo onChange={setLogo} />
             {onSite && (
               <label className="mt-4 flex items-start gap-2 text-sm text-zinc-300">

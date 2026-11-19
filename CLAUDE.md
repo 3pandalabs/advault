@@ -221,6 +221,14 @@ orphaned a budget on every failure. Don't split it back up.
 - **`validateOnly: true` on the launch body is a dry run**: Google checks every
   operation against the real account and creates nothing. Use it before the
   first real launch into a new account.
+- **The daily budget floor is Google's: $5/day in USD** (Demand Gen per-day
+  minimum, `minDailyBudgetMinorFor` in `lib/pricing`; INR ₹100). It was cut to
+  $1 on 2026-11-10 and a dry run on 2026-11-19 got
+  `BUDGET_BELOW_PER_DAY_MINIMUM`: every $1–$4.99 campaign could be paid for
+  and never launch. Create/PATCH refuse below it, launch pre-checks it (409
+  `budget_below_minimum`, dry run included) and maps Google's error to the
+  same code; the launch card lets an unlaunched campaign raise its budget.
+  Don't lower it without a dry run proving Google accepts the new figure.
 
 **Four of those five links look like success on their own.** Until 2026-10-24
 `POST /campaigns/:id/launch` stopped after the campaign and its geo targeting:
