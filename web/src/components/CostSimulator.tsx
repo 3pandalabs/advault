@@ -134,7 +134,7 @@ export function CostSimulator({
       </div>
 
       <div className="mt-5">
-        <p className="mb-2 text-sm font-medium text-zinc-300">{monthly ? "Your monthly ad budget" : "Your ad budget"}</p>
+        <p className="mb-2 text-sm font-medium text-zinc-300">{monthly ? "Choose your monthly ad budget" : "Choose your ad budget"}</p>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <TopUpPicker mode="choose" currency={CURRENCY} value={budget} onChange={setBudget} showEstimate={false} />
           {/* Same row, right corner: how often the chosen budget is shown.

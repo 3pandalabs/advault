@@ -5,7 +5,6 @@ import { ApiError, topUp } from "@/lib/api/browser";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { minTopupCents, timesShownEstimate, topupPresets } from "@/lib/budget";
-import { spreadSentence } from "@/lib/spread";
 import { formatMoney, parseDollarsToCents } from "@/lib/utils";
 
 /**
@@ -142,9 +141,8 @@ export function TopUpPicker({
       )}
 
       {showEstimate && valid && amount !== null && (() => {
-        // One line, for THIS amount (owner, 2026-11-19): times shown, plus how
-        // many days a week it covers when spread over a month (lib/spread):
-        // more budget means more days.
+        // One line, for THIS amount: times shown (owner, 2026-11-19: no
+        // days-a-week text here).
         const est = timesShownEstimate(amount, currency);
         const n = (x: number) => x.toLocaleString("en-US");
         return (
@@ -153,8 +151,7 @@ export function TopUpPicker({
             <span key={amount} className="estimate-flash font-semibold text-amber-300">
               {n(est.low)}–{n(est.high)}
             </span>{" "}
-            times to people in your area.{" "}
-            <span className="text-zinc-400">Spread over a month: {spreadSentence(amount).replace(/^Your ad/, "it")}</span>
+            times to people in your area.
           </p>
         );
       })()}
