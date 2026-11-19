@@ -5,7 +5,7 @@ import { getWallet, type Wallet } from "@/lib/api/browser";
 import { Badge, Card, CardDescription, CardTitle } from "@/components/ui/card";
 import { BudgetBanner } from "@/components/BudgetBanner";
 import { TopUpPicker } from "@/components/TopUpPicker";
-import { aboutDays, minDailyBudgetCents } from "@/lib/budget";
+import { aboutDays } from "@/lib/budget";
 import { formatDate } from "@/lib/utils";
 
 // The ad balance. Under the managed (MCC) model, ads run against 3PandaLabs'
@@ -48,8 +48,6 @@ export default function WalletPage() {
 
   const empty = wallet.balanceMinor <= 0;
   const budget = wallet.budget;
-  // The estimate uses the live campaigns' daily budgets, else the $5 minimum.
-  const dailyCents = budget?.liveDailyMinor || minDailyBudgetCents(wallet.currencyCode);
   const returned = typeof window !== "undefined" && new URLSearchParams(window.location.search).get("status") === "success";
 
   return (
@@ -105,8 +103,6 @@ export default function WalletPage() {
         <div className="mt-4">
           <TopUpPicker
             currency={wallet.currencyCode}
-            dailyCents={dailyCents}
-            balanceCents={wallet.balanceMinor}
           />
         </div>
       </Card>

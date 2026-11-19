@@ -45,8 +45,6 @@ export function AdBudgetCard({ campaign, wallet }: { campaign: Campaign; wallet:
       <div className="mt-2">
         <TopUpPicker
           currency={wallet.currencyCode}
-          dailyCents={liveDaily}
-          balanceCents={balance}
           campaignId={campaign.id}
           value={wizardPick}
         />

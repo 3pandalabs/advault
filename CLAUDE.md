@@ -259,10 +259,11 @@ orphaned a budget on every failure. Don't split it back up.
   (`campaigns.low_balance_alerted_at`, cleared when healthy). Still no
   customer email. FAQ + terms: unused ad budget stays in the account and is
   refunded if they leave (terms §5, delete-account already refunds it).
-  The picker shows a live estimate for the chosen amount (`topupEstimate`:
-  days, "shown about X–Y times" = `estimateReach()` impressions — never call
-  them views or people — and "roughly A–B clicks" at a $0.50–$2.00 CPC
-  placeholder, `CPC_RANGE_MINOR`, to be replaced by our own averages).
+  Under the picker, ONE line for the chosen amount (owner): "Your ad would be
+  shown about X–Y times to people in your area." (`timesShownEstimate` =
+  `estimateReach()` impressions, rounded to 500 — never call them views or
+  people; no days or clicks there). "Lasts about N days" stays on the budget
+  card / wallet page, from the real balance.
 
 **Four of those five links look like success on their own.** Until 2026-10-24
 `POST /campaigns/:id/launch` stopped after the campaign and its geo targeting:

@@ -1143,7 +1143,6 @@ export default function NewCampaignPage() {
                 <TopUpPicker
                   mode="choose"
                   currency="USD"
-                  dailyCents={budgetCents !== null && !budgetOutOfRange ? budgetCents : MIN_DAILY_BUDGET_CENTS}
                   value={topupCents}
                   onChange={setTopupCents}
                 />
