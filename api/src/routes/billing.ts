@@ -1,6 +1,6 @@
 import { unfreezeCardsForUser } from "../lib/billing/managedCard.js";
 import { resumeFundedCampaigns } from "../lib/billing/resume.js";
-import { budgetState } from "../lib/wallet/runway.js";
+import { budgetState, minTopupMinor } from "../lib/wallet/runway.js";
 import { and, eq, inArray } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
@@ -263,6 +263,23 @@ export async function billingRoutes(app: FastifyInstance) {
           .limit(1);
 
         const currency = user.currencyCode as Currency;
+        // Ad budget top-ups have a floor ($35 / ₹2,000, the first preset in
+        // lib/wallet/runway.ts). The UI enforced it alone until 2026-11-20, so
+        // a hand-made request could buy a $1 "top-up" that runs a $5/day ad for
+        // a few hours and pays Stripe's fixed fee on pocket change. Checked on
+        // the REQUESTED amount, so test mode (which then charges 50 cents)
+        // still has to ask for a real-sized top-up. Creation fees are exempt.
+        if (body.purpose === "topup") {
+          const minMinor = minTopupMinor(currency);
+          if (body.amountMinor < minMinor) {
+            return reply.code(400).send({
+              error: "topup_below_minimum",
+              minMinor,
+              currencyCode: currency,
+              detail: `The smallest top-up is ${formatMinor(minMinor, currency)}.`,
+            });
+          }
+        }
         const provider = providerFor(currency);
         // Back to the campaign page when the top-up started there (own campaign only).
         let returnTo = `${env.WEB_ORIGIN}/dashboard/wallet`;
