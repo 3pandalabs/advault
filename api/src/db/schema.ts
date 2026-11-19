@@ -18,6 +18,7 @@ import type { AudienceFilters, TargetAddress } from "../lib/audience/policy.js";
 import type { AdSchedule } from "../lib/schedule/policy.js";
 import type { Realty } from "../lib/realty/index.js";
 import type { BeforeAfterPair } from "../lib/beforeAfter/policy.js";
+import type { BadgeSelection } from "../lib/categories/badges.js";
 
 // Enum-ish columns are `text` + a CHECK constraint rather than pgEnum, matching
 // the RentVault and RsvpVault schemas. Adding a value to a pgEnum needs its own
@@ -509,6 +510,11 @@ export const campaigns = pgTable(
     beforeAfter: jsonb("before_after").$type<BeforeAfterPair[]>(),
     beforeAfterAttestedAt: timestamp("before_after_attested_at", { withTimezone: true }),
     beforeAfterAttestedBy: uuid("before_after_attested_by"),
+    // Trust badges the owner ticked (0039, lib/categories/badges.ts) and who
+    // attested "These are true for my business today" and when. NULL = none.
+    badges: jsonb("badges").$type<BadgeSelection>(),
+    badgesAttestedAt: timestamp("badges_attested_at", { withTimezone: true }),
+    badgesAttestedBy: uuid("badges_attested_by"),
     // Free-text context fed to the script generator ("family-run since 1998,
     // same-day emergency callouts"). Not shown to viewers directly.
     offerDetails: text("offer_details"),

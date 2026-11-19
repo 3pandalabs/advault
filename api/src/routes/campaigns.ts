@@ -7,6 +7,8 @@ import { campaigns, creatives } from "../db/schema.js";
 import { loadOwnedCampaign } from "../lib/ownership.js";
 import { budgetBelowMinimum } from "../lib/pricing/index.js";
 import { realtySchema } from "../lib/realty/index.js";
+import { claimBlock } from "../lib/categories/claims.js";
+import { categoryKey } from "../lib/categories/key.js";
 import { markAppUsed } from "../lib/sharedAccount/index.js";
 import { adScheduleSchema, normalizeAdSchedule } from "../lib/schedule/policy.js";
 import {
@@ -116,6 +118,12 @@ function checkTargeting(
   return { ok: true, audienceFilters };
 }
 
+/** Claim checks (lib/categories/claims): the offer text Google clearly forbids, or null. */
+function blockedClaim(category: string, offerDetails: string | null | undefined) {
+  const b = claimBlock(categoryKey(category), offerDetails);
+  return b ? { error: "claim_not_allowed", detail: b.reason, phrase: b.phrase } : null;
+}
+
 export async function campaignRoutes(app: FastifyInstance) {
   app.addHook("onRequest", requireAuth);
 
@@ -132,6 +140,8 @@ export async function campaignRoutes(app: FastifyInstance) {
         .code(400)
         .send({ error: targeting.error, detail: TARGETING_VIOLATION_DETAIL[targeting.error] });
     }
+    const claim = blockedClaim(body.businessCategory, body.offerDetails);
+    if (claim) return reply.code(400).send(claim);
     const [campaign] = await db
       .insert(campaigns)
       .values({
@@ -229,6 +239,13 @@ export async function campaignRoutes(app: FastifyInstance) {
         return reply
           .code(400)
           .send({ error: targeting.error, detail: TARGETING_VIOLATION_DETAIL[targeting.error] });
+      }
+      if (body.offerDetails !== undefined || body.businessCategory !== undefined) {
+        const claim = blockedClaim(
+          body.businessCategory ?? campaign.businessCategory,
+          body.offerDetails !== undefined ? body.offerDetails : campaign.offerDetails,
+        );
+        if (claim) return reply.code(400).send(claim);
       }
 
       const [updated] = await db

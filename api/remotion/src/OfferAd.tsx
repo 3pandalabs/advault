@@ -63,6 +63,11 @@ export type OfferAdProps = {
   beforeAfter?: { before: string; after: string }[];
   /** Seconds per pair (api BEFORE_AFTER_PAIR_SECONDS). */
   beforeAfterSeconds?: number;
+  /**
+   * Trust badges the owner attested (2026-11-20, api lib/categories/badges):
+   * small chips on the end card ("Licensed & insured", "LIC #12345").
+   */
+  badges?: string[];
   durationSeconds: number;
   width: number;
   height: number;
@@ -452,6 +457,28 @@ const EndCard: React.FC<OfferAdProps & { vertical: boolean }> = (p) => {
       <div style={{ fontFamily, fontWeight: 800, fontSize: 40 * u, color: p.accentColor, textAlign: "center" }}>
         {p.priceText} · {p.itemText.toLowerCase()} · {p.validText.toLowerCase()}
       </div>
+      {(p.badges ?? []).length > 0 && (
+        <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "center", gap: 16 * u, maxWidth: "92%" }}>
+          {(p.badges ?? []).slice(0, 4).map((b) => (
+            <div
+              key={b}
+              style={{
+                fontFamily,
+                fontWeight: 800,
+                fontSize: 30 * u,
+                color: "#fff",
+                border: `${3 * u}px solid ${p.accentColor}`,
+                borderRadius: 999,
+                padding: `${8 * u}px ${24 * u}px`,
+                whiteSpace: "nowrap",
+                background: "rgba(0,0,0,.25)",
+              }}
+            >
+              ✓ {b}
+            </div>
+          ))}
+        </div>
+      )}
     </AbsoluteFill>
   );
 };

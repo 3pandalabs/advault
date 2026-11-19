@@ -29,6 +29,8 @@ import {
 import { TopUpPicker } from "@/components/TopUpPicker";
 import { PlanPriceLines } from "@/components/PlanPriceLines";
 import { SuggestionChips } from "@/components/SuggestionChips";
+import { ClaimWarnings, hasBlockedClaim } from "@/components/ClaimWarnings";
+import { PlanOfferBuilder } from "@/components/PlanOfferBuilder";
 import { callToActionSuggestions, campaignNameSuggestions } from "@/lib/suggestions";
 import { AudienceFiltersEditor, HOUSING_NOTICE } from "@/components/AudienceFiltersEditor";
 import { actsAsAdmin } from "@/lib/testMode";
@@ -532,7 +534,9 @@ export default function NewCampaignPage() {
     (form.landingUrl.trim() === "" || /^https?:\/\//i.test(form.landingUrl.trim())) &&
     (housing ? addressValid && realtyValid : zipCodes.length > 0 && invalidZips.length === 0 && !mixedCountries) &&
     budgetCents !== null &&
-    !budgetOutOfRange;
+    !budgetOutOfRange &&
+    // Claim checks (lib/categories/claims): only a housing exclusion blocks.
+    !hasBlockedClaim(category, form.offerDetails);
 
   if (askWho) {
     return (
@@ -1197,6 +1201,12 @@ export default function NewCampaignPage() {
                 suggestions={[offerExample(category, isListing)]}
                 onPick={fill("offerDetails")}
               />
+              <PlanOfferBuilder
+                category={category}
+                currencyCode="USD"
+                onUse={(text) => setForm((f) => ({ ...f, offerDetails: text }))}
+              />
+              <ClaimWarnings category={category} text={form.offerDetails} />
               {form.offerDetails.trim() !== "" && form.offerDetails === offerExample(category, isListing) ? (
                 <p className="mt-1.5 text-xs text-amber-300/90">
                   This is our example. Change the prices and details so every word is true for your

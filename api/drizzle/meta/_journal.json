@@ -274,6 +274,13 @@
       "when": 1795505200000,
       "tag": "0038_plan_follows_running_ad",
       "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1795505300000,
+      "tag": "0039_campaign_badges",
+      "breakpoints": true
     }
   ]
 }

@@ -200,8 +200,14 @@ export async function creativeRoutes(app: FastifyInstance) {
       // script could otherwise point the renderer at any R2 key (someone
       // else's photo) as "our work". Always the stored ones.
       const stored = adScriptSchema.safeParse(owned.creative.script);
-      const { beforeAfter: _ignored, ...rest } = edited;
-      const script = { ...rest, ...(stored.success && stored.data.beforeAfter ? { beforeAfter: stored.data.beforeAfter } : {}) };
+      // Same for the attested badges (lib/categories/badges): an edit must not
+      // add a credential the owner never attested.
+      const { beforeAfter: _ignored, badges: _ignoredBadges, ...rest } = edited;
+      const script = {
+        ...rest,
+        ...(stored.success && stored.data.beforeAfter ? { beforeAfter: stored.data.beforeAfter } : {}),
+        ...(stored.success && stored.data.badges ? { badges: stored.data.badges } : {}),
+      };
       const maxIndex = Math.max(owned.creative.sourceAssetKeys.length - 1, 0);
       if (script.scenes.some((s) => s.assetIndex > maxIndex)) {
         return reply.code(400).send({ error: "asset_index_out_of_range" });

@@ -176,6 +176,8 @@ export async function renderTemplate(input: TemplateInputs, log: (msg: string, e
     opener: input.openerPath ? basename(input.openerPath) : undefined,
     beforeAfter: pairs.map((p) => ({ before: basename(p.before), after: basename(p.after) })),
     beforeAfterSeconds: BEFORE_AFTER_PAIR_SECONDS,
+    // Attested trust badges (lib/categories/badges), set by generate.ts.
+    badges: (script.badges ?? []).slice(0, 4),
     durationSeconds,
     width,
     height,

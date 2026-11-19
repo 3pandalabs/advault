@@ -6,6 +6,7 @@ import { enqueueRender } from "../../render/jobs.js";
 import type { AdScript } from "../script/schema.js";
 import { presignDownload } from "../../plugins/r2.js";
 import { beforeAfterAllowed, pairAssetIds, withoutPairPhotos, type BeforeAfterKeys } from "../beforeAfter/policy.js";
+import { BADGES, badgeChips } from "../categories/badges.js";
 
 // Writing the scripts and queueing the renders for a campaign. Shared by the
 // wizard's generate route and the paid new-ad order (Keep it running), so both
@@ -114,10 +115,18 @@ export async function generateForCampaign(args: {
   const peopleIndexes = [...new Set([...(args.peopleAssetIds ?? []).map(indexOf), portraitIndex])]
     .filter((i) => i >= 0)
     .sort((a, b) => a - b);
+  // The owner's attested badges (lib/categories/badges): end-card chips, and
+  // facts the script writer may use. Only attested selections count.
+  const badgeSel = campaign.badges && campaign.badgesAttestedAt ? campaign.badges : null;
+  const badges = badgeChips(badgeSel).slice(0, 4);
+  const confirmedFacts = (badgeSel?.ids ?? []).map((id) =>
+    id === "license_number" ? `Licensed, license number ${badgeSel?.licenseNumber ?? ""}`.trim() : (BADGES[id]?.label ?? id),
+  );
   const marks = {
     ...(peopleIndexes.length ? { peopleIndexes } : {}),
     ...(portraitIndex >= 0 ? { portraitIndex } : {}),
     ...(beforeAfter.length ? { beforeAfter } : {}),
+    ...(badges.length ? { badges } : {}),
   };
 
   // Photos the writer can look at (presigned, short-lived). A presign
@@ -156,6 +165,7 @@ export async function generateForCampaign(args: {
         portraitIndex: portraitIndex >= 0 ? portraitIndex : null,
         imageUrls: visibleUrls,
         beforeAfterPairs: beforeAfter.length,
+        confirmedFacts,
       },
       args.warn,
     );

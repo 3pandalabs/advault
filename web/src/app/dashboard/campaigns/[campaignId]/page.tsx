@@ -44,6 +44,8 @@ import { BUDGET_BELOW_MINIMUM_MESSAGE, minDailyBudgetCents, runLengthLabel } fro
 import { WebsiteCard } from "./website-card";
 import { BeforeAfterCard } from "./before-after-card";
 import { SeasonCard } from "./season-card";
+import { OfferCard } from "./offer-card";
+import { BadgesCard } from "./badges-card";
 import { SiteOfferOption, payLabel } from "./site-offer-option";
 import { RenderProgress, ScriptProgress } from "./render-progress";
 import { AUDIENCE_FILTERS_ENABLED } from "@/lib/audience";
@@ -848,6 +850,14 @@ export default function CampaignDetailPage({
         campaign={campaign}
         onSaved={(c) => setCampaign((prev) => (prev ? { ...prev, ...c } : prev))}
       />
+
+      <OfferCard
+        campaign={campaign}
+        onSaved={(c) => setCampaign((prev) => (prev ? { ...prev, ...c } : prev))}
+      />
+
+      {/* Per-category trust badges (lib/categories/badges); hidden when none apply. */}
+      <BadgesCard campaign={campaign} />
 
       {/* Trades only (lib/beforeAfter); renders nothing for other categories. */}
       <BeforeAfterCard campaign={campaign} />

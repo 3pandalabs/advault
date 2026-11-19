@@ -50,6 +50,12 @@ export function buildAdScriptUserPrompt(input: {
   portraitIndex?: number | null;
   photosAttached?: boolean;
   beforeAfterPairs?: number;
+  /**
+   * Facts the advertiser confirmed are true (attested badges, and the category
+   * extras: makes serviced, a featured dish). Theirs to claim, so the writer
+   * may use them; lib/creatives/generate.ts builds them, never the model.
+   */
+  confirmedFacts?: string[];
 }): string {
   const addr = input.targetAddress;
   const place = addr ? `${addr.street}, ${addr.city}, ${addr.state}` : null;
@@ -100,6 +106,15 @@ export function buildAdScriptUserPrompt(input: {
   if (input.beforeAfterPairs && input.beforeAfterPairs > 0) {
     lines.push(
       `Before & after: ${input.beforeAfterPairs} pair${input.beforeAfterPairs > 1 ? "s" : ""} of real before and after photos of the advertiser's own work play right after the opening (not attached, not indexed). The voiceover may say "from this... to this" style lines; claim nothing specific about the job.`,
+    );
+  }
+
+  const facts = (input.confirmedFacts ?? []).filter((f) => f.trim());
+  if (facts.length) {
+    lines.push(
+      "",
+      "Facts the advertiser confirmed are true (you may use them in the voiceover, captions or sticker benefits; add no other credentials, guarantees or awards):",
+      ...facts.map((f) => `- ${f}`),
     );
   }
 

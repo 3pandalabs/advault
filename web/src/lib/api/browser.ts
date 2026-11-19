@@ -1,6 +1,8 @@
 "use client";
 
 import type { AudienceFilters, TargetAddress } from "@/lib/audience";
+import type { BadgeId } from "@/lib/categories/badges";
+import type { ClaimFlag } from "@/lib/categories/claims";
 import type { AdSchedule } from "@/lib/schedule";
 
 // Browser-side calls go to the public, Cloudflare-proxied hostname. The
@@ -617,10 +619,27 @@ export function setBeforeAfter(
  * next ad made uses this offer.
  */
 export function setCampaignOffer(campaignId: string, body: { offerDetails: string; callToAction?: string }) {
-  return api<{ campaign: Campaign; liveAdUnchanged: boolean }>(`/campaigns/${campaignId}/offer`, {
+  return api<{ campaign: Campaign; liveAdUnchanged: boolean; warnings: ClaimFlag[] }>(`/campaigns/${campaignId}/offer`, {
     method: "PUT",
     body: JSON.stringify(body),
   });
+}
+
+/** Trust badges (api lib/categories/badges, migration 0039). */
+export type BadgesState = {
+  options: BadgeId[];
+  selection: { ids: BadgeId[]; licenseNumber?: string | null };
+  chips: string[];
+  attestedAt: string | null;
+};
+
+export function getBadges(campaignId: string) {
+  return api<BadgesState>(`/campaigns/${campaignId}/badges`);
+}
+
+/** Saves the ticked badges (an empty list removes them). `attested` is required when any is ticked. */
+export function setBadges(campaignId: string, body: { ids: BadgeId[]; licenseNumber?: string | null; attested: boolean }) {
+  return api<BadgesState>(`/campaigns/${campaignId}/badges`, { method: "PUT", body: JSON.stringify(body) });
 }
 
 /** One-click SiteVault website for a campaign with no website. */

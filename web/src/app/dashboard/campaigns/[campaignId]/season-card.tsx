@@ -5,6 +5,7 @@ import { ApiError, setCampaignOffer, type Campaign } from "@/lib/api/browser";
 import { Card, CardDescription, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input, Label, Textarea } from "@/components/ui/input";
+import { ClaimWarnings, hasBlockedClaim } from "@/components/ClaimWarnings";
 import { categoryKey, marketFor } from "@/lib/categories/key";
 import { alreadyUsingSeason, seasonCard } from "@/lib/categories/seasons";
 
@@ -138,6 +139,7 @@ export function SeasonCard({ campaign, onSaved }: { campaign: Campaign; onSaved:
             <p className="mt-1.5 text-xs text-amber-300/90">
               This is our example. Change the prices and details so every word is true for your business.
             </p>
+            <ClaimWarnings category={campaign.businessCategory} text={offer} />
           </div>
           <div>
             <Label htmlFor="season-cta">Call to action</Label>
@@ -153,7 +155,7 @@ export function SeasonCard({ campaign, onSaved }: { campaign: Campaign; onSaved:
             <Button size="sm" variant="ghost" disabled={busy} onClick={() => setEditing(false)}>
               Cancel
             </Button>
-            <Button size="sm" disabled={busy || offer.trim() === ""} onClick={save}>
+            <Button size="sm" disabled={busy || offer.trim() === "" || hasBlockedClaim(campaign.businessCategory, offer)} onClick={save}>
               {busy ? "Saving…" : "Save offer"}
             </Button>
           </div>
