@@ -10,6 +10,9 @@ import {
   pauseCampaign,
 } from "../lib/googleAds/mcc.js";
 import { applyEntry, DuplicateLedgerEntry, getBalance } from "../lib/wallet/index.js";
+import { resumeAllFundedCampaigns } from "../lib/billing/resume.js";
+import { notifyOps } from "../lib/ops/notify.js";
+import { daysOfBudget, isLowBalance, lowBalanceEpisode } from "../lib/wallet/runway.js";
 import type { Currency } from "../lib/pricing/index.js";
 
 // Reconciles Google's reported spend into the wallet, and pauses campaigns that
@@ -36,11 +39,18 @@ function isoDaysAgo(days: number): string {
   return d.toISOString().slice(0, 10);
 }
 
-export async function runSpendSync(): Promise<{ synced: number; paused: number }> {
+export async function runSpendSync(): Promise<{ synced: number; paused: number; resumed?: number }> {
   if (!isMccConfigured()) {
     log("MCC not configured — nothing to sync");
     return { synced: 0, paused: 0 };
   }
+
+  // Backstop for the top-up webhook's resume (lib/billing/resume.ts): a
+  // campaign we paused for funds restarts once the balance covers it again.
+  const resumed = await resumeAllFundedCampaigns().catch((err) => {
+    log("resume sweep threw", String(err));
+    return 0;
+  });
 
   // Only PLATFORM-FUNDED, live campaigns — the ones whose spend actually left
   // our payments account and therefore has to be recovered from the wallet.
@@ -61,14 +71,14 @@ export async function runSpendSync(): Promise<{ synced: number; paused: number }
       ),
     );
 
-  if (rows.length === 0) return { synced: 0, paused: 0 };
+  if (rows.length === 0) return { synced: 0, paused: 0, resumed };
 
   let accessToken: string;
   try {
     accessToken = await mccAccessToken();
   } catch (err) {
     log("could not obtain an MCC access token", String(err));
-    return { synced: 0, paused: 0 };
+    return { synced: 0, paused: 0, resumed };
   }
 
   let synced = 0;
@@ -164,7 +174,54 @@ export async function runSpendSync(): Promise<{ synced: number; paused: number }
     }
   }
 
-  return { synced, paused };
+  await lowBalanceAlerts(rows.map((r) => r.campaign.id));
+
+  return { synced, paused, resumed };
+}
+
+/**
+ * One operator line per low-balance episode (migration 0034). The customer
+ * sees the banner on the dashboard and campaign page (computed live from the
+ * balance by GET /wallet); this tells us, so a nudge can follow. AdVault
+ * sends customers no email (CLAUDE.md "Not used here").
+ */
+async function lowBalanceAlerts(campaignIds: string[]): Promise<void> {
+  if (campaignIds.length === 0) return;
+  // Re-read: some of these were just paused for funds.
+  const live = await db
+    .select({ campaign: campaigns })
+    .from(campaigns)
+    .innerJoin(adAccounts, eq(campaigns.adAccountId, adAccounts.id))
+    .where(and(eq(campaigns.status, "live"), eq(adAccounts.billingMode, "platform")));
+  const byUser = new Map<string, (typeof campaigns.$inferSelect)[]>();
+  for (const { campaign } of live) byUser.set(campaign.userId, [...(byUser.get(campaign.userId) ?? []), campaign]);
+
+  for (const [userId, list] of byUser) {
+    try {
+      const wallet = await getBalance(userId);
+      const balance = wallet?.balanceMinor ?? 0;
+      const currency = (wallet?.currencyCode ?? list[0]!.currencyCode) as Currency;
+      const daily = list.reduce((sum, c) => sum + c.dailyBudgetCents, 0);
+      const low = isLowBalance(balance, daily, currency);
+      const toAlert = list.filter((c) => lowBalanceEpisode({ low, alertedAt: c.lowBalanceAlertedAt }) === "alert");
+      const toClear = list.filter((c) => lowBalanceEpisode({ low, alertedAt: c.lowBalanceAlertedAt }) === "clear");
+      for (const c of toClear) {
+        await db.update(campaigns).set({ lowBalanceAlertedAt: null }).where(eq(campaigns.id, c.id));
+      }
+      if (toAlert.length === 0) continue;
+      for (const c of toAlert) {
+        await db.update(campaigns).set({ lowBalanceAlertedAt: new Date() }).where(eq(campaigns.id, c.id));
+      }
+      await notifyOps({
+        title: `AdVault budget low: ${toAlert.map((c) => c.businessName).join(", ")}`,
+        message: `Ad budget ${(balance / 100).toFixed(2)} ${currency} left, about ${daysOfBudget(balance, daily)} day(s) at ${(daily / 100).toFixed(2)}/day. The customer sees a top-up banner.`,
+        priority: 2,
+        tags: ["moneybag"],
+      });
+    } catch (err) {
+      log("low-balance check failed", { userId, error: String(err) });
+    }
+  }
 }
 
 /** Starts the periodic sync. Called from the renderer's main(). */
@@ -172,7 +229,7 @@ export function startSpendSync(): void {
   const tick = () =>
     runSpendSync()
       .then((r) => {
-        if (r.synced || r.paused) log("sync complete", r);
+        if (r.synced || r.paused || r.resumed) log("sync complete", r);
       })
       .catch((err) => log("sync threw", String(err)));
 

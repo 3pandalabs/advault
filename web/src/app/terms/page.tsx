@@ -168,8 +168,11 @@ export default function TermsPage() {
         before we can pause it, and you remain responsible for the difference.
       </p>
       <p>
-        Unused balance is refundable to you on request, less any spend already incurred.
-        We do not pay interest on it.
+        You only pay for the ad spend Google actually delivers. Unused balance stays in your
+        account for your next ad, and is refundable to you on request or when you close your
+        account, less any spend already incurred. We do not pay interest on it. AdVault&apos;s
+        own fees (the price of each ad and the monthly plan) are not refundable once
+        delivered, as section 6 explains.
       </p>
 
       <h2>6. Cancelling, and when we refund</h2>

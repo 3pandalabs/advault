@@ -242,6 +242,23 @@ orphaned a budget on every failure. Don't split it back up.
   account that is the same day or a day later, so a run is never cut short.
   Copy sells "From $5 a day — Google's minimum"; Keep it running suggests
   $35 (one week at $5/day).
+- **Top-up first (2026-11-19, migration 0034).** The run-length picker is now
+  behind "Advanced: stop on a date"; the default is always on (`run_days`
+  NULL). The wizard, campaign page and wallet page lead with "Add to your ad
+  budget" ($35 / $50 / $100 / custom, min $35 in the UI) and "Your $50 lasts
+  about 10 days at $5 a day" (`daysOfBudget` in `lib/wallet/runway.ts`,
+  mirrored in `web/src/lib/budget.ts`). The wizard only remembers the amount
+  (sessionStorage); the campaign page's budget card charges it. The ad runs
+  until the budget runs out: `spendSync` pauses it, and a top-up **resumes**
+  it (`lib/billing/resume.ts`, from the payment webhook and the hourly sync;
+  only campaigns with `paused_for_funds_at`, only when the balance covers
+  MIN_FUNDED_DAYS). Before this nothing ever re-enabled a funds-paused
+  campaign. Low balance (under max(2 days of budget, $10)) shows a banner on
+  the dashboard and campaign page, computed live by `GET /wallet` `budget`;
+  the sync also pings ops via ntfy once per episode
+  (`campaigns.low_balance_alerted_at`, cleared when healthy). Still no
+  customer email. FAQ + terms: unused ad budget stays in the account and is
+  refunded if they leave (terms §5, delete-account already refunds it).
 
 **Four of those five links look like success on their own.** Until 2026-10-24
 `POST /campaigns/:id/launch` stopped after the campaign and its geo targeting:

@@ -900,18 +900,31 @@ export type Wallet = {
   balanceMinor: number;
   currencyCode: "INR" | "USD";
   display: string;
+  /**
+   * The budget picture for the banners (live, platform-funded campaigns).
+   * idle = nothing running; low = under max(2 days, $10); empty = paused (or
+   * about to be) because the budget ran out.
+   */
+  budget?: {
+    state: "idle" | "ok" | "low" | "empty";
+    daysLeft: number | null;
+    liveDailyMinor: number;
+    liveCampaignIds: string[];
+    pausedForFunds: { id: string; name: string }[];
+  };
   entries: LedgerEntry[];
 };
 
 export const getWallet = () => api<Wallet>("/wallet");
 
-export function topUp(amountMinor: number) {
+/** `campaignId`: checkout returns to that campaign page instead of the wallet. */
+export function topUp(amountMinor: number, campaignId?: string) {
   return api<{
     paymentId: string;
     provider: "razorpay" | "stripe" | "manual";
     redirectUrl: string | null;
     clientPayload: Record<string, unknown>;
-  }>("/wallet/topup", { method: "POST", body: JSON.stringify({ amountMinor }) });
+  }>("/wallet/topup", { method: "POST", body: JSON.stringify({ amountMinor, ...(campaignId ? { campaignId } : {}) }) });
 }
 
 // Creates the managed (MCC) child account.

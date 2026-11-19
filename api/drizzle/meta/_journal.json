@@ -239,6 +239,13 @@
       "when": 1795504700000,
       "tag": "0033_campaign_run_days",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1795504800000,
+      "tag": "0034_low_balance_alert",
+      "breakpoints": true
     }
   ]
 }

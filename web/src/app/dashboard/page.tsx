@@ -4,7 +4,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { SITEVAULT_ACCOUNT_URL, siteVaultSlug } from "@/lib/sitevault";
-import { getMe, listCampaigns, type Campaign, type CampaignStatus } from "@/lib/api/browser";
+import { getMe, getWallet, listCampaigns, type Campaign, type CampaignStatus, type Wallet } from "@/lib/api/browser";
+import { BudgetBanner } from "@/components/BudgetBanner";
 import { Badge, Card, CardDescription, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { formatDate, formatMoney } from "@/lib/utils";
@@ -34,6 +35,12 @@ export default function CampaignsPage() {
   // SiteVault website) gets a link back to it from the empty state.
   const [usesSitevault, setUsesSitevault] = useState(false);
   const router = useRouter();
+  // Low / ran-out ad budget banner (top-up-first model).
+  const [wallet, setWallet] = useState<Wallet | null>(null);
+
+  useEffect(() => {
+    getWallet().then(setWallet).catch(() => setWallet(null));
+  }, []);
 
   useEffect(() => {
     getMe()
@@ -100,6 +107,16 @@ export default function CampaignsPage() {
 
   return (
     <div>
+      <BudgetBanner
+        wallet={wallet}
+        href={
+          wallet?.budget?.pausedForFunds[0]
+            ? `/dashboard/campaigns/${wallet.budget.pausedForFunds[0].id}#ad-budget`
+            : wallet?.budget?.liveCampaignIds[0]
+              ? `/dashboard/campaigns/${wallet.budget.liveCampaignIds[0]}#ad-budget`
+              : "/dashboard/wallet"
+        }
+      />
       <div className="mb-6 flex items-center justify-between">
         <h1 className="text-2xl font-semibold tracking-tight">Campaigns</h1>
         <Link href="/dashboard/campaigns/new">
