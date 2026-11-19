@@ -5,7 +5,15 @@ import { decryptToken } from "../lib/crypto.js";
 import { isGoogleAdsConfigured } from "../lib/googleAds/env.js";
 import { isMccConfigured, mccAccessToken } from "../lib/googleAds/mcc.js";
 import { refreshAccessToken } from "../lib/googleAds/oauth.js";
-import { fetchAdPolicy, fetchDailyMetrics, storeAdPolicy, upsertDailyMetrics } from "../lib/adMetrics/index.js";
+import {
+  fetchAdPolicy,
+  fetchDailyMetrics,
+  fetchSegmentMetrics,
+  hasSegmentMetrics,
+  replaceSegmentMetrics,
+  storeAdPolicy,
+  upsertDailyMetrics,
+} from "../lib/adMetrics/index.js";
 import { isoDaysAgo } from "../lib/adMetrics/policy.js";
 
 // Pulls ad performance (impressions, views, clicks, cost) for every launched
@@ -24,6 +32,14 @@ const SYNC_INTERVAL_MS = Number(process.env.AD_METRICS_SYNC_INTERVAL_MS ?? 60 * 
 // Google restates recent days as invalid traffic is filtered out, so the
 // window is re-read whole on every pass and the rows overwritten.
 const LOOKBACK_DAYS = Number(process.env.AD_METRICS_LOOKBACK_DAYS ?? 7);
+// A campaign with no breakdown rows yet (launched before migration 0035, or
+// new) is backfilled from its launch date, capped here.
+const SEGMENT_BACKFILL_MAX_DAYS = 90;
+// Breakdowns cost 7-8 searches per account, so they refresh every 3 hours,
+// not every hourly pass (Basic access counts every search against a daily
+// operations cap). The results screen says data is about 3 hours behind.
+const SEGMENT_INTERVAL_MS = Number(process.env.AD_SEGMENTS_SYNC_INTERVAL_MS ?? 3 * 60 * 60 * 1000);
+let lastSegmentsAt = 0;
 
 function log(msg: string, extra?: unknown): void {
   console.log(JSON.stringify({ job: "ad-metrics-sync", msg, extra: extra ?? undefined }));
@@ -58,6 +74,8 @@ export async function runAdMetricsSync(): Promise<{ accounts: number; rows: numb
   const untilDate = isoDaysAgo(-1); // tomorrow: accounts ahead of UTC
   let accounts = 0;
   let written = 0;
+  const doSegments = Date.now() - lastSegmentsAt >= SEGMENT_INTERVAL_MS;
+  if (doSegments) lastSegmentsAt = Date.now();
 
   for (const group of byAccount.values()) {
     const account = group[0].account;
@@ -105,6 +123,36 @@ export async function runAdMetricsSync(): Promise<{ accounts: number; rows: numb
       } catch (err) {
         log("failed to store metrics", { campaignId: campaign.id, error: String(err) });
       }
+    }
+
+    // Results-screen breakdowns (age, gender, device, network, hour, area):
+    // one more read-only search per dimension. Own try, like the policy read.
+    if (doSegments) try {
+      let segSince = sinceDate;
+      for (const { campaign } of group) {
+        if (!campaign.launchedAt || (await hasSegmentMetrics(campaign.id))) continue;
+        const launched = campaign.launchedAt.toISOString().slice(0, 10);
+        const floor = isoDaysAgo(SEGMENT_BACKFILL_MAX_DAYS);
+        const from = launched < floor ? floor : launched;
+        if (from < segSince) segSince = from;
+      }
+      const segments = await fetchSegmentMetrics({
+        accessToken,
+        customerId,
+        loginCustomerId: account.loginCustomerId,
+        sinceDate: segSince,
+        untilDate,
+        onError: (dimension, err) =>
+          log("segment query failed", { adAccountId: account.id, customerId, dimension, error: String(err) }),
+      });
+      for (const { campaign } of group) {
+        for (const [dimension, rows] of segments) {
+          const mine = rows.filter((r) => r.campaignResourceName === campaign.googleCampaignResourceName);
+          await replaceSegmentMetrics(campaign.id, dimension, segSince, untilDate, mine);
+        }
+      }
+    } catch (err) {
+      log("segment sync failed", { adAccountId: account.id, customerId, error: String(err) });
     }
 
     // Google's own ad review (approved / under review / disapproved), one

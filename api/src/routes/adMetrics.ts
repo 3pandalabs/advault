@@ -6,6 +6,7 @@ import { campaigns, creatives, purchases } from "../db/schema.js";
 import { requireAdminOrAnalyticsToken } from "../auth/adminAccess.js";
 import { requireAuth } from "../auth/plugin.js";
 import { allCampaignMetrics, campaignMetrics } from "../lib/adMetrics/index.js";
+import { loadResults } from "../lib/adMetrics/results.js";
 import { clampRangeDays, isoDaysAgo } from "../lib/adMetrics/policy.js";
 import { loadOwnedCampaign } from "../lib/ownership.js";
 import type { Currency } from "../lib/pricing/index.js";
@@ -40,6 +41,27 @@ export async function adMetricsRoutes(app: FastifyInstance) {
         : { totals: null, daily: [], lastSyncedAt: null };
 
       return { campaignId, launched, days, since, currency, note: NOTE, ...data };
+    },
+  );
+
+  // "How your ad is doing" (2026-11-19): headline numbers, trend and the
+  // who / where / when breakdowns for one range. Stored report copies only.
+  app.get(
+    "/campaigns/:campaignId/results",
+    {
+      preHandler: requireAuth,
+      schema: {
+        params: z.object({ campaignId: z.string().uuid() }),
+        querystring: z.object({ range: z.enum(["7d", "30d", "all"]).default("7d") }),
+      },
+    },
+    async (req, reply) => {
+      const { campaignId } = req.params as { campaignId: string };
+      const { range } = req.query as { range: "7d" | "30d" | "all" };
+      const campaign = await loadOwnedCampaign(campaignId, req.userId!, reply);
+      if (!campaign) return;
+      if (!campaign.googleCampaignResourceName) return { campaignId, launched: false, range };
+      return { campaignId, launched: true, ...(await loadResults(campaign, range)) };
     },
   );
 

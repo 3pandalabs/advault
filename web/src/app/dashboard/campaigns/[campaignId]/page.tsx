@@ -32,7 +32,7 @@ import { AdBudgetCard } from "./ad-budget-card";
 import { BudgetBanner } from "@/components/BudgetBanner";
 import { SquareLogo } from "./square-logo";
 import { VideoUpload } from "./video-upload";
-import { PerformanceCard } from "./performance-card";
+import { ResultsCard } from "./results-card";
 import { AudienceCard } from "./audience-card";
 import { BudgetEditor, RunLengthPicker } from "./budget-editor";
 import { BUDGET_BELOW_MINIMUM_MESSAGE, adSpendTotalCents, runLengthLabel, type RunDays } from "@/lib/budget";
@@ -935,7 +935,7 @@ export default function CampaignDetailPage({
 
       {/* Only once Google has the campaign — before launch there is nothing
           to report, and an all-zero card would read as "your ad isn't working". */}
-      {campaign.googleCampaignResourceName && <PerformanceCard campaignId={campaignId} />}
+      {campaign.googleCampaignResourceName && <ResultsCard campaignId={campaignId} />}
     </div>
   );
 }
