@@ -1,0 +1,61 @@
+// Browser mirror of api/src/lib/categories/key.ts. The API is the real
+// boundary; the block between the <shared> markers is kept word for word
+// by api/src/lib/categories/mirror.test.ts. Edit the API copy, then this.
+
+// <shared>
+export const CATEGORY_KEYS = [
+  "plumbing",
+  "electrical",
+  "hvac",
+  "dentistry",
+  "restaurant",
+  "landscaping",
+  "auto",
+  "cleaning",
+  "realEstate",
+] as const;
+export type CategoryKey = (typeof CATEGORY_KEYS)[number];
+
+/** The wizard's preset categories (web/src/lib/audience.ts CATEGORIES). */
+const PRESET_KEYS: Record<string, CategoryKey> = {
+  Plumbing: "plumbing",
+  Electrical: "electrical",
+  HVAC: "hvac",
+  Dentistry: "dentistry",
+  Restaurant: "restaurant",
+  Landscaping: "landscaping",
+  "Auto repair": "auto",
+  "Cleaning services": "cleaning",
+  "Real estate": "realEstate",
+};
+
+// Typed-in ("Other") categories, checked in this order: the first match wins,
+// so "dental cleaning" is dentistry and "auto electrical" is auto.
+const KEY_PATTERNS: [CategoryKey, RegExp][] = [
+  ["realEstate", /\b(real[\s-]?estate|realt(or|ors|y)|homes?\s+for\s+sale|property\s+sales?)\b/i],
+  ["dentistry", /\b(dent(al|ist|istry|ists)|orthodont\w*|teeth|tooth)\b/i],
+  ["restaurant", /\b(restaurants?|cafe|café|diner|bistro|pizz\w*|grill|eatery|taqueria|bbq|barbecue|sushi|catering|food truck|kitchen and bar)\b/i],
+  ["auto", /\b(auto|automotive|mechanics?|car repair|tires?|brakes?|oil change|body ?shop|collision|transmission|garage)\b/i],
+  ["hvac", /\b(hvac|heating|air[\s-]condition\w*|furnaces?|heat pumps?)\b/i],
+  ["plumbing", /\b(plumb\w*|drains?|sewer|water heaters?)\b/i],
+  ["electrical", /\b(electric(al|ian|ians)?|wiring)\b/i],
+  ["landscaping", /\b(landscap\w*|lawns?|yard|garden(ing|ers?)?|mow(ing)?|tree (service|care|removal)|snow (removal|plowing))\b/i],
+  ["cleaning", /\b(clean(ing|ers?)|maids?|janitorial|housekeeping)\b/i],
+];
+
+/** The category's key, or null for a category with no per-category extras. */
+export function categoryKey(category: string | null | undefined): CategoryKey | null {
+  const c = (category ?? "").trim();
+  if (!c) return null;
+  if (PRESET_KEYS[c]) return PRESET_KEYS[c];
+  for (const [key, re] of KEY_PATTERNS) if (re.test(c)) return key;
+  return null;
+}
+
+export type Market = "US" | "IN";
+
+/** Campaigns are one country: INR = India, everything else is sold as US. */
+export function marketFor(currencyCode: string | null | undefined): Market {
+  return currencyCode === "INR" ? "IN" : "US";
+}
+// </shared>
