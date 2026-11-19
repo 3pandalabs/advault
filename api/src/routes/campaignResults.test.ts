@@ -118,6 +118,8 @@ describe("GET /campaigns/:id/results", () => {
     const body = (await get(id)).json();
     expect(body).toMatchObject({ launched: true, range: "7d", totals: null, balance: null, trend: [] });
     expect(Object.values(body.breakdowns).every((b) => b === null)).toBe(true);
+    // Suggestions tolerate empty breakdowns.
+    expect(body.suggestions).toEqual([]);
   });
 
   it("totals, wallet balance, breakdowns and ranges from stored rows", async () => {

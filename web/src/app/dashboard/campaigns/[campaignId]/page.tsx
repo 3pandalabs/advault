@@ -943,7 +943,12 @@ export default function CampaignDetailPage({
 
       {/* Only once Google has the campaign — before launch there is nothing
           to report, and an all-zero card would read as "your ad isn't working". */}
-      {campaign.googleCampaignResourceName && <ResultsCard campaignId={campaignId} />}
+      {campaign.googleCampaignResourceName && (
+        <ResultsCard
+          campaignId={campaignId}
+          onTargetingChanged={(c) => setCampaign((prev) => (prev ? { ...prev, ...c } : prev))}
+        />
+      )}
     </div>
   );
 }

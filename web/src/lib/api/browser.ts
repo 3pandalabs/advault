@@ -477,8 +477,22 @@ export type CampaignResults =
         hour: ResultsBreakdown;
         dayOfWeek: ResultsBreakdown;
       };
+      /** Conservative "focus on them?" cards (api lib/adMetrics/suggestions.ts); often []. */
+      suggestions?: ResultsSuggestion[];
       lastSyncedAt: string | null;
     };
+export type ResultsSuggestion = {
+  id: string;
+  dimension: "age" | "gender" | "dayOfWeek" | "hour";
+  metric: "click" | "view";
+  label: string;
+  message: string;
+  question: string;
+  action: string;
+  /** Body for PUT /campaigns/:id/targeting. */
+  apply: { audienceFilters: AudienceFilters } | { adSchedule: AdSchedule };
+  reachWarning: string;
+};
 export const getCampaignResults = (id: string, range: ResultsRange = "7d") =>
   api<CampaignResults>(`/campaigns/${id}/results?range=${range}`);
 

@@ -1,5 +1,8 @@
 import { formatMinor, type Currency } from "../pricing/index.js";
 import { summarise, sumCounts, type MetricCounts } from "./policy.js";
+import { buildSuggestions } from "./suggestions.js";
+import type { AudienceFilters } from "../audience/policy.js";
+import type { AdSchedule } from "../schedule/policy.js";
 import {
   aggregateBreakdown,
   costPerClick,
@@ -29,6 +32,10 @@ export function assembleResults(args: {
   dailyBudgetMinor: number;
   /** Spend per day over the last 7 days (for "days left at current pace"), any range. */
   recentDailySpendMinor: number[];
+  /** For the suggestions (lib/adMetrics/suggestions.ts). */
+  housing?: boolean;
+  audienceFilters?: AudienceFilters | null;
+  adSchedule?: AdSchedule | null;
 }) {
   const { currency } = args;
   const counts = sumCounts(args.daily);
@@ -51,6 +58,16 @@ export function assembleResults(args: {
     currency,
     { order: "segment" },
   );
+
+  const breakdowns = {
+    age: breakdown("age", seg("age")),
+    gender: breakdown("gender", seg("gender")),
+    device: breakdown("device", seg("device")),
+    network: breakdown("network", seg("network")),
+    location,
+    hour: hours,
+    dayOfWeek: days,
+  } satisfies Record<string, BreakdownItem[] | null>;
 
   const lastSyncedAt = [...args.daily, ...args.segments].reduce<Date | null>(
     (latest, r) => (!latest || r.updatedAt > latest ? r.updatedAt : latest),
@@ -85,15 +102,17 @@ export function assembleResults(args: {
       return { date: d.date, views: s.views, clicks: s.clicks, spendMinor: s.spendMinor, costPerViewMinor: s.costPerViewMinor };
     }),
     // null = Google reported nothing for it (yet, or withheld for privacy).
-    breakdowns: {
-      age: breakdown("age", seg("age")),
-      gender: breakdown("gender", seg("gender")),
-      device: breakdown("device", seg("device")),
-      network: breakdown("network", seg("network")),
-      location,
-      hour: hours,
-      dayOfWeek: days,
-    } satisfies Record<string, BreakdownItem[] | null>,
+    breakdowns,
+    // "35–44 get you clicks at $0.60 vs $1.10 average." Conservative; often [].
+    suggestions: buildSuggestions({
+      currency,
+      totals: totals && { impressions: totals.impressions, views: totals.views, clicks: totals.clicks, spendMinor: totals.spendMinor },
+      breakdowns,
+      housing: args.housing ?? false,
+      audienceFilters: args.audienceFilters ?? null,
+      adSchedule: args.adSchedule ?? null,
+      dailyBudgetMinor: args.dailyBudgetMinor,
+    }),
     lastSyncedAt: lastSyncedAt?.toISOString() ?? null,
   };
 }

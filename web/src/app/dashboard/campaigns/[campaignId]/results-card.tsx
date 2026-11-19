@@ -2,8 +2,12 @@
 
 import { useEffect, useState } from "react";
 import {
+  ApiError,
   getCampaignResults,
+  updateTargeting,
+  type Campaign,
   type CampaignResults,
+  type ResultsSuggestion,
   type ResultsBreakdown,
   type ResultsRange,
 } from "@/lib/api/browser";
@@ -181,7 +185,71 @@ function HourStrip({ items }: { items: ResultsBreakdown }) {
   );
 }
 
-export function ResultsCard({ campaignId }: { campaignId: string }) {
+/**
+ * One smart suggestion: the saving in a sentence, the reach warning, and a
+ * button that narrows the campaign at Google (PUT /campaigns/:id/targeting).
+ */
+function SuggestionCard({
+  campaignId,
+  s,
+  onApplied,
+}: {
+  campaignId: string;
+  s: ResultsSuggestion;
+  onApplied?: (c: Campaign) => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null);
+
+  async function apply() {
+    setBusy(true);
+    setResult(null);
+    try {
+      const res = await updateTargeting(campaignId, s.apply);
+      onApplied?.(res.campaign);
+      setResult({ ok: true, text: "Done. Google now focuses your ad there. You can widen it again any time." });
+    } catch (err) {
+      setResult({
+        ok: false,
+        text:
+          err instanceof ApiError && err.detail
+            ? `Not changed. ${err.detail}`
+            : "Not changed: we couldn't reach Google. Please try again.",
+      });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="rounded-xl border border-emerald-400/25 bg-emerald-400/[0.05] p-4">
+      <p className="text-sm text-zinc-100">
+        {s.message} <span className="font-semibold">{s.question}</span>
+      </p>
+      <p className="mt-2 text-xs text-amber-200">{s.reachWarning}</p>
+      {result ? (
+        <p className={`mt-3 text-sm ${result.ok ? "text-emerald-300" : "text-red-300"}`}>{result.text}</p>
+      ) : (
+        <button
+          type="button"
+          disabled={busy}
+          onClick={apply}
+          className="mt-3 rounded-lg border border-emerald-400/50 px-3 py-1.5 text-sm text-emerald-200 hover:bg-emerald-400/10 disabled:opacity-50"
+        >
+          {busy ? "Applying…" : s.action}
+        </button>
+      )}
+    </div>
+  );
+}
+
+export function ResultsCard({
+  campaignId,
+  onTargetingChanged,
+}: {
+  campaignId: string;
+  onTargetingChanged?: (c: Campaign) => void;
+}) {
   const [range, setRange] = useState<ResultsRange>("7d");
   const [data, setData] = useState<CampaignResults | null>(null);
   const [failed, setFailed] = useState(false);
@@ -271,6 +339,15 @@ export function ResultsCard({ campaignId }: { campaignId: string }) {
           <p className="mt-2 text-xs text-zinc-400">
             Google charges per click; cost per view shows how far your budget stretches.
           </p>
+
+          {r.suggestions && r.suggestions.length > 0 && (
+            <div className="mt-4 space-y-2">
+              <h3 className="text-sm font-semibold text-zinc-100">Suggestions</h3>
+              {r.suggestions.map((s) => (
+                <SuggestionCard key={s.id} campaignId={campaignId} s={s} onApplied={onTargetingChanged} />
+              ))}
+            </div>
+          )}
 
           <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3">
             <Stat label="Views" value={count.format(t.views)} />

@@ -362,6 +362,18 @@ It must never call a mutate endpoint. Routes (`/campaigns/:id/metrics`,
   from launch (max 90 days). An empty breakdown is `null` = "Not enough views
   yet", never zeros. Demand Gen targets demographics via an Audience, not
   age/gender criteria, so age/gender may stay empty for our campaigns.
+- **Smart suggestions (2026-11-20, `lib/adMetrics/suggestions.ts`, pure).**
+  The results response carries up to 2 cards like "35–44 get you clicks at
+  $0.60 vs $1.10 average. Focus on them?" whose button sends the card's
+  `apply` body to `PUT /campaigns/:id/targeting` (age/gender via the
+  Audience, weekdays/weekends or a morning/afternoon/evening block via the ad
+  schedule), always with "At $5 a day, narrowing can make your ad show less.
+  If views drop, widen it again." Conservative (`SUGGESTION_RULES`): campaign
+  >= 200 shown and >= 10 clicks (else cost per view, >= 40 views); segment
+  >= 100 shown and >= 5 clicks (or >= 20 views); segment cost <= 70% of the
+  average and < 90% of spend; never Unknown, never a dimension already
+  narrowed, never age/gender for real estate. Age narrowing keeps Google's
+  unknown-age group. Device is not suggested (no device targeting here).
 - `/admin/metrics` takes an admin session or the optional
   `ADMIN_ANALYTICS_TOKEN`, never the shared `METRICS_TOKEN`: it names
   businesses and their spend, which `/metrics` deliberately never does.
