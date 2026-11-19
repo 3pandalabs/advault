@@ -7,6 +7,8 @@ import type { AdScript } from "../script/schema.js";
 import { presignDownload } from "../../plugins/r2.js";
 import { beforeAfterAllowed, pairAssetIds, withoutPairPhotos, type BeforeAfterKeys } from "../beforeAfter/policy.js";
 import { BADGES, badgeChips } from "../categories/badges.js";
+import { extrasEndCardLine, extrasFacts, withSpotlightPhoto } from "../categories/extras.js";
+import { categoryKey } from "../categories/key.js";
 
 // Writing the scripts and queueing the renders for a campaign. Shared by the
 // wizard's generate route and the paid new-ad order (Keep it running), so both
@@ -50,7 +52,23 @@ export async function generateForCampaign(args: {
   // (which get the AI photo pass and motion). Unless that would leave none.
   const pairs = beforeAfterAllowed(campaign.businessCategory) ? (campaign.beforeAfter ?? []) : [];
   const withoutPairs = withoutPairPhotos(args.assetIds, pairs);
-  const assetIds = withoutPairs.length > 0 ? withoutPairs : args.assetIds;
+  let assetIds = withoutPairs.length > 0 ? withoutPairs : args.assetIds;
+
+  // Restaurant spotlight (lib/categories/extras): the featured dish's photo
+  // leads the ad. Only the owner's own, still-existing photo; otherwise the
+  // ad is made without it rather than failing.
+  const spotlightId =
+    categoryKey(campaign.businessCategory) === "restaurant" ? (campaign.categoryExtras?.spotlight?.assetId ?? null) : null;
+  if (spotlightId && !assetIds.includes(spotlightId)) {
+    const [own] = await db
+      .select({ id: assets.id })
+      .from(assets)
+      .where(and(eq(assets.id, spotlightId), eq(assets.userId, userId), eq(assets.kind, "photo")))
+      .limit(1);
+    if (own) assetIds = withSpotlightPhoto(assetIds, spotlightId);
+  } else if (spotlightId) {
+    assetIds = withSpotlightPhoto(assetIds, spotlightId);
+  }
 
   // Next version of this campaign's ad: one more than the newest made one
   // (uploads don't count). Every path that makes a new ad (first generate,
@@ -119,14 +137,21 @@ export async function generateForCampaign(args: {
   // facts the script writer may use. Only attested selections count.
   const badgeSel = campaign.badges && campaign.badgesAttestedAt ? campaign.badges : null;
   const badges = badgeChips(badgeSel).slice(0, 4);
-  const confirmedFacts = (badgeSel?.ids ?? []).map((id) =>
-    id === "license_number" ? `Licensed, license number ${badgeSel?.licenseNumber ?? ""}`.trim() : (BADGES[id]?.label ?? id),
-  );
+  const catKey = categoryKey(campaign.businessCategory);
+  const confirmedFacts = [
+    ...(badgeSel?.ids ?? []).map((id) =>
+      id === "license_number" ? `Licensed, license number ${badgeSel?.licenseNumber ?? ""}`.trim() : (BADGES[id]?.label ?? id),
+    ),
+    // Category extras (lib/categories/extras): featured dish, makes serviced.
+    ...extrasFacts(catKey, campaign.categoryExtras),
+  ];
+  const endCardLine = extrasEndCardLine(catKey, campaign.categoryExtras);
   const marks = {
     ...(peopleIndexes.length ? { peopleIndexes } : {}),
     ...(portraitIndex >= 0 ? { portraitIndex } : {}),
     ...(beforeAfter.length ? { beforeAfter } : {}),
     ...(badges.length ? { badges } : {}),
+    ...(endCardLine ? { endCardLine } : {}),
   };
 
   // Photos the writer can look at (presigned, short-lived). A presign

@@ -46,6 +46,7 @@ import { BeforeAfterCard } from "./before-after-card";
 import { SeasonCard } from "./season-card";
 import { OfferCard } from "./offer-card";
 import { BadgesCard } from "./badges-card";
+import { ExtrasCard } from "./extras-card";
 import { SiteOfferOption, payLabel } from "./site-offer-option";
 import { RenderProgress, ScriptProgress } from "./render-progress";
 import { AUDIENCE_FILTERS_ENABLED } from "@/lib/audience";
@@ -95,6 +96,7 @@ const LAUNCH_ERRORS: Record<string, string> = {
     "Your Google Ads connection expired. Reconnect it in Settings and try again.",
   no_ready_creatives: "Wait for at least one video to finish rendering first.",
   already_launched: "This campaign has already been sent to Google Ads.",
+  open_house_over: "The open house date has passed, so this ad has nothing left to promote. Make a new campaign for your next listing or a “Just sold” ad.",
   landing_url_required:
     "Google needs a website link before your ad can go live. Add one under “Your website” below.",
   no_resolvable_zip_codes: "Google did not recognise any of those ZIP codes.",
@@ -858,6 +860,12 @@ export default function CampaignDetailPage({
 
       {/* Per-category trust badges (lib/categories/badges); hidden when none apply. */}
       <BadgesCard campaign={campaign} />
+
+      {/* Category extras (lib/categories/extras): dish, makes, neighbor ZIPs; open-house note. */}
+      <ExtrasCard
+        campaign={campaign}
+        onSaved={(c) => setCampaign((prev) => (prev ? { ...prev, ...c } : prev))}
+      />
 
       {/* Trades only (lib/beforeAfter); renders nothing for other categories. */}
       <BeforeAfterCard campaign={campaign} />

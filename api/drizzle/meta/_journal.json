@@ -281,6 +281,13 @@
       "when": 1795505300000,
       "tag": "0039_campaign_badges",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1795505400000,
+      "tag": "0040_campaign_category_extras",
+      "breakpoints": true
     }
   ]
 }

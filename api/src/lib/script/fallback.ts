@@ -163,6 +163,28 @@ function realtyFallback(input: Parameters<typeof buildFallbackScript>[0]): AdScr
     };
   }
 
+  if (r.adType === "sold") {
+    const bb = bedsBaths(r);
+    const captions = [
+      a ? `Just sold: ${a.street}` : "Just sold",
+      bb ? bb.toLowerCase() : `${input.businessName}, local agent`,
+      "Thinking of selling? " + input.callToAction,
+    ];
+    return {
+      hook: captions[0],
+      scenes: captions.map((c, i) => scene(i, c)),
+      callToAction: input.callToAction,
+      endCardText: input.businessName,
+      voiceoverText: `[warmly] Just sold${a ? `, on ${a.street} in ${a.city}` : ""}! Thinking of selling? ${input.callToAction}, ${input.businessName}.`.slice(0, 600),
+      sticker: {
+        badge: "SOLD",
+        headline: (bb ?? "JUST SOLD").slice(0, 24),
+        tagline: (a?.city ?? "NEAR YOU").toUpperCase().slice(0, 26),
+        benefits: [],
+      },
+    };
+  }
+
   const where = a ? `${a.city}, ${a.state}` : "near you";
   const captions = [input.businessName, `Your real estate agent in ${where}`, input.callToAction];
   return {

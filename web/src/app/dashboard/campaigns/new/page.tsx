@@ -31,6 +31,7 @@ import { PlanPriceLines } from "@/components/PlanPriceLines";
 import { SuggestionChips } from "@/components/SuggestionChips";
 import { ClaimWarnings, hasBlockedClaim } from "@/components/ClaimWarnings";
 import { PlanOfferBuilder } from "@/components/PlanOfferBuilder";
+import { OfferPresetButtons } from "@/components/OfferPresetButtons";
 import { callToActionSuggestions, campaignNameSuggestions } from "@/lib/suggestions";
 import { AudienceFiltersEditor, HOUSING_NOTICE } from "@/components/AudienceFiltersEditor";
 import { actsAsAdmin } from "@/lib/testMode";
@@ -307,12 +308,15 @@ export default function NewCampaignPage() {
     /^[A-Za-z]{2}$/.test(form.addressState.trim()) &&
     /^\d{5}$/.test(form.addressZip.trim());
   const isListing = housing && form.realtyType === "listing";
+  // "Just sold" (lib/realty): the home's facts, no open house.
+  const isSold = housing && form.realtyType === "sold";
+  const isHome = isListing || isSold;
   // Open house: all three or none; end after start.
   const ohAny = form.ohDate !== "" || form.ohStart !== "" || form.ohEnd !== "";
   const ohValid = !ohAny || (form.ohDate !== "" && form.ohStart !== "" && form.ohEnd !== "" && form.ohEnd > form.ohStart);
   const bedsValid = form.beds.trim() === "" || /^\d{1,2}$/.test(form.beds.trim());
   const bathsValid = form.baths.trim() === "" || /^\d{1,2}(\.5)?$/.test(form.baths.trim());
-  const realtyValid = !isListing || (ohValid && bedsValid && bathsValid);
+  const realtyValid = !isHome || ((isSold || ohValid) && bedsValid && bathsValid);
   const budgetCents = parseDollarsToCents(form.dailyBudget);
   const budgetOutOfRange =
     budgetCents !== null && (budgetCents < MIN_DAILY_BUDGET_CENTS || budgetCents > MAX_DAILY_BUDGET_CENTS);
@@ -391,11 +395,11 @@ export default function NewCampaignPage() {
           : form.realtyType === "agent"
             ? { adType: "agent" }
             : {
-                adType: "listing",
+                adType: isSold ? "sold" : "listing",
                 price: form.price.trim() || null,
                 beds: form.beds.trim() ? Number(form.beds) : null,
                 baths: form.baths.trim() ? Number(form.baths) : null,
-                openHouse: ohAny ? { date: form.ohDate, start: form.ohStart, end: form.ohEnd } : null,
+                openHouse: isListing && ohAny ? { date: form.ohDate, start: form.ohStart, end: form.ohEnd } : null,
               },
       });
 
@@ -971,6 +975,7 @@ export default function NewCampaignPage() {
                   {[
                     { v: "listing", t: "A listing or open house", h: "One home for sale: the address, price and open house time are in the ad." },
                     { v: "agent", t: "Me, as an agent", h: "Promote yourself and the area you serve, not one home." },
+                    { v: "sold", t: "Just sold", h: "A home you just sold: shows the neighbors you get results. No open house." },
                   ].map((o) => (
                     <label
                       key={o.v}
@@ -996,11 +1001,11 @@ export default function NewCampaignPage() {
 
             {housing ? (
               <div>
-                <Label htmlFor="street">{isListing ? "Listing address" : "Office address, or the center of the area you serve"}</Label>
+                <Label htmlFor="street">{isListing ? "Listing address" : isSold ? "Address of the home you sold" : "Office address, or the center of the area you serve"}</Label>
                 <FieldHint>
                   Housing ads in the US can&apos;t target ZIP codes (Google policy), so we show
                   your ad to people within the radius below of this address.
-                  {isListing ? " The street is said in the ad." : " Only the city appears in the ad."}
+                  {isHome ? " The street is said in the ad." : " Only the city appears in the ad."}
                 </FieldHint>
                 <div className="mt-2 grid gap-2 sm:grid-cols-6">
                   <Input
@@ -1037,7 +1042,7 @@ export default function NewCampaignPage() {
                     onChange={set("addressZip")}
                   />
                 </div>
-                {isListing && (
+                {isHome && (
                   <>
                     <div className="mt-4 grid gap-2 sm:grid-cols-3">
                       <div>
@@ -1056,6 +1061,7 @@ export default function NewCampaignPage() {
                     {(!bedsValid || !bathsValid) && (
                       <p className="mt-1.5 text-xs text-red-300">Bedrooms is a whole number; bathrooms can end in .5.</p>
                     )}
+                    {isListing && (
                     <div className="mt-4">
                       <Label htmlFor="ohDate">Open house (optional)</Label>
                       <div className="mt-2 grid gap-2 sm:grid-cols-3">
@@ -1064,11 +1070,15 @@ export default function NewCampaignPage() {
                         <Input type="time" aria-label="Ends" value={form.ohEnd} onChange={set("ohEnd")} />
                       </div>
                       {ohValid ? (
-                        <FieldHint>Date, start and end. The ad says it, for example &quot;Open house Sunday, 1–4 PM&quot;.</FieldHint>
+                        <FieldHint>
+                          Date, start and end. The ad says it, for example &quot;Open house Sunday, 1–4 PM&quot;. With an
+                          open house, your ad stops by itself at the end of that day.
+                        </FieldHint>
                       ) : (
                         <p className="mt-1.5 text-xs text-red-300">Fill in the date, start and end, with the end after the start.</p>
                       )}
                     </div>
+                    )}
                   </>
                 )}
               </div>
@@ -1200,6 +1210,10 @@ export default function NewCampaignPage() {
                 value={form.offerDetails}
                 suggestions={[offerExample(category, isListing)]}
                 onPick={fill("offerDetails")}
+              />
+              <OfferPresetButtons
+                category={category}
+                onPick={(p) => setForm((f) => ({ ...f, offerDetails: p.offer, callToAction: p.callToAction }))}
               />
               <PlanOfferBuilder
                 category={category}
