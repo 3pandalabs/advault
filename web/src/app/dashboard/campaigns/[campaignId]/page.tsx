@@ -43,6 +43,7 @@ import { BudgetEditor } from "./budget-editor";
 import { BUDGET_BELOW_MINIMUM_MESSAGE, minDailyBudgetCents, runLengthLabel } from "@/lib/budget";
 import { WebsiteCard } from "./website-card";
 import { BeforeAfterCard } from "./before-after-card";
+import { SeasonCard } from "./season-card";
 import { SiteOfferOption, payLabel } from "./site-offer-option";
 import { RenderProgress, ScriptProgress } from "./render-progress";
 import { AUDIENCE_FILTERS_ENABLED } from "@/lib/audience";
@@ -841,6 +842,12 @@ export default function CampaignDetailPage({
           </div>
         </Card>
       )}
+
+      {/* Seasonal calendar (lib/categories/seasons): only when a season is near. */}
+      <SeasonCard
+        campaign={campaign}
+        onSaved={(c) => setCampaign((prev) => (prev ? { ...prev, ...c } : prev))}
+      />
 
       {/* Trades only (lib/beforeAfter); renders nothing for other categories. */}
       <BeforeAfterCard campaign={campaign} />

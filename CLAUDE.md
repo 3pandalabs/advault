@@ -471,6 +471,28 @@ Alpine.
 - The end card shows the landing page's domain, never a phone number we
   weren't given for the purpose.
 
+## Per-category features (2026-11-20, `lib/categories`)
+
+Each business category gets its own extras through SHARED mechanisms that a
+per-category table configures, never one-off features. `categoryKey()`
+(`lib/categories/key.ts`) maps the wizard's nine presets and typed-in
+("Other") categories to `plumbing | electrical | hvac | dentistry |
+restaurant | landscaping | auto | cleaning | realEstate` (null = no extras).
+Every module is pure and tested, and its `// <shared>` block is mirrored word
+for word in `web/src/lib/categories/` (`mirror.test.ts` fails otherwise; edit
+the API copy, then the web copy).
+
+- **Seasonal calendar** (`seasons.ts`): per category, peak seasons with a
+  suggested offer and call to action (US-only ones marked, e.g. snow, frozen
+  pipes, dental benefits; real estate only for agent ads). The campaign
+  page's `season-card.tsx` shows when a season starts within 21 days (5 for
+  the monthly month-end move-out), else the running one; "Use this offer"
+  opens the text for editing, and saving calls `PUT /campaigns/:id/offer`
+  (`routes/campaignOffer.ts`). **That route never touches Google or
+  re-renders**: a live ad keeps what it launched with, the next ad made uses
+  the new offer. It exists because PATCH refuses a live campaign. "Not now"
+  is remembered per browser (localStorage), per season occurrence.
+
 ## Google Ads API access: developer tokens are gone, and the version pin is load-bearing
 
 **Developer tokens were sunset on 9 Sep 2026.** API access level is now a

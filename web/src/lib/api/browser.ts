@@ -184,6 +184,8 @@ export type Campaign = {
   audienceFilters: AudienceFilters | null;
   /** Days + hours the ad may show; null = every day, all day (migration 0037). */
   adSchedule?: AdSchedule | null;
+  /** Real estate only: listing or agent ad (api lib/realty). */
+  realty?: Realty | null;
   dailyBudgetCents: number;
   currencyCode: string;
   /** 7 or 14 days; null = always on (migration 0033). */
@@ -606,6 +608,18 @@ export function setBeforeAfter(
   return api<BeforeAfterState>(`/campaigns/${campaignId}/before-after`, {
     method: "PUT",
     body: JSON.stringify({ pairs, attested }),
+  });
+}
+
+/**
+ * Saves the campaign's offer (and optionally its call to action) in any
+ * status. Never touches Google: a live ad keeps what it launched with; the
+ * next ad made uses this offer.
+ */
+export function setCampaignOffer(campaignId: string, body: { offerDetails: string; callToAction?: string }) {
+  return api<{ campaign: Campaign; liveAdUnchanged: boolean }>(`/campaigns/${campaignId}/offer`, {
+    method: "PUT",
+    body: JSON.stringify(body),
   });
 }
 
