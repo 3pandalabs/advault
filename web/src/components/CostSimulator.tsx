@@ -128,7 +128,23 @@ export function CostSimulator({
 
       <div className={bare ? "" : "mt-5"}>
         <p className="mb-2 text-sm font-medium text-zinc-300">{monthly ? "Your monthly ad budget" : "Your ad budget"}</p>
-        <TopUpPicker mode="choose" currency={CURRENCY} value={budget} onChange={setBudget} showEstimate={false} optionEstimates />
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <TopUpPicker mode="choose" currency={CURRENCY} value={budget} onChange={setBudget} showEstimate={false} />
+          {/* Same row, right corner: how often the chosen budget is shown.
+              Keyed on the budget so it flashes on every price click. */}
+          <div
+            className="rounded-xl border border-amber-400/40 bg-amber-400/10 px-4 py-2 text-right"
+            aria-live="polite"
+          >
+            <p className="text-[11px] uppercase tracking-wide text-amber-200/80">Shown about</p>
+            <p className="text-xl font-semibold text-amber-300 tabular-nums">
+              <span key={`box-${budget}`} className="estimate-flash">
+                {n(est.low)}–{n(est.high)}
+              </span>
+            </p>
+            <p className="text-[11px] text-zinc-400">times {monthly ? "a month" : "in all"} to people near you</p>
+          </div>
+        </div>
       </div>
 
       <div className="mt-4 space-y-2">
