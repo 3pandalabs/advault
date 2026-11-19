@@ -1,10 +1,10 @@
 import Link from "next/link";
 import { Wordmark, WordmarkName, WordmarkTag } from "@/components/Wordmark";
 import { Card, CardDescription, CardTitle } from "@/components/ui/card";
-import { BudgetCalculator } from "@/components/BudgetCalculator";
+import { CostSimulator } from "@/components/CostSimulator";
 import { PlanPriceLines } from "@/components/PlanPriceLines";
 
-// Server-rendered. The calculator inside is the only client component, so the
+// Server-rendered. The cost simulator inside is the only client component, so the
 // page produces a real link preview and is up even when the API is not.
 // Prices here are the Keep it running plan (lib/pricing us-evergreen + the
 // us-new_ad add-on); change them together.
@@ -266,7 +266,7 @@ export default function LandingPage() {
           ))}
         </ul>
         <div className="mt-8">
-          <BudgetCalculator />
+          <CostSimulator ctaHref="/signup" />
         </div>
       </section>
 

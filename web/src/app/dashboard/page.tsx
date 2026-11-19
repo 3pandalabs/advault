@@ -4,8 +4,9 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { SITEVAULT_ACCOUNT_URL, siteVaultSlug } from "@/lib/sitevault";
-import { getMe, getWallet, listCampaigns, type Campaign, type CampaignStatus, type Wallet } from "@/lib/api/browser";
+import { getMe, getSubscription, getWallet, listCampaigns, type Campaign, type CampaignStatus, type Wallet } from "@/lib/api/browser";
 import { BudgetBanner } from "@/components/BudgetBanner";
+import { CostSimulator } from "@/components/CostSimulator";
 import { Badge, Card, CardDescription, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { formatDate } from "@/lib/utils";
@@ -37,6 +38,15 @@ export default function CampaignsPage() {
   const router = useRouter();
   // Low / ran-out ad budget banner (top-up-first model).
   const [wallet, setWallet] = useState<Wallet | null>(null);
+
+  // The cost simulator says "$0 today" for the plan only while the account
+  // still has its included first month.
+  const [firstMonthIncluded, setFirstMonthIncluded] = useState(true);
+  useEffect(() => {
+    getSubscription()
+      .then((s) => setFirstMonthIncluded(s.plan?.firstMonthAvailable !== false))
+      .catch(() => undefined);
+  }, []);
 
   useEffect(() => {
     getWallet().then(setWallet).catch(() => setWallet(null));
@@ -82,26 +92,32 @@ export default function CampaignsPage() {
   // checklist says to catch this.
   if (campaigns.length === 0) {
     return (
-      <Card className="text-center">
-        <CardTitle>No campaigns yet</CardTitle>
-        <CardDescription>
-          Upload a few photos, choose the ZIP codes you serve, and add an ad budget. It takes
-          about three minutes.
-        </CardDescription>
-        <div className="mt-5">
-          <Link href="/dashboard/campaigns/new">
-            <Button>Create your first campaign</Button>
-          </Link>
-        </div>
-        {usesSitevault ? (
-          <p className="mt-5 text-sm text-zinc-400">
-            Your website lives on SiteVault, with the same login.{" "}
-            <a href={SITEVAULT_ACCOUNT_URL} className="text-sky-300 underline underline-offset-4">
-              Go to your website
-            </a>
-          </p>
-        ) : null}
-      </Card>
+      <div className="space-y-6">
+        <Card className="text-center">
+          <CardTitle>No campaigns yet</CardTitle>
+          <CardDescription>
+            Upload a few photos, choose the ZIP codes you serve, and add an ad budget. It takes
+            about three minutes.
+          </CardDescription>
+          <div className="mt-5">
+            <Link href="/dashboard/campaigns/new">
+              <Button>Create your first campaign</Button>
+            </Link>
+          </div>
+          {usesSitevault ? (
+            <p className="mt-5 text-sm text-zinc-400">
+              Your website lives on SiteVault, with the same login.{" "}
+              <a href={SITEVAULT_ACCOUNT_URL} className="text-sky-300 underline underline-offset-4">
+                Go to your website
+              </a>
+            </p>
+          ) : null}
+        </Card>
+        <CostSimulator
+          ctaHref="/dashboard/campaigns/new"
+          firstMonthIncluded={firstMonthIncluded}
+        />
+      </div>
     );
   }
 
@@ -123,6 +139,22 @@ export default function CampaignsPage() {
           <Button>New campaign</Button>
         </Link>
       </div>
+
+      <details className="group mb-6 rounded-2xl border border-white/10 bg-white/[0.03]">
+        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-5 py-4 text-sm font-medium text-zinc-200 [&::-webkit-details-marker]:hidden">
+          What will this cost?
+          <span aria-hidden className="text-zinc-400 transition group-open:rotate-180">
+            ▾
+          </span>
+        </summary>
+        <div className="border-t border-white/10 px-5 pt-4 pb-5">
+          <CostSimulator
+            bare
+            ctaHref="/dashboard/campaigns/new"
+            firstMonthIncluded={firstMonthIncluded}
+          />
+        </div>
+      </details>
 
       <div className="space-y-3">
         {campaigns.map((c) => (
