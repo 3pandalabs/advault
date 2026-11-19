@@ -3,7 +3,7 @@ import { Wordmark, WordmarkName, WordmarkTag } from "@/components/Wordmark";
 import { Card, CardDescription, CardTitle } from "@/components/ui/card";
 import { CostSimulator } from "@/components/CostSimulator";
 import { timesShownEstimate } from "@/lib/budget";
-import { ADD_MORE_LINE, googleMinimumSentence, spreadSentence } from "@/lib/spread";
+import { ADD_MORE_LINE } from "@/lib/spread";
 
 // Server-rendered. The cost simulator inside is the only client component, so the
 // page produces a real link preview and is up even when the API is not.
@@ -16,7 +16,6 @@ import { ADD_MORE_LINE, googleMinimumSentence, spreadSentence } from "@/lib/spre
 const EST = timesShownEstimate(3_500, "USD");
 const SHOWN = `${EST.low.toLocaleString("en-US")}–${EST.high.toLocaleString("en-US")}`;
 const SHOWN_WORDS = `${EST.low.toLocaleString("en-US")} to ${EST.high.toLocaleString("en-US")}`;
-const TIMING = `${googleMinimumSentence(3_500)} ${spreadSentence(3_500)} More budget means more days.`;
 
 const STEPS = [
   {
@@ -67,7 +66,7 @@ const FAQ = [
   },
   {
     q: "How often will my ad be shown?",
-    a: `For a $35 ad budget we estimate your ad is shown ${SHOWN_WORDS} times to people near you, depending on your area. ${TIMING} It's an estimate, not a guarantee. Your results screen shows the real numbers. ${ADD_MORE_LINE}`,
+    a: `For a $35 ad budget we estimate your ad is shown ${SHOWN_WORDS} times to people near you, depending on your area. It's an estimate, not a guarantee. Your results screen shows the real numbers. ${ADD_MORE_LINE}`,
   },
   {
     q: "Is there a contract?",
