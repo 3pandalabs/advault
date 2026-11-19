@@ -239,6 +239,15 @@ describe("resumeFundedCampaigns", () => {
     const { resumeFundedCampaigns } = await import("../lib/billing/resume.js");
     const id = await campaign({ status: "paused", pausedForFunds: true });
 
+    // The $19 plan must cover now (lib/planBilling): none = no restart.
+    await setBalance(3_500);
+    expect(await resumeFundedCampaigns(userId)).toBe(0);
+    await pg.query(
+      `insert into subscriptions (user_id, plan_key, line, currency_code, amount_minor, provider, status, current_period_start, current_period_end)
+       values ($1, 'us-evergreen', 'evergreen', 'USD', 1900, 'stripe', 'active', now(), now() + interval '20 days')`,
+      [userId],
+    );
+
     await setBalance(1_000); // under 3 x $5
     expect(await resumeFundedCampaigns(userId)).toBe(0);
     expect(holder.enableCampaign).not.toHaveBeenCalled();

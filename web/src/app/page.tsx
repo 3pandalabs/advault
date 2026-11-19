@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Wordmark, WordmarkName, WordmarkTag } from "@/components/Wordmark";
 import { Card, CardDescription, CardTitle } from "@/components/ui/card";
 import { BudgetCalculator } from "@/components/BudgetCalculator";
+import { PlanPriceLines } from "@/components/PlanPriceLines";
 
 // Server-rendered. The calculator inside is the only client component, so the
 // page produces a real link preview and is up even when the API is not.
@@ -64,7 +65,7 @@ const FAQ = [
   },
   {
     q: "What does it cost to keep my ad running?",
-    a: "$19 a month is the AdVault fee. Top up your ad budget from $35. Your ad runs at $5 a day (Google's minimum) until your budget runs out, so $35 lasts about a week and $50 about 10 days. You only pay for what Google delivers. The fee stays $19.",
+    a: "Your ad is $10 once. Your ad budget is from $35, and 100% of it goes to Google: your ad runs at $5 a day (Google's minimum) until it runs out, so $35 lasts about a week and $50 about 10 days. The AdVault plan is $19 a month while your ad runs, and the first month is included. Every dollar of your ad budget goes to Google. AdVault earns only the $10 and the $19.",
   },
   {
     q: "What happens to ad budget I don't use?",
@@ -76,7 +77,7 @@ const FAQ = [
   },
   {
     q: "Is there a contract?",
-    a: "No. Cancel any time from your dashboard. Your ad keeps running until the end of the month you paid for, and the videos we made are yours to keep.",
+    a: "No. Pause anytime: no fee while paused. When no ad is running, the $19 plan stops at the end of the month you've paid for, and you're never charged for a month with no ad running. Resume and it starts again. The videos we made are yours to keep.",
   },
   {
     q: "Can I change my ad later?",
@@ -134,7 +135,8 @@ export default function LandingPage() {
         </p>
         <p className="mt-4 text-xl font-semibold tracking-tight">
           <span className="text-amber-300">$10</span> makes your ad.{" "}
-          <span className="text-amber-300">$19/month</span> keeps it running, plus ad budget you top up from $35.
+          <span className="text-amber-300">$19 a month</span> while it runs, first month included, plus ad budget from
+          $35 that goes 100% to Google.
         </p>
         <p className="mt-2 text-base text-zinc-300">
           YouTube ads need a website to go live. No website? Don&apos;t worry, we&apos;ve got you covered: we&apos;ll
@@ -228,7 +230,7 @@ export default function LandingPage() {
 
       <section id="pricing" className="mx-auto w-full max-w-5xl scroll-mt-6 px-6 pb-16">
         <h2 className="text-2xl font-semibold tracking-tight">Simple pricing</h2>
-        <p className="mt-2 mb-5 text-sm text-zinc-400">One plan. No setup fee, no contract.</p>
+        <p className="mt-2 mb-5 text-sm text-zinc-400">One plan. No setup fee, no contract. Pause anytime: no fee while paused.</p>
         <div className="grid gap-4 sm:grid-cols-2">
           <Card className="border-amber-400/20 bg-amber-400/[0.04]">
             <CardDescription>Making your ad</CardDescription>
@@ -243,15 +245,19 @@ export default function LandingPage() {
           <Card className="border-amber-400/20 bg-amber-400/[0.04]">
             <CardDescription>Keeping it running</CardDescription>
             <p className="mt-2 text-4xl font-semibold tracking-tight">
-              $19 <span className="text-base font-normal text-zinc-400">/ month + ad budget</span>
+              $19 <span className="text-base font-normal text-zinc-400">a month while your ad runs</span>
             </p>
             <p className="mt-3 text-sm text-zinc-400">
-              Top up from $35. Your ad runs at $5 a day (Google&apos;s minimum) until your
-              budget runs out. You only pay for what Google delivers; unused budget stays in
-              your account and is refunded if you leave. The fee stays $19.
+              First month included with your first ad. Pause anytime: no fee while paused. Plus
+              your ad budget from $35: it runs at $5 a day (Google&apos;s minimum) until it runs
+              out, and unused budget stays in your account and is refunded if you leave.
             </p>
           </Card>
         </div>
+        <Card className="mt-4">
+          <CardDescription>What you pay</CardDescription>
+          <PlanPriceLines className="mt-3" />
+        </Card>
         <ul className="mt-6 grid gap-2 text-sm text-zinc-300 sm:grid-cols-2">
           {INCLUDED.map((item) => (
             <li key={item} className="flex gap-2">

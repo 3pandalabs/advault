@@ -267,6 +267,13 @@
       "when": 1795505100000,
       "tag": "0037_campaign_ad_schedule",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1795505200000,
+      "tag": "0038_plan_follows_running_ad",
+      "breakpoints": true
     }
   ]
 }

@@ -13,7 +13,7 @@ import {
 import { Badge, Card, CardDescription, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { formatDate } from "@/lib/utils";
-import { shownPrice } from "@/lib/testMode";
+import { PlanPriceLines } from "@/components/PlanPriceLines";
 
 // The subscription. This page is what makes someone a paying customer, and
 // before it existed there was no such thing in the product: every plan carried
@@ -103,31 +103,42 @@ export default function SubscriptionPage() {
     }
   }
 
+  // Only reachable for a plan that is NOT Keep it running, or with no ad
+  // running: the $19 plan follows the running ad and stops by itself.
   async function onCancel() {
     setBusy(true);
     try {
       const result = await cancelSubscription(false);
       setNotice(
         result.servesUntil
-          ? `Cancelled. Your ads and videos continue until ${formatDate(result.servesUntil)}.`
+          ? `Cancelled. Your plan continues until ${formatDate(result.servesUntil)}.`
           : "Cancelled.",
       );
       await refresh();
-    } catch {
-      setError("Could not cancel just now.");
+    } catch (err) {
+      setError(
+        err instanceof ApiError && err.code === "plan_follows_ads"
+          ? "Your plan stops by itself when no ad is running. Pause your ad on its campaign page to stop paying."
+          : "Could not cancel just now.",
+      );
     } finally {
       setBusy(false);
     }
   }
 
   const sub = view?.subscription ?? null;
+  const evergreen = sub?.line === "evergreen";
+  const adRunning = view?.plan?.adRunning === true;
+  const firstMonthAvailable = view?.plan?.firstMonthAvailable !== false;
+  // The API sends includedUntil only while the included month is still running.
+  const inIncludedMonth = Boolean(sub?.includedUntil);
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-semibold">Subscription</h1>
         <p className="mt-1 text-sm text-zinc-400">
-          One monthly price. Fresh creative for whatever you&apos;re promoting this month.
+          $19 a month while your ad is running. Pause anytime: no fee while paused.
         </p>
       </div>
 
@@ -141,7 +152,13 @@ export default function SubscriptionPage() {
               <CardTitle>{sub.display} / month</CardTitle>
               <CardDescription>
                 {STATUS_COPY[sub.status] ?? sub.status}
-                {sub.currentPeriodEnd ? ` · renews ${formatDate(sub.currentPeriodEnd)}` : ""}
+                {sub.currentPeriodEnd
+                  ? sub.cancelAtPeriodEnd
+                    ? ` · paid until ${formatDate(sub.currentPeriodEnd)}`
+                    : inIncludedMonth
+                      ? ` · first month included, nothing charged until ${formatDate(sub.currentPeriodEnd)}`
+                      : ` · renews ${formatDate(sub.currentPeriodEnd)}`
+                  : ""}
               </CardDescription>
             </div>
             <Badge>{LINE_LABEL[sub.line] ?? sub.line}</Badge>
@@ -157,7 +174,16 @@ export default function SubscriptionPage() {
             </p>
           ) : null}
 
-          {sub.cancelAtPeriodEnd ? (
+          {evergreen ? (
+            // The $19 plan follows the running ad (2026-11-19): no cancel button.
+            <p className="mt-4 text-sm text-zinc-400">
+              {sub.cancelAtPeriodEnd
+                ? `No ad is running, so your plan stops on ${sub.currentPeriodEnd ? formatDate(sub.currentPeriodEnd) : "the end of this month"} and nothing more is charged. Resume an ad before then and it simply carries on; after that, resuming restarts it at $19.`
+                : adRunning
+                  ? "Your ad is running, so your plan renews each month. Pause your ad on its campaign page and the plan stops at the end of the month you've paid for: no fee while paused."
+                  : "No ad is running: your plan will stop at the end of this month."}
+            </p>
+          ) : sub.cancelAtPeriodEnd ? (
             <p className="mt-4 text-sm text-zinc-400">
               Cancelling at the end of this period. Nothing more will be charged.
             </p>
@@ -191,17 +217,17 @@ export default function SubscriptionPage() {
               <CardTitle>{LINE_LABEL[plan.line] ?? plan.label}</CardTitle>
               <CardDescription>{plan.blurb}</CardDescription>
               <p className="mt-4 text-3xl font-semibold">
-                {plan.line === "evergreen" ? `from ${plan.display.allIn}` : plan.display.monthlyFee}
-                <span className="text-base font-normal text-zinc-400"> / month</span>
+                {plan.display.monthlyFee}
+                <span className="text-base font-normal text-zinc-400"> / month while your ad runs</span>
               </p>
-              <p className="mt-1 text-sm text-zinc-400">
-                {plan.line === "evergreen"
-                  ? `${plan.display.monthlyFee} AdVault fee + your ad budget, topped up from $35 (it runs at $5 a day, Google's minimum, until it runs out). ${shownPrice("$10", testMode)} one-time for each ad we make. Add budget any time for more views.`
-                  : `${plan.includedCreativesPerMonth} fresh videos a month`}
-                {plan.line === "managed" ? ` · ${plan.display.allIn} all-in with ad spend` : ""}
+              <PlanPriceLines className="mt-3" testMode={testMode} firstMonthIncluded={firstMonthAvailable} />
+              <p className="mt-3 text-sm text-zinc-400">
+                {firstMonthAvailable
+                  ? "You start the plan when you launch your first ad: $0 that day."
+                  : "Your plan restarts when you resume or launch an ad."}
               </p>
               <Button className="mt-4" onClick={() => onSubscribe(plan.key)} disabled={busy}>
-                Choose this
+                {firstMonthAvailable ? "Start my plan ($0 today)" : "Start my plan"}
               </Button>
             </Card>
           ))}

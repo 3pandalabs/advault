@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, lte, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, lte, sql } from "drizzle-orm";
 import { db } from "../../db/index.js";
 import {
   adAccounts,
@@ -89,15 +89,39 @@ export async function createSubscription(args: {
   now?: Date;
   /** The monthly amount actually charged: the plan fee, or the $0.50 test price (lib/testMode). */
   amountMinor?: number;
+  /**
+   * The included first month (0038, lib/planBilling): the first period's
+   * invoice is $0, the subscription remembers it (`first_month_included`,
+   * `included_until`), and paying that $0 invoice uses the account's credit.
+   */
+  firstMonthIncluded?: boolean;
+  /**
+   * A checkout that was opened and never paid (`pending`) is replaced rather
+   * than blocking the customer for ever with 409 already_subscribed. The
+   * replaced row is returned so the caller can expire its checkout.
+   */
+  replacePending?: boolean;
 }) {
   const plan = planByKey(args.planKey);
   if (!plan) throw new NoSuchPlan(args.planKey);
 
+  let replaced: typeof subscriptions.$inferSelect | null = null;
   const existing = await liveSubscriptionFor(args.userId);
-  if (existing) throw new AlreadySubscribed();
+  if (existing && args.replacePending && existing.status === "pending") {
+    const [gone] = await db
+      .update(subscriptions)
+      .set({ status: "canceled", canceledAt: new Date(), updatedAt: new Date() })
+      .where(and(eq(subscriptions.id, existing.id), eq(subscriptions.status, "pending")))
+      .returning();
+    replaced = gone ?? null;
+  } else if (existing) {
+    throw new AlreadySubscribed();
+  }
 
   const now = args.now ?? new Date();
   const period = firstPeriod(now);
+  const monthly = args.amountMinor ?? plan.monthlyFeeMinor;
+  const firstAmount = args.firstMonthIncluded ? 0 : monthly;
 
   try {
     return await db.transaction(async (tx) => {
@@ -108,11 +132,13 @@ export async function createSubscription(args: {
           planKey: plan.key,
           line: plan.line,
           currencyCode: plan.currency,
-          amountMinor: args.amountMinor ?? plan.monthlyFeeMinor,
+          amountMinor: monthly,
           provider: args.provider,
           status: "pending",
           currentPeriodStart: period.start,
           currentPeriodEnd: period.end,
+          firstMonthIncluded: args.firstMonthIncluded === true,
+          includedUntil: args.firstMonthIncluded ? period.end : null,
         })
         .returning();
 
@@ -121,7 +147,7 @@ export async function createSubscription(args: {
         .values({
           subscriptionId: sub.id,
           userId: args.userId,
-          amountMinor: args.amountMinor ?? plan.monthlyFeeMinor,
+          amountMinor: firstAmount,
           currencyCode: plan.currency,
           periodStart: period.start,
           periodEnd: period.end,
@@ -129,7 +155,7 @@ export async function createSubscription(args: {
         })
         .returning();
 
-      return { subscription: sub, invoice, plan };
+      return { subscription: sub, invoice, plan, replaced };
     });
   } catch (err) {
     // The partial unique index on (user_id) where status in (live) is what
@@ -158,6 +184,9 @@ export async function markInvoicePaid(args: {
   externalRef: string;
   providerPayload?: unknown;
   now?: Date;
+  /** Stripe sub_ / cus_ (0038), stored on the subscription when present. */
+  providerSubscriptionRef?: string | null;
+  providerCustomerRef?: string | null;
 }): Promise<{ alreadyApplied: boolean }> {
   const now = args.now ?? new Date();
 
@@ -181,12 +210,15 @@ export async function markInvoicePaid(args: {
     sub.line === "offer" ? null : await billingModeFor(invoice.userId),
   );
   const refs = feeLedgerRefs(invoice.id);
+  // The included first month (0038) is a $0 invoice: no money moved, so no
+  // ledger rows (a zero-amount entry is not a fee).
+  const zero = invoice.amountMinor === 0;
 
   // The paired credit for externally-funded fees. Posted first and separately
   // from the debit: if the two were one entry the ledger would record a net
   // zero and AdVault's revenue would be invisible, which is the whole thing
   // this table exists to make visible.
-  if (funding === "external") {
+  if (funding === "external" && !zero) {
     try {
       await applyEntry({
         userId: invoice.userId,
@@ -201,7 +233,7 @@ export async function markInvoicePaid(args: {
     }
   }
 
-  try {
+  if (!zero) try {
     await applyEntry({
       userId: invoice.userId,
       currency,
@@ -241,8 +273,19 @@ export async function markInvoicePaid(args: {
         currentPeriodStart: period.start,
         currentPeriodEnd: period.end,
         updatedAt: now,
+        ...(args.providerSubscriptionRef ? { providerSubscriptionRef: args.providerSubscriptionRef } : {}),
+        ...(args.providerCustomerRef ? { providerCustomerRef: args.providerCustomerRef } : {}),
       })
       .where(eq(subscriptions.id, sub.id));
+
+    // The account's one included month is used once its $0 period is paid
+    // for (the card is on file). Only ever set once.
+    if (zero && sub.firstMonthIncluded) {
+      await tx
+        .update(users)
+        .set({ planFirstMonthUsedAt: now })
+        .where(and(eq(users.id, invoice.userId), isNull(users.planFirstMonthUsedAt)));
+    }
   });
 
   return { alreadyApplied: false };
@@ -368,6 +411,13 @@ export async function openNextInvoice(subscriptionId: string, now = new Date()) 
 export async function resolveInvoiceForPayment(args: {
   hintInvoiceId: string;
   externalRef: string;
+  /**
+   * The provider's FIRST payment for the subscription (Stripe sends it twice:
+   * checkout.session.completed and invoice.paid / subscription_create). If
+   * the hinted first invoice is already paid, this is the other copy, never
+   * month two. Until 2026-11-19 the second copy opened and paid month two.
+   */
+  firstPayment?: boolean;
 }): Promise<{ invoiceId: string; alreadyApplied: boolean } | null> {
   const [hint] = await db
     .select()
@@ -390,6 +440,7 @@ export async function resolveInvoiceForPayment(args: {
   if (seen) return { invoiceId: seen.id, alreadyApplied: true };
 
   if (hint.status !== "paid") return { invoiceId: hint.id, alreadyApplied: false };
+  if (args.firstPayment) return { invoiceId: hint.id, alreadyApplied: true };
 
   // The hinted invoice is settled, so this is a renewal. Use the open one.
   const [open] = await db

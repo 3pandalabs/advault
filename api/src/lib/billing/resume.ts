@@ -4,6 +4,7 @@ import { adAccounts, campaigns } from "../../db/schema.js";
 import { enableCampaign, isMccConfigured, mccAccessToken } from "../googleAds/mcc.js";
 import { getBalance, MIN_FUNDED_DAYS } from "../wallet/index.js";
 import { campaignsToResume } from "../wallet/runway.js";
+import { planAllowsRunningFor } from "../planBilling/index.js";
 
 // A top-up restarts what an empty wallet stopped (2026-11-19).
 //
@@ -47,6 +48,15 @@ export async function resumeFundedCampaigns(userId: string): Promise<number> {
         ),
       );
     if (rows.length === 0) return 0;
+
+    // The $19 plan must cover now (lib/planBilling). A plan that stopped and
+    // whose period ran out is restarted by the API top-up path (off-session)
+    // before this runs; without that the customer resumes from the campaign
+    // page, which takes them through the plan checkout.
+    if (!(await planAllowsRunningFor(userId))) {
+      log("not resuming: no plan covers now", { userId });
+      return 0;
+    }
 
     const balance = (await getBalance(userId))?.balanceMinor ?? 0;
     const pick = campaignsToResume({

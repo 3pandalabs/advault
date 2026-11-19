@@ -156,13 +156,17 @@ Treat it accordingly:
   the user id (`src/lib/googleAds/oauthState.ts`, shared by the YouTube flow).
   Without it the callback is a CSRF primitive that attaches an attacker's ad
   account — or YouTube channel — to a victim's login.
-- **Launch requires a plan that buys media** (`launchPlanBlock`, managed or
-  evergreen; 402 `plan_required` / `plan_has_no_ads`). Admins and at_cost
-  accounts are exempt. Until 2026-11-11 launch never checked, so anyone could
-  run ads without paying the fee.
+- **Launch requires a plan that covers now** (`ensurePlanForRunning` in
+  `lib/planBilling`; 402 `plan_required {firstMonthIncluded}` / `plan_pending`
+  / `plan_has_no_ads`). Admins and at_cost accounts are exempt. Until
+  2026-11-11 launch never checked, so anyone could run ads without paying the
+  fee. Since 2026-11-19 the first plan is a $0 Stripe trial (see "The $19 plan
+  follows the running ad").
 - `campaigns.status` only reaches `live` through `POST /campaigns/:id/launch`,
-  which is the single place that spends money. Keep it that way — no other
-  route may call the Google Ads mutate API.
+  which is the single place that CREATES spend. The only other Google mutates
+  are status flips of an existing campaign (spend sync, offer expiry, top-up
+  resume, and since 2026-11-19 the customer's own `/pause` / `/resume`,
+  `routes/campaignRunState.ts`) and targeting edits. Keep it that way.
 
 ## A rendered MP4 is not an ad — the chain is five links
 
@@ -617,6 +621,61 @@ customer keeps being charged and the database stays in month one.
 `lib/subscriptions/policy.ts` and `lib/offers/policy.ts` hold every pure
 decision and are tested. Anything reaching for `db` or `fetch` belongs in the
 sibling `index.ts`.
+
+## The $19 plan follows the running ad (2026-11-19, migration 0038, `lib/planBilling`)
+
+Owner decision, option B: **"$19 a month while your ad is running. Pause
+anytime: no fee while paused."** and **first month included with the first
+ad**, once per account. The customer's first payment is the $10 ad + $35
+minimum budget = $45. Copy everywhere is `web/src/components/PlanPriceLines.tsx`
+(three lines + "Every dollar of your ad budget goes to Google. AdVault earns
+only the $10 and the $19."). Applies to the `evergreen` line only
+(`PLAN_FOLLOWS_RUNNING_LINE`); other lines keep the old lifecycle.
+
+- **Running** = live + launched + `ends_on` not past (UTC). No Google call; our
+  status stays `live` after Google ends a run_days campaign, so the end date is
+  what says "ended".
+- **`syncPlanBillingForUser(userId)` is the ONE place the plan moves**
+  (idempotent, never throws, per-user in-process queue; the one-live-
+  subscription index guards restarts across processes). Nothing running →
+  Stripe `cancel_at_period_end=true`; running again inside the paid period →
+  `false` (no second charge); running after the period → a new Stripe
+  subscription off-session with the previous plan's card (charged now), else
+  the customer goes to checkout. Called from launch, pause, resume, the plan
+  webhook, the top-up resume, and an API sweep every 10 min. **The renderer
+  has no Stripe key**: it only changes campaigns, and its hourly auto-restart
+  asks `planAllowsRunningFor` (DB only) before switching an ad back on.
+- **Why `cancel_at_period_end`, not `pause_collection`**: it fits the
+  existing lifecycle (period = paid, `customer.subscription.deleted` ends it,
+  renewal sweep untouched, MRR honest); pause_collection keeps one "active"
+  subscription for ever with voided invoices that every reader of
+  `subscriptions` would have to learn to discount.
+- **First month**: `POST /subscription` for an account with
+  `users.plan_first_month_used_at` NULL creates a $0 first invoice and a
+  Stripe Checkout trial to the period end (card saved; the first $19 a month
+  later only if an ad still runs, else the trial just ends). Paying the $0
+  invoice sets `plan_first_month_used_at` once. 0038 backfilled it for every
+  account that ever paid a plan invoice. Launch answers 402 `plan_required
+  {firstMonthIncluded: true}` and the campaign page shows "Start my plan ($0
+  today)", which returns to the campaign (`?subscribed=1`).
+- **Test mode / test customers / internal**: admins in test mode get the same
+  flow at 50 cents (trial included; off-session restarts use an inline
+  50-cent price on the previous product). Test customers launch dry runs
+  only, so they never run an ad and never pay a plan. Internal accounts pay
+  full price. Admins (not testing) and at_cost: exempt, never synced.
+- **MRR / paying subscribers** in `/metrics` skip plans that are stopping
+  (`cancel_at_period_end`) or in their included month; those are
+  `planStoppingSubscribers` / `planIncludedMonthSubscribers`.
+- Fixed with it: Stripe's first payment arrived twice and the second copy
+  opened and paid month two (`firstPayment` now makes it a duplicate); the
+  evergreen $19 was drawn from a platform customer's ad budget on top of the
+  card charge (`feeFunding('evergreen') = external`); account deletion never
+  cancelled the Stripe plan; an abandoned plan checkout blocked re-subscribing
+  for ever (now replaced).
+- Tests: `lib/planBilling/policy.test.ts` (pure),
+  `lib/planBilling/planBilling.test.ts` (PGlite: first month, webhook
+  duplicate, renewal, stop/un-stop, pause/resume routes, off-session restart,
+  decline, test mode, exempt), `lib/subscriptions/providers/stripe.test.ts`.
 
 ## Admin "Test as customer" (2026-11-17, migration 0027, `lib/testMode`)
 

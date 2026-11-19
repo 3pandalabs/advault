@@ -1,9 +1,9 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, isNull } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { requireAdmin, requireAuth } from "../auth/plugin.js";
 import { db } from "../db/index.js";
-import { subscriptionInvoices, subscriptions, users } from "../db/schema.js";
+import { campaigns, subscriptionInvoices, subscriptions, users } from "../db/schema.js";
 import { env } from "../env.js";
 import {
   AlreadySubscribed,
@@ -21,6 +21,9 @@ import {
   subscriptionProviderFor,
 } from "../lib/subscriptions/providers/index.js";
 import { billingIdentity } from "../lib/testMode/index.js";
+import { stripeExpireSession } from "../lib/subscriptions/providers/stripe.js";
+import { firstMonthAvailable, hasRunningAd, syncPlanBillingForUser } from "../lib/planBilling/index.js";
+import { PLAN_FOLLOWS_RUNNING_LINE } from "../lib/planBilling/policy.js";
 import {
   chargeMinor,
   estimateReach,
@@ -90,7 +93,13 @@ export async function subscriptionRoutes(app: FastifyInstance) {
 
     secured.get("/subscription", async (req) => {
       const sub = await liveSubscriptionFor(req.userId!);
-      if (!sub) return { subscription: null, entitled: false };
+      // The plan follows the running ad (lib/planBilling): the page explains
+      // which state it is in rather than offering a cancel button.
+      const plan = {
+        firstMonthAvailable: await firstMonthAvailable(req.userId!),
+        adRunning: await hasRunningAd(req.userId!),
+      };
+      if (!sub) return { subscription: null, entitled: false, plan };
 
       const invoices = await db
         .select({
@@ -122,17 +131,30 @@ export async function subscriptionRoutes(app: FastifyInstance) {
           // past_due is deliberately still entitled — that is what the grace
           // window is. The UI shows a warning, not a lockout.
           pastDue: sub.status === "past_due",
+          // The included first month (0038): nothing charged until this date.
+          // Only while it lasts.
+          includedUntil:
+            sub.firstMonthIncluded && sub.includedUntil && sub.includedUntil.getTime() > Date.now() ? sub.includedUntil : null,
         },
         entitled: entitlesToService(sub.status as SubscriptionStatus),
         invoices,
+        plan,
       };
     });
 
     secured.post(
       "/subscription",
-      { schema: { body: z.object({ planKey: z.string().min(1).max(40) }) } },
+      {
+        schema: {
+          body: z.object({
+            planKey: z.string().min(1).max(40),
+            // Started from a campaign's Launch / Resume: come back there.
+            campaignId: z.string().uuid().optional(),
+          }),
+        },
+      },
       async (req, reply) => {
-        const { planKey } = req.body as { planKey: string };
+        const { planKey, campaignId } = req.body as { planKey: string; campaignId?: string };
         const plan = planByKey(planKey);
         if (!plan) return reply.code(400).send({ error: "no_such_plan" });
 
@@ -161,6 +183,23 @@ export async function subscriptionRoutes(app: FastifyInstance) {
 
         const provider = subscriptionProviderFor(plan.currency, plan.line);
 
+        let returnUrl = `${env.WEB_ORIGIN}/dashboard/subscription`;
+        if (campaignId) {
+          const [own] = await db
+            .select({ id: campaigns.id })
+            .from(campaigns)
+            .where(and(eq(campaigns.id, campaignId), eq(campaigns.userId, req.userId!)))
+            .limit(1);
+          if (!own) return reply.code(404).send({ error: "not_found" });
+          returnUrl = `${env.WEB_ORIGIN}/dashboard/campaigns/${campaignId}`;
+        }
+
+        // The $19 plan's first month is included once per account (0038,
+        // lib/planBilling): $0 today (a Stripe trial), card saved, first $19
+        // a month later and only if an ad is still running then.
+        const firstMonthIncluded =
+          plan.line === PLAN_FOLLOWS_RUNNING_LINE && (await firstMonthAvailable(req.userId!));
+
         let created;
         try {
           created = await createSubscription({
@@ -168,6 +207,9 @@ export async function subscriptionRoutes(app: FastifyInstance) {
             planKey: plan.key,
             provider: provider.name,
             amountMinor,
+            firstMonthIncluded,
+            // An abandoned checkout no longer blocks the customer for ever.
+            replacePending: true,
           });
         } catch (err) {
           if (err instanceof AlreadySubscribed) {
@@ -175,6 +217,13 @@ export async function subscriptionRoutes(app: FastifyInstance) {
           }
           if (err instanceof NoSuchPlan) return reply.code(400).send({ error: "no_such_plan" });
           throw err;
+        }
+
+        // The replaced checkout must not be completable any more.
+        if (created.replaced?.provider === "stripe" && created.replaced.providerRef?.startsWith("cs_")) {
+          await stripeExpireSession(created.replaced.providerRef).catch((err) =>
+            req.log.warn({ err }, "could not expire a replaced plan checkout"),
+          );
         }
 
         try {
@@ -188,7 +237,8 @@ export async function subscriptionRoutes(app: FastifyInstance) {
             testMode: who.testMode,
             internal: who.internal,
             internalLabel: who.internalLabel,
-            returnUrl: `${env.WEB_ORIGIN}/dashboard/subscription`,
+            returnUrl,
+            trialEnd: firstMonthIncluded ? created.subscription.includedUntil : null,
           });
 
           await db
@@ -199,6 +249,7 @@ export async function subscriptionRoutes(app: FastifyInstance) {
           return reply.code(201).send({
             subscriptionId: created.subscription.id,
             invoiceId: created.invoice.id,
+            firstMonthIncluded,
             provider: provider.name,
             redirectUrl: checkout.redirectUrl,
             clientPayload: checkout.clientPayload,
@@ -223,6 +274,15 @@ export async function subscriptionRoutes(app: FastifyInstance) {
         const { immediate } = req.body as { immediate: boolean };
         const sub = await liveSubscriptionFor(req.userId!);
         if (!sub) return reply.code(404).send({ error: "no_subscription" });
+        // The $19 plan follows the running ad: it stops by itself when no ad
+        // runs, and the sync would undo a cancel while one does. Pausing the
+        // ad is how a customer stops paying.
+        if (sub.line === PLAN_FOLLOWS_RUNNING_LINE && (await hasRunningAd(req.userId!))) {
+          return reply.code(409).send({
+            error: "plan_follows_ads",
+            detail: "Your plan stops by itself when no ad is running. Pause your ad to stop paying.",
+          });
+        }
 
         const updated = await cancelSubscription({ subscriptionId: sub.id, immediate });
         return {
@@ -289,9 +349,28 @@ export async function subscriptionRoutes(app: FastifyInstance) {
           const resolved = await resolveInvoiceForPayment({
             hintInvoiceId: event.invoiceId,
             externalRef,
+            firstPayment: event.firstPayment,
           });
           if (!resolved) return reply.code(404).send({ error: "unknown_invoice" });
           if (resolved.alreadyApplied) {
+            // The other copy of the first payment may be the one carrying the
+            // Stripe subscription id (0038): keep it either way.
+            if (event.providerSubscriptionRef) {
+              const [inv] = await db
+                .select({ subscriptionId: subscriptionInvoices.subscriptionId })
+                .from(subscriptionInvoices)
+                .where(eq(subscriptionInvoices.id, resolved.invoiceId))
+                .limit(1);
+              if (inv) {
+                await db
+                  .update(subscriptions)
+                  .set({
+                    providerSubscriptionRef: event.providerSubscriptionRef,
+                    ...(event.providerCustomerRef ? { providerCustomerRef: event.providerCustomerRef } : {}),
+                  })
+                  .where(and(eq(subscriptions.id, inv.subscriptionId), isNull(subscriptions.providerSubscriptionRef)));
+              }
+            }
             return reply.code(200).send({ ok: true, alreadyApplied: true });
           }
 
@@ -321,7 +400,12 @@ export async function subscriptionRoutes(app: FastifyInstance) {
             invoiceId: invoice.id,
             externalRef,
             providerPayload: event.raw,
+            providerSubscriptionRef: event.providerSubscriptionRef,
+            providerCustomerRef: event.providerCustomerRef,
           });
+          // A plan paid for with no ad running stops at the end of this
+          // period (lib/planBilling). Not awaited: Stripe wants its 200.
+          void syncPlanBillingForUser(invoice.userId);
           return reply.code(200).send({ ok: true, ...result });
         }
 

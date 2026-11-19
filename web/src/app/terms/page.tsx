@@ -31,7 +31,7 @@ export default function TermsPage() {
   return (
     <LegalPage
       title="Terms of Service"
-      effective="16 November 2026"
+      effective="19 November 2026"
       summary="You pay us to make your ads and, on the managed plan, to run them. You are responsible for the offers you advertise and for honouring them. We do not guarantee results, and nothing here is a promise that advertising will work."
     >
       <h2>1. Who this agreement is with</h2>
@@ -109,9 +109,18 @@ export default function TermsPage() {
           <tr>
             <td>Keep it running</td>
             <td>Not offered</td>
-            <td>$19/month</td>
+            <td>$19/month while an ad runs</td>
             <td>
               One ad kept running in a campaign we run for you, with no monthly offer.
+              <strong> The plan is billed only for months in which an ad is running.</strong>{" "}
+              When none of your ads is running (you paused it, its ad budget ran out, it reached
+              its end date, or it was never launched) the plan stops at the end of the month
+              you have paid for, and nothing more is charged. When an ad runs again within that
+              month the plan simply carries on; after it, the plan restarts with a new month,
+              charged that day to your saved card (or at checkout).{" "}
+              <strong>The first month is included, once per account:</strong> you start the
+              plan when you first launch an ad, $0 that day, and the first $19 is charged one
+              month later only if an ad is still running then.
               Each ad we make is a one-off $10 charge, paid before we make it, including
               the first. If your ad links to a SiteVault website, you can also put the same
               offer on that website for $2 more ($12 in all), or for $10 in all when the
@@ -119,8 +128,8 @@ export default function TermsPage() {
               Each ad includes the first version and up to two redos; a version that
               fails to render is redone at no charge. A video you upload yourself has no
               charge; it runs after we review it.
-              We may show it as one monthly total with your ad budget (for example $54 =
-              $35 ad budget + $19 fee); the split is always shown next to it.
+              Every dollar of your ad budget goes to Google; AdVault earns only the
+              $10 per ad and the $19 plan.
             </td>
           </tr>
         </tbody>
@@ -179,7 +188,9 @@ export default function TermsPage() {
       <p>
         You can cancel a monthly plan at any time from your dashboard. Cancellation takes
         effect at the end of the period you have paid for; you keep the service until
-        then, and we do not pro-rate a partial month.
+        then, and we do not pro-rate a partial month. The Keep it running plan needs no
+        cancelling: pause your ads and it stops by itself at the end of the month you have
+        paid for (see section 4).
       </p>
       <p>
         <strong>Videos already produced are yours to keep</strong>, including after you

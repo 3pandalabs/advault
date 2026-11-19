@@ -173,9 +173,10 @@ describe("feeFunding", () => {
     expect(feeFunding("offer", "platform")).toBe("external");
   });
 
-  it("funds Keep it running like managed: it buys media too", () => {
-    expect(feeFunding("evergreen", "platform")).toBe("wallet");
+  it("treats Keep it running as externally funded: its $19 is a card charge, never ad budget", () => {
+    expect(feeFunding("evergreen", "platform")).toBe("external");
     expect(feeFunding("evergreen", "customer")).toBe("external");
+    expect(feeFunding("evergreen", null)).toBe("external");
   });
 
   it("does not default a missing billing mode to the wallet", () => {

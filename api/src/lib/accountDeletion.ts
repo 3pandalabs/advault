@@ -6,6 +6,7 @@ import { db } from "../db/index.js";
 import { adAccounts, assets, campaigns, passwordResetTokens, sessions, subscriptions, users, wallets, youtubeChannels } from "../db/schema.js";
 import { deleteObject } from "../plugins/r2.js";
 import { isMccConfigured, mccAccessToken, pauseCampaign } from "./googleAds/mcc.js";
+import { endStripePlansNow } from "./planBilling/index.js";
 import { notifyOps } from "./ops/notify.js";
 
 // Self-service account deletion (api/ROUTES.md "Account deletion"). Google
@@ -150,6 +151,9 @@ export async function deleteAccount(userId: string): Promise<DeleteResult> {
 
   // 2. After commit: object deletes and the ops alert never undo the deletion.
   await Promise.all(result.keys.map((k) => deleteObject(k).catch(() => undefined)));
+  // The plan row is cancelled above; end it at Stripe too, or the card keeps
+  // being charged for a deleted account (never done before 2026-11-19).
+  await endStripePlansNow(userId).catch(() => undefined);
 
   const lines = [`User ${userId} (was ${before.email}) deleted their account.`];
   if (result.managed.length) {

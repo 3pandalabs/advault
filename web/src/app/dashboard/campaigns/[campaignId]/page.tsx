@@ -11,7 +11,11 @@ import {
   generatePaidNewAd,
   getMe,
   getNewAdStatus,
+  getSubscription,
   orderNewAd,
+  pauseCampaign,
+  resumeCampaign,
+  subscribe,
   pushFreeSiteOffer,
   redoAd,
   type NewAdStatus,
@@ -46,6 +50,7 @@ import { Badge, Card, CardDescription, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { formatDuration, formatMoney } from "@/lib/utils";
 import { actsAsAdmin } from "@/lib/testMode";
+import { PlanPriceLines } from "@/components/PlanPriceLines";
 
 // "Writing the script" survives a refresh: sessionStorage, ignored after 2 min.
 const WRITING_MAX_MS = 120_000;
@@ -74,7 +79,12 @@ type Loaded = Campaign & { creatives: Creative[] };
 // unmapped falls through to the raw code rather than a generic message —
 // a code is at least searchable, where "something went wrong" is not.
 const LAUNCH_ERRORS: Record<string, string> = {
-  plan_required: "Choose a plan before launching. See Subscription in the menu.",
+  plan_required: "Start your AdVault plan to run your ad.",
+  plan_pending: "We're confirming your plan. Try again in a few seconds.",
+  not_running: "This ad isn't running, so there's nothing to pause.",
+  not_paused: "This ad isn't paused.",
+  campaign_ended: "This ad reached its end date. Make a new campaign to run it again.",
+  ad_account_unavailable: "We can't reach this ad's Google account right now. Please try again later.",
   plan_has_no_ads: "Your plan makes videos but doesn't run ads. Switch to Managed or Keep it running to launch.",
   google_ads_not_configured:
     "Google Ads launching is not switched on for this account yet. Everything else works — your videos are rendered and ready.",
@@ -170,11 +180,17 @@ export default function CampaignDetailPage({
   // Only a site AdVault made takes the ad video (SiteVault refuses one built there).
   const onSite = Boolean(siteVaultSlug(campaign?.landingUrl)) && Boolean(campaign?.sitevaultEditEnc);
   // Seeded when back from a top-up checkout started on this page (?status=success).
-  const [launchNote, setLaunchNote] = useState<string | null>(() =>
-    typeof window !== "undefined" && new URLSearchParams(window.location.search).get("status") === "success"
-      ? "Thanks — your ad budget top-up went through. It can take a minute to show."
-      : null,
-  );
+  const [launchNote, setLaunchNote] = useState<string | null>(() => {
+    if (typeof window === "undefined") return null;
+    const q = new URLSearchParams(window.location.search);
+    if (q.get("subscribed") === "1") return "Your AdVault plan is set up. Press Launch my ads (or Resume) to start your ad.";
+    return q.get("status") === "success" ? "Thanks — your ad budget top-up went through. It can take a minute to show." : null;
+  });
+  // The $19 plan (lib/planBilling): set when launch / resume answered
+  // plan_required; shows the start-plan card ($0 today with the first month).
+  const [planPrompt, setPlanPrompt] = useState<{ firstMonthIncluded: boolean } | null>(null);
+  const [firstMonthAvailable, setFirstMonthAvailable] = useState(true);
+  const [testMode, setTestMode] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [logo, setLogo] = useState<Asset | null>(null);
@@ -233,7 +249,11 @@ export default function CampaignDetailPage({
         setIsAdmin(actsAsAdmin(me));
         setIsInternal(me?.isInternal === true);
         setIsTestCustomer(me.isTestCustomer === true);
+        setTestMode(me.isTestCustomer === true || (me.role === "admin" && me.testAsCustomer === true));
       })
+      .catch(() => undefined);
+    getSubscription()
+      .then((s) => setFirstMonthAvailable(s.plan?.firstMonthAvailable !== false))
       .catch(() => undefined);
     getNewAdStatus(campaignId)
       .then((s) => {
@@ -352,6 +372,10 @@ export default function CampaignDetailPage({
       await refresh();
     } catch (err) {
       const code = err instanceof ApiError ? err.code : "request_failed";
+      if (code === "plan_required" && err instanceof ApiError) {
+        setPlanPrompt({ firstMonthIncluded: err.body?.firstMonthIncluded === true });
+        return;
+      }
       // Google's own reason is more useful than the bare code, which is all
       // that showed before: "Launch failed (google_ads_error)".
       const detail = err instanceof ApiError ? err.detail : undefined;
@@ -362,6 +386,58 @@ export default function CampaignDetailPage({
             ? `Google Ads rejected the campaign: ${detail}`
             : `Launch failed (${code}).`),
       );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onStartPlan() {
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await subscribe("us-evergreen", campaignId);
+      if (r.redirectUrl) {
+        window.location.assign(r.redirectUrl);
+        return;
+      }
+      setPlanPrompt(null);
+      setLaunchNote("Your plan is set up. Press Launch my ads (or Resume) again.");
+    } catch {
+      setError("Could not start your plan. Please try again.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // "Pause anytime: no fee while paused." (lib/planBilling)
+  async function onPauseResume(action: "pause" | "resume") {
+    setBusy(true);
+    setError(null);
+    setLaunchNote(null);
+    try {
+      if (action === "pause") {
+        await pauseCampaign(campaignId);
+        setLaunchNote(
+          "Paused. Your ad has stopped showing. With no ad running, your $19 plan stops at the end of the month you've paid for: no fee while paused.",
+        );
+      } else {
+        const r = await resumeCampaign(campaignId);
+        setPlanPrompt(null);
+        setLaunchNote(
+          r.planRestarted
+            ? "Your ad is running again. Your $19 plan restarted today with your saved card."
+            : "Your ad is running again.",
+        );
+      }
+      await Promise.all([refresh(), getWallet().then(setWallet)]);
+    } catch (err) {
+      const code = err instanceof ApiError ? err.code : "request_failed";
+      if (code === "plan_required" && err instanceof ApiError) {
+        setPlanPrompt({ firstMonthIncluded: err.body?.firstMonthIncluded === true });
+      } else {
+        const detail = err instanceof ApiError ? err.detail : undefined;
+        setError(LAUNCH_ERRORS[code] ?? detail ?? `Couldn't ${action} the ad (${code}).`);
+      }
     } finally {
       setBusy(false);
     }
@@ -482,6 +558,9 @@ export default function CampaignDetailPage({
                 <div className="w-full">
                   <SiteOfferOption status={newAd} checked={siteOfferTicked} onChange={setSiteOfferTicked} disabled={busy} />
                 </div>
+              )}
+              {newAd.order && !newAd.freeLaunchOffer && (
+                <PlanPriceLines className="w-full" testMode={testMode} firstMonthIncluded={firstMonthAvailable} />
               )}
             </div>
           )}
@@ -791,6 +870,31 @@ export default function CampaignDetailPage({
 
       {usesWallet && <AdBudgetCard campaign={campaign} wallet={wallet} />}
 
+      {planPrompt && (
+        <Card className="mt-2 mb-4 border-amber-400/30">
+          <CardTitle>{planPrompt.firstMonthIncluded ? "Start your AdVault plan" : "Restart your AdVault plan"}</CardTitle>
+          <CardDescription>
+            {planPrompt.firstMonthIncluded
+              ? "$0 today: your first month is included. Then $19 a month, only while your ad is running. Pause anytime: no fee while paused."
+              : "$19 a month while your ad is running, charged today. Pause anytime: no fee while paused."}
+          </CardDescription>
+          <PlanPriceLines className="mt-3" testMode={testMode} firstMonthIncluded={planPrompt.firstMonthIncluded} />
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Button disabled={busy} onClick={onStartPlan}>
+              {busy ? "Opening checkout…" : planPrompt.firstMonthIncluded ? "Start my plan ($0 today)" : "Restart my plan"}
+            </Button>
+            <Button variant="ghost" disabled={busy} onClick={() => setPlanPrompt(null)}>
+              Not now
+            </Button>
+          </div>
+          <p className="mt-2 text-xs text-zinc-500">
+            {planPrompt.firstMonthIncluded
+              ? "Stripe saves your card. Nothing is charged until your included month ends, and only if an ad is still running then."
+              : "Come back here after paying and press the button again."}
+          </p>
+        </Card>
+      )}
+
       <Card className="mt-2 mb-4">
         <CardTitle>Launch</CardTitle>
         {campaign.googleCampaignResourceName ? (
@@ -808,6 +912,25 @@ export default function CampaignDetailPage({
                   ? ": runs every day until your ad budget runs out."
                   : ". Runs until it is paused."}
             </p>
+            {/* "Pause anytime: no fee while paused." Managed (platform) accounts only. */}
+            {launchedForCustomer && (campaign.status === "live" || campaign.status === "paused") && (
+              <div className="mt-3 flex flex-wrap items-center gap-3">
+                {campaign.status === "live" ? (
+                  <Button size="sm" variant="outline" disabled={busy} onClick={() => onPauseResume("pause")}>
+                    {busy ? "Pausing…" : "Pause my ad"}
+                  </Button>
+                ) : (
+                  <Button size="sm" disabled={busy} onClick={() => onPauseResume("resume")}>
+                    {busy ? "Starting…" : "Resume my ad"}
+                  </Button>
+                )}
+                <span className="text-xs text-zinc-500">
+                  {campaign.status === "live"
+                    ? "Pause anytime: no fee while paused."
+                    : "Paused: no $19 plan fee for months with no ad running."}
+                </span>
+              </div>
+            )}
             {/* Google's own ad review, synced hourly. */}
             {googleReview && (
               <div className="mt-3 flex flex-wrap items-center gap-2 text-sm text-zinc-400">

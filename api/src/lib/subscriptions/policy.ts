@@ -175,6 +175,11 @@ export type FeeFunding = "wallet" | "external";
 
 export function feeFunding(line: ProductLine, billingMode: BillingMode | null): FeeFunding {
   if (line === "offer") return "external";
+  // Keep it running's $19 is always its own Stripe subscription charge; the
+  // wallet only ever holds ad budget. Drawing the fee from it (as until
+  // 2026-11-19) took $19 of a platform customer's ad budget on top of the card
+  // charge, and with an empty budget made the paid webhook 500 for ever.
+  if (line === "evergreen") return "external";
   return billingMode === "platform" ? "wallet" : "external";
 }
 

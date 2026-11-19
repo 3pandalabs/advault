@@ -1,5 +1,5 @@
 import { unfreezeCardsForUser } from "../lib/billing/managedCard.js";
-import { resumeFundedCampaigns } from "../lib/billing/resume.js";
+import { resumeAfterTopUp } from "../lib/planBilling/resume.js";
 import { budgetState, minTopupMinor } from "../lib/wallet/runway.js";
 import { and, eq, inArray } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
@@ -468,7 +468,9 @@ export async function billingRoutes(app: FastifyInstance) {
         // And restart what the empty wallet paused (lib/billing/resume.ts).
         // Not awaited: it calls Google, and the provider wants its 200 fast.
         // Never throws; the hourly spend sync retries a failed resume.
-        void resumeFundedCampaigns(payment.userId);
+        // The plan follows the running ad (lib/planBilling): restart it
+        // off-session if it ran out while paused, then un-stop it after.
+        void resumeAfterTopUp(payment.userId);
       }
 
       return reply.code(200).send({ ok: true });
