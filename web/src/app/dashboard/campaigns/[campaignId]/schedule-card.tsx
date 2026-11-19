@@ -154,7 +154,7 @@ export function ScheduleCard({ campaign, onSaved }: { campaign: Campaign; onSave
               )}
               <p className="text-xs text-zinc-400">{scheduleTimeZoneNote(campaign.currencyCode)}</p>
               <p className="rounded-lg border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-xs text-amber-200">
-                Fewer hours means fewer chances to show your ad, so Google may not spend your full daily budget.
+                Fewer hours means fewer chances to show your ad, so your ad may be shown less.
               </p>
             </div>
           )}

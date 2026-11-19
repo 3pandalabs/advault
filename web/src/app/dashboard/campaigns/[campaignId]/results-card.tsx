@@ -355,13 +355,6 @@ export function ResultsCard({
             <Stat label="Times shown" value={count.format(t.impressions)} />
             <Stat label="Spent" value={t.spendDisplay} />
             {r.balance && <Stat label="Budget left" value={r.balance.display} />}
-            {r.balance && (
-              <Stat
-                label="Days left"
-                value={r.balance.daysLeft === null ? "—" : `about ${r.balance.daysLeft}`}
-                hint="at the current pace"
-              />
-            )}
           </div>
 
           <div className="mt-4 grid gap-2 sm:grid-cols-2">

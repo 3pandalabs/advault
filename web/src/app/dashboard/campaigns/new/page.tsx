@@ -22,9 +22,6 @@ import { FieldHint, Input, Label, Textarea } from "@/components/ui/input";
 import { parseDollarsToCents } from "@/lib/utils";
 import {
   MAX_DAILY_BUDGET_CENTS,
-  RUN_CHOICES,
-  adSpendTotalCents,
-  formatUsdCents,
   minDailyBudgetCents,
   type RunDays,
   wizardTopupKey,
@@ -153,8 +150,8 @@ export default function NewCampaignPage() {
   const router = useRouter();
   const [step, setStep] = useState(1);
   // "How long should your ad run?" 1 week by default: the smallest total.
-  // Always on by default (top-up-first model); a stop date is "Advanced".
-  const [runDays, setRunDays] = useState<RunDays>(null);
+  // Always on: the stop-date option was removed (owner, 2026-11-19).
+  const runDays: RunDays = null;
   // "Add to your ad budget": only picked here (nothing is charged in the
   // wizard); the campaign page's budget card starts on this amount.
   const [topupCents, setTopupCents] = useState<number>(5_000);
@@ -1116,29 +1113,6 @@ export default function NewCampaignPage() {
                     : "How far around those codes to reach. Max 50."}
                 </FieldHint>
               </div>
-              <div>
-                <Label htmlFor="dailyBudget">Daily budget (USD)</Label>
-                <Input
-                  id="dailyBudget"
-                  inputMode="decimal"
-                  value={form.dailyBudget}
-                  onChange={set("dailyBudget")}
-                />
-                {budgetCents === null && form.dailyBudget.trim() !== "" ? (
-                  <p className="mt-1.5 text-xs text-red-300">Enter a number, for example 15.</p>
-                ) : budgetOutOfRange ? (
-                  <p className="mt-1.5 text-xs text-red-300">
-                    Must be between {MIN_DAILY_BUDGET_CENTS / 100} and{" "}
-                    {MAX_DAILY_BUDGET_CENTS / 100} a day.
-                  </p>
-                ) : (
-                  <FieldHint>
-                    Between {MIN_DAILY_BUDGET_CENTS / 100} and {MAX_DAILY_BUDGET_CENTS / 100} a
-                    day ({MIN_DAILY_BUDGET_CENTS / 100} is Google&apos;s minimum for this kind of
-                    ad). Google never charges more than this per day.
-                  </FieldHint>
-                )}
-              </div>
             </div>
 
             <div>
@@ -1152,50 +1126,12 @@ export default function NewCampaignPage() {
                 />
               </div>
               <FieldHint>
-                Nothing is charged now — you add it before your ad goes live. Your ad runs every
-                day at your daily budget until the budget runs out. You only pay for what Google
-                delivers; unused budget stays in your account.
+                Nothing is charged now — you add it before your ad goes live. Your ad runs until
+                the budget runs out. You only pay for what Google delivers; unused budget stays in
+                your account.
               </FieldHint>
             </div>
 
-            <details className="text-sm" open={runDays !== null}>
-              <summary className="cursor-pointer text-zinc-400 hover:text-zinc-200">Advanced: stop on a date</summary>
-              <div className="mt-2 grid gap-2 sm:grid-cols-3" role="radiogroup" aria-label="When should your ad stop?">
-                {RUN_CHOICES.map((c) => {
-                  const selected = runDays === c.value;
-                  const total =
-                    budgetCents !== null && !budgetOutOfRange
-                      ? formatUsdCents(adSpendTotalCents(budgetCents, c.value))
-                      : null;
-                  return (
-                    <button
-                      key={c.label}
-                      type="button"
-                      role="radio"
-                      aria-checked={selected}
-                      onClick={() => setRunDays(c.value)}
-                      className={`rounded-lg border px-3 py-2 text-left text-sm transition ${
-                        selected
-                          ? "border-amber-400 bg-amber-400/10 text-amber-200"
-                          : "border-white/10 text-zinc-400 hover:border-white/25"
-                      }`}
-                    >
-                      <span className="block font-medium">
-                        {c.value === null ? "Don't stop (always on)" : `Stop after ${c.label}`}
-                      </span>
-                      <span className="block text-xs text-zinc-400">
-                        {total === null || c.value === null ? "until the budget runs out" : `${total} total`}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-              <FieldHint>
-                {runDays === null
-                  ? "Runs until your ad budget runs out or you pause it."
-                  : "Google stops the ad by itself at the end, so it never spends more than this."}
-              </FieldHint>
-            </details>
 
             <div>
               <Label htmlFor="landingUrl">Your website (optional)</Label>

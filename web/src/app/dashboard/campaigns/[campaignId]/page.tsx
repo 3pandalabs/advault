@@ -39,8 +39,8 @@ import { VideoUpload } from "./video-upload";
 import { ResultsCard } from "./results-card";
 import { AudienceCard } from "./audience-card";
 import { ScheduleCard } from "./schedule-card";
-import { BudgetEditor, RunLengthPicker } from "./budget-editor";
-import { BUDGET_BELOW_MINIMUM_MESSAGE, adSpendTotalCents, runLengthLabel, type RunDays } from "@/lib/budget";
+import { BudgetEditor } from "./budget-editor";
+import { BUDGET_BELOW_MINIMUM_MESSAGE, minDailyBudgetCents, runLengthLabel } from "@/lib/budget";
 import { WebsiteCard } from "./website-card";
 import { BeforeAfterCard } from "./before-after-card";
 import { SiteOfferOption, payLabel } from "./site-offer-option";
@@ -48,7 +48,7 @@ import { RenderProgress, ScriptProgress } from "./render-progress";
 import { AUDIENCE_FILTERS_ENABLED } from "@/lib/audience";
 import { Badge, Card, CardDescription, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { formatDuration, formatMoney } from "@/lib/utils";
+import { formatDuration } from "@/lib/utils";
 import { actsAsAdmin } from "@/lib/testMode";
 import { PlanPriceLines } from "@/components/PlanPriceLines";
 
@@ -106,7 +106,7 @@ const LAUNCH_ERRORS: Record<string, string> = {
   // The wallet guard on accounts AdVault funds. Previously unmapped, so a 402
   // surfaced as the raw code.
   insufficient_funds:
-    "Your ad budget needs at least 3 days at your daily budget to start. Add to your ad budget above and try again.",
+    "Your ad budget is too low to start. Add to your ad budget above and try again.",
   // The billing gate. A campaign launched into an account with no payment
   // method succeeds at Google and then never serves, so this is refused rather
   // than allowed through.
@@ -485,8 +485,7 @@ export default function CampaignDetailPage({
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">{campaign.name}</h1>
           <p className="mt-1 text-sm text-zinc-400">
-            {formatMoney(campaign.dailyBudgetCents, campaign.currencyCode)}/day &middot;{" "}
-            {runLengthLabel(campaign.runDays, campaign.endsOn)} &middot;{" "}
+            {campaign.runDays ? <>{runLengthLabel(campaign.runDays, campaign.endsOn)} &middot;{" "}</> : null}
             {campaign.targetAddress
               ? `${campaign.radiusMiles} miles around ${campaign.targetAddress.street}, ${campaign.targetAddress.city}`
               : `${campaign.targetZipCodes.join(", ")} within ${campaign.radiusMiles} miles`}
@@ -904,14 +903,11 @@ export default function CampaignDetailPage({
                 ? "Your campaign is live. Google reviews new ads first, usually within a day, then they start showing in your area."
                 : "Sent to Google Ads. Open your Google Ads account to review it and switch it on — it was created paused and is not spending yet."}
             </CardDescription>
-            <p className="mt-2 text-sm text-zinc-400">
-              {runLengthLabel(campaign.runDays, campaign.endsOn)}
-              {campaign.runDays
-                ? ". Google stops it by itself on the last day."
-                : launchedForCustomer
-                  ? ": runs every day until your ad budget runs out."
-                  : ". Runs until it is paused."}
-            </p>
+            {campaign.runDays ? (
+              <p className="mt-2 text-sm text-zinc-400">
+                {runLengthLabel(campaign.runDays, campaign.endsOn)}. Google stops it by itself on the last day.
+              </p>
+            ) : null}
             {/* "Pause anytime: no fee while paused." Managed (platform) accounts only. */}
             {launchedForCustomer && (campaign.status === "live" || campaign.status === "paused") && (
               <div className="mt-3 flex flex-wrap items-center gap-3">
@@ -1006,29 +1002,17 @@ export default function CampaignDetailPage({
               {isTestCustomer
                 ? "Press the button to have Google check this ad and its settings."
                 : launchableAccounts.some((a) => a.billingMode === "platform")
-                ? `Launching starts your ads with a ${formatMoney(campaign.dailyBudgetCents, campaign.currencyCode)} daily budget, paid from your AdVault balance. Google reviews new ads first, usually within a day.`
-                : `This creates a paused campaign in your Google Ads account with a ${formatMoney(campaign.dailyBudgetCents, campaign.currencyCode)} daily budget. It does not start spending until you enable it there.`}
+                ? "Launching starts your ad, paid from your ad budget. Google reviews new ads first, usually within a day."
+                : "This creates a paused campaign in your Google Ads account. It does not start spending until you enable it there."}
             </CardDescription>
-            {/* The run length picked in the wizard, and what it adds up to. */}
-            <p className="mt-2 text-sm text-zinc-400">
-              {campaign.runDays === 7 || campaign.runDays === 14
-                ? `${runLengthLabel(campaign.runDays)}: about ${formatMoney(adSpendTotalCents(campaign.dailyBudgetCents, campaign.runDays as RunDays), campaign.currencyCode)} in ad spend, then Google stops it by itself.`
-                : usesWallet
-                  ? `Always on: runs at ${formatMoney(campaign.dailyBudgetCents, campaign.currencyCode)} a day until your ad budget runs out.`
-                  : `Always on: about ${formatMoney(adSpendTotalCents(campaign.dailyBudgetCents, null), campaign.currencyCode)} a month in ad spend, until you pause it.`}
-            </p>
-            <BudgetEditor
-              campaign={campaign}
-              onSaved={(c) => setCampaign((prev) => (prev ? { ...prev, ...c } : prev))}
-            />
-            {/* The PR #124 run length, now behind a disclosure: the default is always on. */}
-            <details className="mt-3 text-sm" open={campaign.runDays === 7 || campaign.runDays === 14}>
-              <summary className="cursor-pointer text-zinc-400 hover:text-zinc-200">Advanced: stop on a date</summary>
-              <RunLengthPicker
+            {/* Only for campaigns saved under the old $1/day floor: everything else
+                runs at Google's minimum and the ad budget is shown as times shown. */}
+            {campaign.dailyBudgetCents < minDailyBudgetCents(campaign.currencyCode) && (
+              <BudgetEditor
                 campaign={campaign}
                 onSaved={(c) => setCampaign((prev) => (prev ? { ...prev, ...c } : prev))}
               />
-            </details>
+            )}
             <SquareLogo onChange={setLogo} />
             {onSite && (
               <label className="mt-4 flex items-start gap-2 text-sm text-zinc-300">
