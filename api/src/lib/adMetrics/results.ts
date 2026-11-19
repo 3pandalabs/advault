@@ -5,6 +5,8 @@ import type { Currency } from "../pricing/index.js";
 import { isoDaysAgo, microsToMinor } from "./policy.js";
 import { rangeSince, type ResultsRange } from "./segments.js";
 import { assembleResults } from "./resultsView.js";
+import { isHousingCategory, type AudienceFilters } from "../audience/policy.js";
+import type { AdSchedule } from "../schedule/policy.js";
 
 // I/O half of GET /campaigns/:id/results. Reads the stored report copies only
 // (campaign_daily_metrics + campaign_segment_metrics), never Google.
@@ -17,6 +19,9 @@ export async function loadResults(
     dailyBudgetCents: number;
     launchedAt: Date | null;
     adAccountId: string | null;
+    businessCategory: string;
+    audienceFilters: AudienceFilters | null;
+    adSchedule: AdSchedule | null;
   },
   range: ResultsRange,
 ) {
@@ -62,5 +67,8 @@ export async function loadResults(
     balanceMinor,
     dailyBudgetMinor: campaign.dailyBudgetCents,
     recentDailySpendMinor: allDaily.filter((d) => d.date >= recentSince).map((d) => microsToMinor(d.costMicros)),
+    housing: isHousingCategory(campaign.businessCategory),
+    audienceFilters: campaign.audienceFilters,
+    adSchedule: campaign.adSchedule,
   });
 }
