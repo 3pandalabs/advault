@@ -562,6 +562,11 @@ export function createCampaign(input: {
   targetAddress?: TargetAddress | null;
   audienceFilters?: AudienceFilters | null;
   realty?: Realty | null;
+  // What shapes the FIRST ad, saved on the row before any ad is made. Same
+  // rules as PUT /badges, /extras, /before-after; a problem refuses the create.
+  badges?: { ids: BadgeId[]; licenseNumber?: string | null; attested: boolean } | null;
+  categoryExtras?: CategoryExtras | null;
+  beforeAfter?: { pairs: { beforeAssetId: string; afterAssetId: string }[]; attested: boolean } | null;
 }) {
   return api<Campaign>("/campaigns", { method: "POST", body: JSON.stringify(input) });
 }

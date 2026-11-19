@@ -31,7 +31,24 @@ export const badgesInputSchema = z
     attested: z.boolean().optional(),
   })
   .strict();
-type BadgesInput = z.infer<typeof badgesInputSchema>;
+export type BadgesInput = z.infer<typeof badgesInputSchema>;
+
+/**
+ * The one badge check, shared by this PUT and POST /campaigns (the wizard
+ * sends badges with the create so the first ad has them). `sel` null = none.
+ */
+export function checkBadges(
+  category: string,
+  body: BadgesInput,
+): { ok: true; sel: BadgeSelection | null } | { ok: false; error: string; detail: string } {
+  const sel: BadgeSelection = {
+    ids: body.ids,
+    ...(body.ids.includes("license_number") ? { licenseNumber: (body.licenseNumber ?? "").trim() } : {}),
+  };
+  const violation = badgeViolation(categoryKey(category), sel, body.attested === true);
+  if (violation) return { ok: false, error: violation, detail: BADGE_DETAIL[violation] };
+  return { ok: true, sel: sel.ids.length === 0 ? null : sel };
+}
 
 function view(category: string, sel: BadgeSelection | null, attestedAt: Date | null) {
   return {
@@ -56,19 +73,14 @@ export async function badgeRoutes(app: FastifyInstance) {
     const { campaignId } = req.params as { campaignId: string };
     const campaign = await loadOwnedCampaign(campaignId, req.userId!, reply);
     if (!campaign) return;
-    const body = req.body as BadgesInput;
-    const sel: BadgeSelection = {
-      ids: body.ids,
-      ...(body.ids.includes("license_number") ? { licenseNumber: (body.licenseNumber ?? "").trim() } : {}),
-    };
-    const violation = badgeViolation(categoryKey(campaign.businessCategory), sel, body.attested === true);
-    if (violation) return reply.code(400).send({ error: violation, detail: BADGE_DETAIL[violation] });
+    const checked = checkBadges(campaign.businessCategory, req.body as BadgesInput);
+    if (!checked.ok) return reply.code(400).send({ error: checked.error, detail: checked.detail });
 
-    const empty = sel.ids.length === 0;
+    const empty = checked.sel === null;
     const [updated] = await db
       .update(campaigns)
       .set({
-        badges: empty ? null : sel,
+        badges: checked.sel,
         badgesAttestedAt: empty ? null : new Date(),
         badgesAttestedBy: empty ? null : req.userId!,
         updatedAt: new Date(),

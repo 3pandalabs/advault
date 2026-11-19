@@ -32,8 +32,10 @@ export const categoryExtrasSchema = z
   })
   .strict();
 
+export type CategoryExtrasInput = z.infer<typeof categoryExtrasSchema>;
+
 /** Trimmed, with empty values dropped (an empty field means "none"). */
-function clean(e: z.infer<typeof categoryExtrasSchema>): CategoryExtras {
+function clean(e: CategoryExtrasInput): CategoryExtras {
   const out: CategoryExtras = {};
   if (e.spotlight && (e.spotlight.dish.trim() || e.spotlight.price?.trim() || e.spotlight.assetId)) {
     out.spotlight = {
@@ -50,6 +52,32 @@ function clean(e: z.infer<typeof categoryExtrasSchema>): CategoryExtras {
   return out;
 }
 
+/**
+ * The one extras check, shared by this PUT and POST /campaigns (the wizard
+ * sends them with the create so the first ad has them). `extras` null = none.
+ */
+export async function checkCategoryExtras(
+  category: string,
+  input: CategoryExtrasInput,
+  userId: string,
+): Promise<{ ok: true; extras: CategoryExtras | null } | { ok: false; error: string; detail?: string }> {
+  const extras = clean(input);
+  const problem = extrasProblem(categoryKey(category), extras);
+  if (problem) return { ok: false, error: problem, detail: EXTRAS_DETAIL[problem] };
+
+  // The dish photo must be the advertiser's own (it leads their ad).
+  const photo = extras.spotlight?.assetId;
+  if (photo) {
+    const [own] = await db
+      .select({ id: assets.id })
+      .from(assets)
+      .where(and(eq(assets.id, photo), eq(assets.userId, userId), eq(assets.kind, "photo")))
+      .limit(1);
+    if (!own) return { ok: false, error: "unknown_assets" };
+  }
+  return { ok: true, extras: Object.keys(extras).length === 0 ? null : extras };
+}
+
 export async function categoryExtrasRoutes(app: FastifyInstance) {
   app.addHook("onRequest", requireAuth);
 
@@ -64,26 +92,13 @@ export async function categoryExtrasRoutes(app: FastifyInstance) {
     const { campaignId } = req.params as { campaignId: string };
     const campaign = await loadOwnedCampaign(campaignId, req.userId!, reply);
     if (!campaign) return;
-    const extras = clean(req.body as z.infer<typeof categoryExtrasSchema>);
+    const checked = await checkCategoryExtras(campaign.businessCategory, req.body as CategoryExtrasInput, req.userId!);
+    if (!checked.ok) return reply.code(400).send({ error: checked.error, ...(checked.detail ? { detail: checked.detail } : {}) });
     const key = categoryKey(campaign.businessCategory);
-    const problem = extrasProblem(key, extras);
-    if (problem) return reply.code(400).send({ error: problem, detail: EXTRAS_DETAIL[problem] });
 
-    // The dish photo must be the advertiser's own (it leads their ad).
-    const photo = extras.spotlight?.assetId;
-    if (photo) {
-      const [own] = await db
-        .select({ id: assets.id })
-        .from(assets)
-        .where(and(eq(assets.id, photo), eq(assets.userId, req.userId!), eq(assets.kind, "photo")))
-        .limit(1);
-      if (!own) return reply.code(400).send({ error: "unknown_assets" });
-    }
-
-    const empty = Object.keys(extras).length === 0;
     const [updated] = await db
       .update(campaigns)
-      .set({ categoryExtras: empty ? null : extras, updatedAt: new Date() })
+      .set({ categoryExtras: checked.extras, updatedAt: new Date() })
       .where(eq(campaigns.id, campaign.id))
       .returning();
     return { available: extrasFor(key), extras: updated!.categoryExtras ?? {} };

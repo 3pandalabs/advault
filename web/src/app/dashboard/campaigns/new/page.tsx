@@ -10,7 +10,6 @@ import {
   getNewAdQuote,
   orderNewAd,
   getMe,
-  setBeforeAfter,
   listAssets,
   uploadAsset,
   uploadCreativeVideo,
@@ -39,6 +38,11 @@ import { ScriptProgress } from "../[campaignId]/render-progress";
 import { BeforeAfterEditor, completePairs, hasHalfPair, type DraftPair } from "@/components/BeforeAfterEditor";
 import { BEFORE_AFTER_ERRORS, beforeAfterAllowed } from "@/lib/beforeAfter";
 import { CHOSEN_PARAM, TestCustomerPicker } from "./test-customer-picker";
+import { BadgePicker, EMPTY_BADGES, type BadgeDraft } from "@/components/BadgePicker";
+import { CategoryExtrasFields, NeighborPriceField } from "@/components/CategoryExtrasFields";
+import { categoryKey } from "@/lib/categories/key";
+import { BADGE_DETAIL, badgeOptions, badgeViolation } from "@/lib/categories/badges";
+import { EXTRAS_DETAIL, extrasFor, extrasProblem, parseZips, type CategoryExtras } from "@/lib/categories/extras";
 
 import {
   AUDIENCE_FILTERS_ENABLED,
@@ -198,6 +202,16 @@ export default function NewCampaignPage() {
   // "Show your work: before & after" (trades only, lib/beforeAfter).
   const [baPairs, setBaPairs] = useState<DraftPair[]>([]);
   const [baAttested, setBaAttested] = useState(false);
+
+  // Step 3 — "Make your ad stronger" (optional, per category): sent with the
+  // create so the first ad uses them.
+  const [badgeDraft, setBadgeDraft] = useState<BadgeDraft>(EMPTY_BADGES);
+  const [extrasDraft, setExtrasDraft] = useState<CategoryExtras>({});
+  const [customerZipText, setCustomerZipText] = useState("");
+  const [zipsIntoTargeting, setZipsIntoTargeting] = useState(true);
+  // null = the default (use the order link when no website was given).
+  const [orderAsLink, setOrderAsLink] = useState<boolean | null>(null);
+  const [neighborOffer, setNeighborOffer] = useState<string | null>(null);
 
   // Step 2 — targeting
   const [form, setForm] = useState({
@@ -369,15 +383,25 @@ export default function NewCampaignPage() {
       return;
     }
 
+    // What shapes the first ad (badges, category extras, before & after) goes
+    // IN the create, so it is on the campaign before the ad is made or paid
+    // for: the generate call below and the paid order (made later on the
+    // campaign page) both read it from the row. The API checks it with the
+    // same rules as the campaign page and refuses the whole create on a
+    // problem, so nothing is left half-saved.
+    const pairs = showBeforeAfter ? completePairs(baPairs) : [];
     try {
       const campaign = await createCampaign({
         name: form.name.trim(),
         businessName: form.businessName.trim(),
         businessCategory: category,
         callToAction: form.callToAction.trim(),
-        landingUrl: form.landingUrl.trim() || null,
+        landingUrl: useOrderAsLink ? (extrasToSave.orderUrl ?? null) : form.landingUrl.trim() || null,
         offerDetails: form.offerDetails.trim() || null,
-        targetZipCodes: housing ? [] : zipCodes,
+        targetZipCodes: housing ? [] : targetZips,
+        badges: badgeDraft.ids.length > 0 ? { ...badgeSel, attested: badgeDraft.attested } : null,
+        categoryExtras: Object.keys(extrasToSave).length > 0 ? extrasToSave : null,
+        beforeAfter: pairs.length > 0 ? { pairs, attested: baAttested } : null,
         targetAddress: housing
           ? {
               street: form.street.trim(),
@@ -407,22 +431,6 @@ export default function NewCampaignPage() {
         sessionStorage.setItem(wizardTopupKey(campaign.id), String(topupCents));
       } catch {
         /* storage blocked: the card falls back to its default */
-      }
-
-      // Before & after pairs live on the campaign, so they are saved before the
-      // ad is made or paid for (the paid order makes it later from the same row).
-      const pairs = showBeforeAfter ? completePairs(baPairs) : [];
-      if (pairs.length > 0) {
-        try {
-          await setBeforeAfter(campaign.id, pairs, baAttested);
-        } catch (err) {
-          const code = err instanceof ApiError ? err.code : "error";
-          setError(
-            `The campaign was created, but the before & after photos weren't saved (${BEFORE_AFTER_ERRORS[code] ?? code}). Opening the campaign so you can add them again…`,
-          );
-          setTimeout(() => router.push(`/dashboard/campaigns/${campaign.id}`), 3000);
-          return;
-        }
       }
 
       // 202 — the API writes the scripts and queues the renders, then returns.
@@ -461,9 +469,11 @@ export default function NewCampaignPage() {
             : "Some details were rejected. Check the budget, landing URL and ZIP/PIN codes.",
         );
       } else if (err instanceof ApiError && err.detail) {
-        // Targeting rules (housing policy, missing ZIPs/address) carry a
-        // sentence written for the advertiser.
+        // Targeting rules (housing policy, missing ZIPs/address), badges,
+        // extras and before & after carry a sentence written for the advertiser.
         setError(err.detail);
+      } else if (err instanceof ApiError && BEFORE_AFTER_ERRORS[err.code]) {
+        setError(BEFORE_AFTER_ERRORS[err.code]!);
       } else {
         setError("Could not create the campaign. Please try again.");
       }
@@ -524,6 +534,41 @@ export default function NewCampaignPage() {
   }
 
   const showBeforeAfter = !useVideo && beforeAfterAllowed(category);
+
+  // "Make your ad stronger" (step 3): badges and category extras, only what
+  // applies to this category (lib/categories). Skipped for an uploaded video.
+  const catKey = categoryKey(category);
+  const badgeOpts = useVideo ? [] : badgeOptions(catKey);
+  const extrasAvail = useVideo ? [] : extrasFor(catKey);
+  const badgeSel = {
+    ids: badgeDraft.ids,
+    ...(badgeDraft.ids.includes("license_number") ? { licenseNumber: badgeDraft.licenseNumber.trim() } : {}),
+  };
+  const badgeProblem = badgeViolation(catKey, badgeSel, badgeDraft.attested);
+  const customerZips = extrasAvail.includes("neighborZips") ? parseZips(customerZipText) : [];
+  // Only filled fields, only this category's (an empty field means none).
+  const extrasToSave: CategoryExtras = {};
+  const dish = extrasDraft.spotlight;
+  const dishPhoto = dish?.assetId && selectedAssetIds.includes(dish.assetId) ? dish.assetId : null;
+  if (extrasAvail.includes("spotlight") && dish && (dish.dish.trim() || dish.price?.trim() || dishPhoto)) {
+    extrasToSave.spotlight = { dish: dish.dish.trim(), price: dish.price?.trim() || null, assetId: dishPhoto };
+  }
+  if (extrasAvail.includes("orderUrl") && extrasDraft.orderUrl?.trim()) extrasToSave.orderUrl = extrasDraft.orderUrl.trim();
+  if (extrasAvail.includes("makes") && extrasDraft.makes?.length) extrasToSave.makes = extrasDraft.makes;
+  if (customerZips.length > 0) extrasToSave.neighborZips = customerZips;
+  const extrasError = extrasProblem(catKey, extrasToSave);
+  // Restaurant: the order link becomes the ad's link (ticked by default when
+  // no website was given; the owner can untick it).
+  const useOrderAsLink = Boolean(extrasToSave.orderUrl) && !extrasError && (orderAsLink ?? form.landingUrl.trim() === "");
+  // Landscaping: the customers' ZIPs are added to where the ad shows.
+  const addCustomerZips = customerZips.length > 0 && zipsIntoTargeting;
+  const targetZips = addCustomerZips ? [...new Set([...zipCodes, ...customerZips])] : zipCodes;
+  const targetZipsError =
+    addCustomerZips && !extrasError && (targetZips.length > 50 || new Set(targetZips.map((z) => z.length)).size > 1)
+      ? "Together with the ZIP codes from step 1 that is more than 50, or a mix of US ZIP and Indian PIN codes."
+      : null;
+  const extrasReady = !badgeProblem && !extrasError && !targetZipsError;
+  const showExtras = badgeOpts.length > 0 || extrasAvail.length > 0;
   // Optional, but a half-made pair or an unticked box must be fixed first.
   const beforeAfterReady =
     !showBeforeAfter || (!hasHalfPair(baPairs) && (completePairs(baPairs).length === 0 || baAttested));
@@ -556,7 +601,7 @@ export default function NewCampaignPage() {
       <h1 className="text-2xl font-semibold tracking-tight">New campaign</h1>
 
       <ol className="mt-6 mb-8 flex items-center gap-2 text-sm">
-        {(useVideo ? ["Where & how much", "Video"] : ["Where & how much", "Photos", "Formats"]).map((label, i, all) => (
+        {(useVideo ? ["Where & how much", "Video"] : ["Where & how much", "Photos", showExtras ? "Extras" : "Formats"]).map((label, i, all) => (
           <li key={label} className="flex items-center gap-2">
             <span
               className={
@@ -1258,6 +1303,82 @@ export default function NewCampaignPage() {
         </Card>
       )}
 
+      {step === 3 && showExtras && (
+        <Card className="mb-4">
+          <CardTitle>Make your ad stronger (optional)</CardTitle>
+          <CardDescription>Add only what is true. Skip anything you like: your ad works without it.</CardDescription>
+
+          {badgeOpts.length > 0 && (
+            <div className="mt-5">
+              <h3 className="text-base font-semibold text-zinc-100">Badges</h3>
+              <p className="mt-1 mb-3 text-sm text-zinc-400">Show customers why they can trust you.</p>
+              <BadgePicker options={badgeOpts} value={badgeDraft} onChange={setBadgeDraft} disabled={busy} />
+              {badgeProblem && <p className="mt-2 text-sm text-amber-300">{BADGE_DETAIL[badgeProblem]}</p>}
+            </div>
+          )}
+
+          {extrasAvail.length > 0 && (
+            <div className={badgeOpts.length > 0 ? "mt-6 border-t border-white/10 pt-6" : "mt-5"}>
+              <CategoryExtrasFields
+                available={extrasAvail}
+                value={extrasDraft}
+                onChange={setExtrasDraft}
+                photos={selectedAssetIds.map((id) => ({
+                  id,
+                  url: thumbs[id],
+                  label: assets.find((a) => a.id === id)?.originalFilename ?? undefined,
+                }))}
+                zipText={customerZipText}
+                onZipText={setCustomerZipText}
+                disabled={busy}
+                orderUrlAction={
+                  extrasToSave.orderUrl && !extrasError ? (
+                    <label className="flex items-start gap-2 text-sm text-zinc-300">
+                      <input
+                        type="checkbox"
+                        className="mt-0.5"
+                        checked={useOrderAsLink}
+                        onChange={(e) => setOrderAsLink(e.target.checked)}
+                        disabled={busy}
+                      />
+                      <span>Send people from my ad to this link</span>
+                    </label>
+                  ) : null
+                }
+                zipsAction={
+                  <>
+                    {customerZips.length > 0 && (
+                      <label className="flex items-start gap-2 text-sm text-zinc-300">
+                        <input
+                          type="checkbox"
+                          className="mt-0.5"
+                          checked={zipsIntoTargeting}
+                          onChange={(e) => setZipsIntoTargeting(e.target.checked)}
+                          disabled={busy}
+                        />
+                        <span>Also show my ad in these ZIP codes</span>
+                      </label>
+                    )}
+                    <NeighborPriceField
+                      disabled={busy}
+                      onUse={(text) => {
+                        setForm((f) => ({ ...f, offerDetails: text }));
+                        setNeighborOffer(text);
+                      }}
+                    />
+                    {neighborOffer && form.offerDetails === neighborOffer && (
+                      <p className="text-xs text-emerald-300">Your offer now reads like this.</p>
+                    )}
+                  </>
+                }
+              />
+              {extrasError && <p className="mt-2 text-sm text-amber-300">{EXTRAS_DETAIL[extrasError]}</p>}
+              {targetZipsError && <p className="mt-2 text-sm text-amber-300">{targetZipsError}</p>}
+            </div>
+          )}
+        </Card>
+      )}
+
       {step === 3 && (
         <Card>
           <CardTitle>Your ad comes in two shapes</CardTitle>
@@ -1311,7 +1432,7 @@ export default function NewCampaignPage() {
             <Button variant="ghost" onClick={() => setStep(2)}>
               Back
             </Button>
-            <Button onClick={onFinish} disabled={busy}>
+            <Button onClick={onFinish} disabled={busy || !extrasReady}>
               {busy ? "Creating…" : freeAd ? "Make my free ad" : newAdPrice ? `Pay ${newAdPrice} and make my ad` : "Generate my ads"}
             </Button>
           </div>

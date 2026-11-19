@@ -10,6 +10,10 @@ import { realtySchema } from "../lib/realty/index.js";
 import { claimBlock } from "../lib/categories/claims.js";
 import { categoryKey } from "../lib/categories/key.js";
 import { markAppUsed } from "../lib/sharedAccount/index.js";
+import { beforeAfterInputSchema } from "../lib/beforeAfter/policy.js";
+import { badgesInputSchema, checkBadges } from "./badges.js";
+import { categoryExtrasSchema, checkCategoryExtras } from "./categoryExtras.js";
+import { checkBeforeAfter } from "./beforeAfter.js";
 import { adScheduleSchema, normalizeAdSchedule } from "../lib/schedule/policy.js";
 import {
   TARGETING_VIOLATION_DETAIL,
@@ -90,9 +94,24 @@ const campaignFields = z.object({
   realty: realtySchema.nullish(),
 });
 
-// The create schema: the fields plus the currency-aware budget floor. PATCH
-// uses campaignFields.partial() and checks the floor against the merged row.
-export const campaignInput = campaignFields.superRefine((v, ctx) => {
+// The create schema: the fields, the inputs that shape the FIRST ad, and the
+// currency-aware budget floor. PATCH uses campaignFields.partial() (without
+// badges/extras/before-after: those have their own PUT routes) and checks the
+// floor against the merged row.
+//
+// badges / categoryExtras / beforeAfter (2026-11-20): the wizard sends them
+// with the create, so they are on the row before any ad is generated or paid
+// for. Same schemas and the same checks as PUT /campaigns/:id/badges,
+// /extras and /before-after (checkBadges, checkCategoryExtras,
+// checkBeforeAfter); any problem refuses the whole create, so no half-made
+// campaign is left behind.
+export const campaignInput = campaignFields
+  .extend({
+    badges: badgesInputSchema.nullish(),
+    categoryExtras: categoryExtrasSchema.nullish(),
+    beforeAfter: beforeAfterInputSchema.nullish(),
+  })
+  .superRefine((v, ctx) => {
   const below = budgetBelowMinimum(v.dailyBudgetCents, v.currencyCode);
   if (below) {
     ctx.addIssue({
@@ -104,6 +123,7 @@ export const campaignInput = campaignFields.superRefine((v, ctx) => {
 });
 
 type CampaignInput = z.infer<typeof campaignFields>;
+type CampaignCreateInput = z.infer<typeof campaignInput>;
 
 /**
  * Normalises the filters and applies the targeting rules (housing policy,
@@ -128,7 +148,7 @@ export async function campaignRoutes(app: FastifyInstance) {
   app.addHook("onRequest", requireAuth);
 
   app.post("/campaigns", { schema: { body: campaignInput } }, async (req, reply) => {
-    const body = req.body as CampaignInput;
+    const { badges: badgesIn, categoryExtras: extrasIn, beforeAfter: pairsIn, ...body } = req.body as CampaignCreateInput;
     const targeting = checkTargeting({
       businessCategory: body.businessCategory,
       targetZipCodes: body.targetZipCodes,
@@ -142,10 +162,29 @@ export async function campaignRoutes(app: FastifyInstance) {
     }
     const claim = blockedClaim(body.businessCategory, body.offerDetails);
     if (claim) return reply.code(400).send(claim);
+
+    // What shapes the first ad, checked exactly like the PUT routes.
+    const badges = badgesIn ? checkBadges(body.businessCategory, badgesIn) : null;
+    if (badges && !badges.ok) return reply.code(400).send({ error: badges.error, detail: badges.detail });
+    const extras = extrasIn ? await checkCategoryExtras(body.businessCategory, extrasIn, req.userId!) : null;
+    if (extras && !extras.ok) return reply.code(400).send({ error: extras.error, ...(extras.detail ? { detail: extras.detail } : {}) });
+    const pairs = pairsIn ? await checkBeforeAfter(body.businessCategory, pairsIn, req.userId!) : null;
+    if (pairs && !pairs.ok) return reply.code(400).send({ error: pairs.error, ...(pairs.detail ? { detail: pairs.detail } : {}) });
+    const badgeSel = badges?.ok ? badges.sel : null;
+    const pairList = pairs?.ok ? pairs.pairs : null;
+    const now = new Date();
+
     const [campaign] = await db
       .insert(campaigns)
       .values({
         ...body,
+        badges: badgeSel,
+        badgesAttestedAt: badgeSel ? now : null,
+        badgesAttestedBy: badgeSel ? req.userId! : null,
+        categoryExtras: extras?.ok ? extras.extras : null,
+        beforeAfter: pairList,
+        beforeAfterAttestedAt: pairList ? now : null,
+        beforeAfterAttestedBy: pairList ? req.userId! : null,
         runDays: body.runDays ?? null,
         adSchedule: normalizeAdSchedule(body.adSchedule),
         // An owner-chosen schedule is theirs; otherwise AdVault spreads the budget (lib/schedule/spread.ts).

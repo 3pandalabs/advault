@@ -879,23 +879,6 @@ export default function CampaignDetailPage({
         onSaved={(c) => setCampaign((prev) => (prev ? { ...prev, ...c } : prev))}
       />
 
-      <OfferCard
-        campaign={campaign}
-        onSaved={(c) => setCampaign((prev) => (prev ? { ...prev, ...c } : prev))}
-      />
-
-      {/* Per-category trust badges (lib/categories/badges); hidden when none apply. */}
-      <BadgesCard campaign={campaign} />
-
-      {/* Category extras (lib/categories/extras): dish, makes, neighbor ZIPs; open-house note. */}
-      <ExtrasCard
-        campaign={campaign}
-        onSaved={(c) => setCampaign((prev) => (prev ? { ...prev, ...c } : prev))}
-      />
-
-      {/* Trades only (lib/beforeAfter); renders nothing for other categories. */}
-      <BeforeAfterCard campaign={campaign} />
-
       <WebsiteCard
         campaign={campaign}
         ownVideoOnly={campaign.creatives.length > 0 && campaign.creatives.every((c) => c.kind === "upload")}
@@ -1170,6 +1153,42 @@ export default function CampaignDetailPage({
           onTargetingChanged={(c) => setCampaign((prev) => (prev ? { ...prev, ...c } : prev))}
         />
       )}
+
+      {/* The inputs that shape an ad: the wizard asks them before the first ad,
+          so here they are for the NEXT one, out of the way. Open when there is
+          no ad yet (none made, or every render failed). SeasonCard stays up top. */}
+      <details
+        open={!campaign.creatives.some((c) => c.renderStatus !== "failed")}
+        className="group mt-6 rounded-2xl border border-white/10 bg-white/[0.03]"
+      >
+        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-5 py-4 [&::-webkit-details-marker]:hidden">
+          <span>
+            <span className="block text-sm font-medium text-zinc-200">For your next ad: offer, badges, photos</span>
+            <span className="block text-xs text-zinc-400">Changes here are used the next time we make your ad.</span>
+          </span>
+          <span aria-hidden className="text-zinc-400 transition group-open:rotate-180">
+            ▾
+          </span>
+        </summary>
+        <div className="border-t border-white/10 px-3 pt-4 pb-1 sm:px-4">
+          <OfferCard
+            campaign={campaign}
+            onSaved={(c) => setCampaign((prev) => (prev ? { ...prev, ...c } : prev))}
+          />
+
+          {/* Per-category trust badges (lib/categories/badges); hidden when none apply. */}
+          <BadgesCard campaign={campaign} />
+
+          {/* Category extras (lib/categories/extras): dish, makes, neighbor ZIPs; open-house note. */}
+          <ExtrasCard
+            campaign={campaign}
+            onSaved={(c) => setCampaign((prev) => (prev ? { ...prev, ...c } : prev))}
+          />
+
+          {/* Trades only (lib/beforeAfter); renders nothing for other categories. */}
+          <BeforeAfterCard campaign={campaign} />
+        </div>
+      </details>
     </div>
   );
 }

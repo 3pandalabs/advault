@@ -15,16 +15,8 @@ import {
 } from "@/lib/api/browser";
 import { Card, CardDescription, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input, Label, Textarea } from "@/components/ui/input";
-import {
-  COMMON_MAKES,
-  EXTRAS_DETAIL,
-  MAX_MAKES,
-  neighborOfferText,
-  parseZips,
-  type CategoryExtras,
-  type ExtrasProblem,
-} from "@/lib/categories/extras";
+import { CategoryExtrasFields, NeighborPriceField } from "@/components/CategoryExtrasFields";
+import { EXTRAS_DETAIL, parseZips, type CategoryExtras, type ExtrasProblem } from "@/lib/categories/extras";
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
@@ -49,7 +41,8 @@ function RealtyNote({ campaign }: { campaign: Campaign }) {
  * Category extras (api lib/categories/extras): a restaurant's featured dish and
  * order link, an auto shop's makes, a landscaper's neighbor ZIPs. Saving
  * affects the NEXT ad made; the ZIP and link buttons change the campaign
- * itself and only work before launch.
+ * itself and only work before launch. The wizard asks the same
+ * (CategoryExtrasFields) so the first ad has them.
  */
 export function ExtrasCard({ campaign, onSaved }: { campaign: Campaign; onSaved: (c: Campaign) => void }) {
   const [state, setState] = useState<ExtrasState | null>(null);
@@ -57,8 +50,6 @@ export function ExtrasCard({ campaign, onSaved }: { campaign: Campaign; onSaved:
   const [photos, setPhotos] = useState<Asset[]>([]);
   const [thumbs, setThumbs] = useState<Record<string, string>>({});
   const [zipText, setZipText] = useState("");
-  const [makeText, setMakeText] = useState("");
-  const [deal, setDeal] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
@@ -144,9 +135,7 @@ export function ExtrasCard({ campaign, onSaved }: { campaign: Campaign; onSaved:
     }
   }
 
-  async function useNeighborPrice() {
-    const text = neighborOfferText(deal);
-    if (!text) return;
+  async function useNeighborPrice(text: string) {
     setBusy(true);
     setError(null);
     try {
@@ -160,160 +149,35 @@ export function ExtrasCard({ campaign, onSaved }: { campaign: Campaign; onSaved:
     }
   }
 
-  const makes = draft.makes ?? [];
-  function toggleMake(m: string) {
-    setDraft((d) => {
-      const cur = d.makes ?? [];
-      return { ...d, makes: cur.includes(m) ? cur.filter((x) => x !== m) : cur.length < MAX_MAKES ? [...cur, m] : cur };
-    });
-  }
-
   return (
     <Card className="mb-4">
-      {has("spotlight") && (
-        <div className="space-y-3 text-sm">
-          <div>
-            <CardTitle>Feature one dish</CardTitle>
-            <CardDescription>Your best dish, its photo and price lead your next ad.</CardDescription>
-          </div>
-          <div className="grid gap-2 sm:grid-cols-3">
-            <div className="sm:col-span-2">
-              <Label htmlFor="dish">Dish</Label>
-              <Input
-                id="dish"
-                maxLength={40}
-                placeholder="Wood-fired Margherita"
-                value={draft.spotlight?.dish ?? ""}
-                onChange={(e) => setDraft((d) => ({ ...d, spotlight: { ...d.spotlight, dish: e.target.value } }))}
-              />
-            </div>
-            <div>
-              <Label htmlFor="dish-price">Price (optional)</Label>
-              <Input
-                id="dish-price"
-                maxLength={12}
-                placeholder="$14"
-                value={draft.spotlight?.price ?? ""}
-                onChange={(e) => setDraft((d) => ({ ...d, spotlight: { dish: d.spotlight?.dish ?? "", ...d.spotlight, price: e.target.value } }))}
-              />
-            </div>
-          </div>
-          {photos.length > 0 && (
-            <div>
-              <p className="mb-1.5 text-zinc-400">Its photo</p>
-              <div className="flex flex-wrap gap-2">
-                {photos.map((p) => {
-                  const picked = draft.spotlight?.assetId === p.id;
-                  return (
-                    <button
-                      key={p.id}
-                      type="button"
-                      aria-pressed={picked}
-                      aria-label={p.originalFilename ?? "Photo"}
-                      onClick={() =>
-                        setDraft((d) => ({ ...d, spotlight: { dish: d.spotlight?.dish ?? "", ...d.spotlight, assetId: picked ? null : p.id } }))
-                      }
-                      className={`h-16 w-16 overflow-hidden rounded-md border-2 ${picked ? "border-amber-400" : "border-transparent"}`}
-                    >
-                      {thumbs[p.id] ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img src={thumbs[p.id]} alt="" className="h-full w-full object-cover" />
-                      ) : (
-                        <span className="block h-full w-full bg-zinc-800" />
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {has("orderUrl") && (
-        <div className="mt-4 space-y-2 text-sm">
-          <Label htmlFor="order-url">Order or reserve link (optional)</Label>
-          <Input
-            id="order-url"
-            type="url"
-            maxLength={500}
-            placeholder="https://order.example.com/your-restaurant"
-            value={draft.orderUrl ?? ""}
-            onChange={(e) => setDraft((d) => ({ ...d, orderUrl: e.target.value }))}
-          />
-          {draft.orderUrl && draft.orderUrl === state.extras.orderUrl && draft.orderUrl !== campaign.landingUrl && !launched && (
+      <CategoryExtrasFields
+        available={state.available}
+        value={draft}
+        onChange={setDraft}
+        photos={photos.map((p) => ({ id: p.id, url: thumbs[p.id], label: p.originalFilename ?? undefined }))}
+        zipText={zipText}
+        onZipText={setZipText}
+        orderUrlAction={
+          draft.orderUrl && draft.orderUrl === state.extras.orderUrl && draft.orderUrl !== campaign.landingUrl && !launched ? (
             <Button size="sm" variant="ghost" disabled={busy} onClick={useOrderLink}>
               Send people from my ad to this link
             </Button>
-          )}
-        </div>
-      )}
-
-      {has("makes") && (
-        <div className="space-y-3 text-sm">
-          <div>
-            <CardTitle>Makes you service</CardTitle>
-            <CardDescription>Shown on your next ad, for example &ldquo;We service Toyota · Honda · Ford&rdquo;.</CardDescription>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {[...new Set([...COMMON_MAKES, ...makes])].map((m) => (
-              <button
-                key={m}
-                type="button"
-                aria-pressed={makes.includes(m)}
-                onClick={() => toggleMake(m)}
-                className={`rounded-md border px-3 py-1 ${makes.includes(m) ? "border-emerald-400 bg-emerald-400/10 text-emerald-200" : "border-zinc-700 text-zinc-400"}`}
-              >
-                {m}
-              </button>
-            ))}
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Input aria-label="Another make" className="w-44" maxLength={20} placeholder="Another make" value={makeText} onChange={(e) => setMakeText(e.target.value)} />
-            <Button
-              size="sm"
-              variant="ghost"
-              disabled={!makeText.trim()}
-              onClick={() => {
-                toggleMake(makeText.trim());
-                setMakeText("");
-              }}
-            >
-              Add
-            </Button>
-          </div>
-          <p className="text-xs text-zinc-400">Up to {MAX_MAKES}. Pick only makes you really work on.</p>
-        </div>
-      )}
-
-      {has("neighborZips") && (
-        <div className="space-y-3 text-sm">
-          <div>
-            <CardTitle>Show your ad where you already work</CardTitle>
-            <CardDescription>
-              Type the ZIP codes of your current customers. Neighbors see your trucks every week, so they trust you faster.
-            </CardDescription>
-          </div>
-          <Textarea aria-label="ZIP codes of your customers" className="min-h-16" placeholder="08817, 08820, 08837" value={zipText} onChange={(e) => setZipText(e.target.value)} />
-          {launched ? (
-            <p className="text-xs text-zinc-400">Your ad is already running, so its ZIP codes can&apos;t change. Use these for your next campaign.</p>
-          ) : (
-            <Button size="sm" variant="ghost" disabled={busy || parseZips(zipText).length === 0} onClick={showInZips}>
-              Show my ad in these ZIP codes
-            </Button>
-          )}
-          <div className="flex flex-wrap items-end gap-2">
-            <div>
-              <Label htmlFor="neighbor-deal">Neighbor price (optional)</Label>
-              <Input id="neighbor-deal" className="w-56" maxLength={40} placeholder="$10 off your first mow" value={deal} onChange={(e) => setDeal(e.target.value)} />
-            </div>
-            <Button size="sm" variant="ghost" disabled={busy || !neighborOfferText(deal)} onClick={useNeighborPrice}>
-              Use as my offer
-            </Button>
-          </div>
-          {neighborOfferText(deal) && <p className="text-xs text-zinc-400">“{neighborOfferText(deal)}”</p>}
-        </div>
-      )}
+          ) : null
+        }
+        zipsAction={
+          <>
+            {launched ? (
+              <p className="text-xs text-zinc-400">Your ad is already running, so its ZIP codes can&apos;t change. Use these for your next campaign.</p>
+            ) : (
+              <Button size="sm" variant="ghost" disabled={busy || parseZips(zipText).length === 0} onClick={showInZips}>
+                Show my ad in these ZIP codes
+              </Button>
+            )}
+            <NeighborPriceField onUse={useNeighborPrice} disabled={busy} />
+          </>
+        }
+      />
 
       {error && <p className="mt-3 text-sm text-red-300">{error}</p>}
       {done && <p className="mt-3 text-sm text-emerald-300">{done}</p>}
