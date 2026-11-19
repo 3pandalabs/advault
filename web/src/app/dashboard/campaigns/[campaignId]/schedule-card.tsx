@@ -180,7 +180,7 @@ export function ScheduleCard({ campaign, onSaved }: { campaign: Campaign; onSave
                 ? `Spread across the month: ${describeSchedule(saved)}. More budget means more days.`
                 : launched
                   ? "Every day: your ad budget covers the whole month."
-                  : "Spread across the month: your ad shows on about 2 days a week, all month. We pick the days from your ad budget when it goes live. More budget means more days."
+                  : "Spread across the month: we pick the days from your ad budget when your ad goes live. More budget means more days."
               : describeSchedule(saved)}
           </CardDescription>
         </div>
