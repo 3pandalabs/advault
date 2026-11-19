@@ -234,6 +234,12 @@ orphaned a budget on every failure. Don't split it back up.
   Asia/Kolkata for India), and the campaign page's "When it shows" card says
   so. Google accepted AdSchedule on a DEMAND_GEN campaign (upgraded targeting
   on and off) in validateOnly mutates against the test customer, 2026-11-20.
+  Since the per-category work (also 2026-11-20) a schedule may carry up to
+  two `extraWindows` (own days + hours each, no overlap on a day; Google
+  allows 6 a day) for a restaurant's lunch AND dinner or weekday evenings +
+  all weekend. Launch and the targeting route send every window per day. Not
+  yet proven with a validateOnly mutate: run a dry run with a two-window
+  schedule before relying on it.
 - **Location targeting is PRESENCE only** (`geoTargetTypeSetting` on the campaign).
   Google defaults to presence-or-interest, which also serves people elsewhere who
   merely search about the area. A walk-in shop pays for those views, and the
@@ -492,6 +498,12 @@ the API copy, then the web copy).
   re-renders**: a live ad keeps what it launched with, the next ad made uses
   the new offer. It exists because PATCH refuses a live campaign. "Not now"
   is remembered per browser (localStorage), per season occurrence.
+- **Schedule presets** (`schedulePresets.ts`): Plumbing / HVAC / Electrical
+  get "24/7 for emergencies" (every day, all day) and "Evenings and weekends"
+  (Mon–Fri 5 pm–midnight + all weekend, an extra window); Restaurant gets
+  "Lunch and dinner" (11–2 and 5–9 every day) and "Dinner only". A tap only
+  fills the "When it shows" editor; the owner saves it. It is wired to Google
+  through the existing ad schedule (above).
 
 ## Google Ads API access: developer tokens are gone, and the version pin is load-bearing
 
