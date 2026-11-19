@@ -5,6 +5,7 @@ import type { Campaign, Wallet } from "@/lib/api/browser";
 import { Card, CardDescription, CardTitle } from "@/components/ui/card";
 import { TopUpPicker } from "@/components/TopUpPicker";
 import { wizardTopupKey } from "@/lib/budget";
+import { MONTHLY_RECHARGE_LINE } from "@/lib/prices";
 import { ADD_MORE_LINE } from "@/lib/spread";
 import { formatMoney } from "@/lib/utils";
 
@@ -36,6 +37,7 @@ export function AdBudgetCard({ campaign, wallet }: { campaign: Campaign; wallet:
         Your ad runs until your budget runs out.{" "}
         You only pay for what Google delivers. Unused budget stays in your account.
       </CardDescription>
+      <p className="mt-2 text-sm text-zinc-300">{MONTHLY_RECHARGE_LINE}</p>
       <p className="mt-2 text-sm text-zinc-300">{ADD_MORE_LINE} More budget means more days of showing.</p>
       <p className="mt-4 text-sm font-medium text-zinc-200">Add to your ad budget</p>
       <div className="mt-2">

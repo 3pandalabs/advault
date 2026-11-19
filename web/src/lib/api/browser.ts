@@ -1149,7 +1149,7 @@ export type SubscriptionView = {
     pastDue: boolean;
     /** The included first month: nothing is charged until this date. */
     includedUntil?: string | null;
-    /** The automatic monthly ad-budget recharge ("$55 a month" plans: 3500); 0 or absent for grandfathered $19 plans. */
+    /** The automatic monthly ad-budget recharge ("$55 a month": 3500); 0 or absent when Google bills the customer's own card. */
     budgetRechargeMinor?: number;
   } | null;
   entitled: boolean;

@@ -125,8 +125,7 @@ export default function TermsPage() {
               charged automatically with the plan fee; 100% of it goes to Google. It is not
               charged for a month in which no ad is running, including while your ad is paused.
               Ad budget you do not use rolls over in your account and is refundable as section 5
-              explains. A Keep it running plan started before the $20 price keeps its $19/month
-              price and has no automatic ad-budget recharge.
+              explains.
               If we make you a SiteVault website, it is a one-off $10 charge, and its Pro
               features stay included while your Keep it running plan runs.
               Each ad we make is a one-off $10 charge, paid before we make it, including

@@ -24,6 +24,9 @@ export const PLAN_PRICE_CENTS_PER_MONTH = 2_000;
 /** The ad budget the plan recharges automatically each month (100% to Google). */
 export const MONTHLY_AD_BUDGET_CENTS = 3_500;
 
+/** Wallet page and campaign ad-budget card: the automatic monthly recharge. */
+export const MONTHLY_RECHARGE_LINE = `While your AdVault plan runs, $${MONTHLY_AD_BUDGET_CENTS / 100} is added to your ad budget automatically each month, charged with the $${PLAN_PRICE_CENTS_PER_MONTH / 100} plan fee. 100% of it goes to Google.`;
+
 /** The smallest ad budget top-up (also lib/budget TOPUP_PRESETS_CENTS[0]). */
 export const MIN_AD_BUDGET_CENTS = 3_500;
 

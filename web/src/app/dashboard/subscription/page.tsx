@@ -132,8 +132,8 @@ export default function SubscriptionPage() {
   const firstMonthAvailable = view?.plan?.firstMonthAvailable !== false;
   // The API sends includedUntil only while the included month is still running.
   const inIncludedMonth = Boolean(sub?.includedUntil);
-  // "$55 a month" plans also recharge the ad budget each month; plans started
-  // before it (grandfathered at $19) have 0 / no field and no recharge.
+  // "$55 a month": the plan also recharges the ad budget each month. 0 / no
+  // field when Google bills the customer's own card (or another line).
   const rechargeMinor = sub?.budgetRechargeMinor ?? 0;
 
   return (
@@ -141,7 +141,7 @@ export default function SubscriptionPage() {
       <div>
         <h1 className="text-2xl font-semibold">Subscription</h1>
         <p className="mt-1 text-sm text-zinc-400">
-          {sub
+          {sub && rechargeMinor === 0
             ? "Your plan runs while your ad is running. Pause anytime: no fee while paused."
             : "$20 a month plus $35 ad budget, while your ad is running. Pause anytime: no fee and no recharge while paused."}
         </p>
@@ -189,7 +189,7 @@ export default function SubscriptionPage() {
             // The plan follows the running ad (2026-11-19): no cancel button.
             <p className="mt-4 text-sm text-zinc-400">
               {sub.cancelAtPeriodEnd
-                ? `No ad is running, so your plan stops on ${sub.currentPeriodEnd ? formatDate(sub.currentPeriodEnd) : "the end of this month"} and nothing more is charged. Resume an ad before then and it simply carries on; after that, resuming restarts it.`
+                ? `No ad is running, so your plan stops on ${sub.currentPeriodEnd ? formatDate(sub.currentPeriodEnd) : "the end of this month"} and nothing more is charged. Resume an ad before then and it simply carries on; after that, resuming restarts it at ${sub.display} a month${rechargeMinor > 0 ? ` plus ${fmt(rechargeMinor, sub.currencyCode)} ad budget` : ""}.`
                 : adRunning
                   ? `Your ad is running, so your plan renews each month. Pause your ad on its campaign page and the plan stops at the end of the month you've paid for: no fee${rechargeMinor > 0 ? " and no recharge" : ""} while paused.`
                   : "No ad is running: your plan will stop at the end of this month."}

@@ -423,14 +423,14 @@ export default function CampaignDetailPage({
       if (action === "pause") {
         await pauseCampaign(campaignId);
         setLaunchNote(
-          "Paused. Your ad has stopped showing. With no ad running, your AdVault plan stops at the end of the month you've paid for: no fee and no ad-budget recharge while paused.",
+          "Paused. Your ad has stopped showing. With no ad running, your $20 plan stops at the end of the month you've paid for: no fee and no ad-budget recharge while paused.",
         );
       } else {
         const r = await resumeCampaign(campaignId);
         setPlanPrompt(null);
         setLaunchNote(
           r.planRestarted
-            ? "Your ad is running again. Your AdVault plan restarted today with your saved card."
+            ? "Your ad is running again. Your $20 plan restarted today with your saved card."
             : "Your ad is running again.",
         );
       }
