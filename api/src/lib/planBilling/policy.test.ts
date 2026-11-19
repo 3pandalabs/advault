@@ -113,40 +113,31 @@ describe("planAllowsRunning (automatic restart after a top-up)", () => {
   });
 });
 
-describe("$55 a month: plan terms and grandfathering", () => {
+describe("$55 a month: plan terms", () => {
   const base = {
     line: "evergreen",
     listFeeMinor: 2_000,
     rechargeMinor: 3_500,
-    priorPaidPlanFeesMinor: [] as number[],
     billingMode: "platform" as string | null,
     testMode: false,
   };
 
-  it("a new plan is $20 plus a $35 monthly ad budget", () => {
-    expect(planTerms(base)).toEqual({ feeMinor: 2_000, budgetRechargeMinor: 3_500, grandfathered: false });
+  it("every plan is $20 plus a $35 monthly ad budget", () => {
+    expect(planTerms(base)).toEqual({ feeMinor: 2_000, budgetRechargeMinor: 3_500 });
     // No ad account yet (the default is platform-billed): same.
-    expect(planTerms({ ...base, billingMode: null })).toEqual({ feeMinor: 2_000, budgetRechargeMinor: 3_500, grandfathered: false });
-    // An earlier $20 plan is not grandfathering.
-    expect(planTerms({ ...base, priorPaidPlanFeesMinor: [2_000] }).grandfathered).toBe(false);
-  });
-
-  it("an account that ever paid the $19 plan keeps $19 with no recharge", () => {
-    expect(planTerms({ ...base, priorPaidPlanFeesMinor: [1_900] })).toEqual({ feeMinor: 1_900, budgetRechargeMinor: 0, grandfathered: true });
-    expect(planTerms({ ...base, priorPaidPlanFeesMinor: [2_000, 1_900] }).grandfathered).toBe(true);
+    expect(planTerms({ ...base, billingMode: null })).toEqual({ feeMinor: 2_000, budgetRechargeMinor: 3_500 });
   });
 
   it("no recharge when Google bills the customer's own card", () => {
-    expect(planTerms({ ...base, billingMode: "customer" })).toEqual({ feeMinor: 2_000, budgetRechargeMinor: 0, grandfathered: false });
+    expect(planTerms({ ...base, billingMode: "customer" })).toEqual({ feeMinor: 2_000, budgetRechargeMinor: 0 });
   });
 
-  it("test mode charges both lines at the 50-cent test price and never grandfathers", () => {
-    expect(planTerms({ ...base, testMode: true })).toEqual({ feeMinor: 50, budgetRechargeMinor: 50, grandfathered: false });
-    expect(planTerms({ ...base, testMode: true, priorPaidPlanFeesMinor: [1_900] }).feeMinor).toBe(50);
+  it("test mode charges both lines at the 50-cent test price", () => {
+    expect(planTerms({ ...base, testMode: true })).toEqual({ feeMinor: 50, budgetRechargeMinor: 50 });
   });
 
   it("other lines get their list fee and no recharge", () => {
-    expect(planTerms({ ...base, line: "offer", listFeeMinor: 3_900 })).toEqual({ feeMinor: 3_900, budgetRechargeMinor: 0, grandfathered: false });
+    expect(planTerms({ ...base, line: "offer", listFeeMinor: 3_900 })).toEqual({ feeMinor: 3_900, budgetRechargeMinor: 0 });
   });
 });
 

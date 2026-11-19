@@ -87,7 +87,7 @@ export async function billingRoutes(app: FastifyInstance) {
       const q = req.query as { currency: string; adBudgetMinor: number; marginMode: "standard" | "at_cost" };
       if (!isCurrency(q.currency)) return reply.code(400).send({ error: "unsupported_currency" });
 
-      // US: Keep it running ($19/month + budget, $10 per ad), the plan the brand ad sells.
+      // US: Keep it running ($20/month + $35 budget, $10 per ad), the plan the brand ad sells.
       // India: managed, the only plan there that buys media. Never the offer
       // line, which has no ad budget to estimate against.
       const plan = q.currency === "USD" ? planByKey("us-evergreen")! : planFor(q.currency, "managed");

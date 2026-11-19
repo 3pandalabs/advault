@@ -160,7 +160,7 @@ Treat it accordingly:
   `lib/planBilling`; 402 `plan_required {firstMonthIncluded}` / `plan_pending`
   / `plan_has_no_ads`). Admins and at_cost accounts are exempt. Until
   2026-11-11 launch never checked, so anyone could run ads without paying the
-  fee. Since 2026-11-19 the first plan is a $0 Stripe trial (see "The $19 plan
+  fee. Since 2026-11-19 the first plan is a $0 Stripe trial (see "The plan
   follows the running ad").
 - `campaigns.status` only reaches `live` through `POST /campaigns/:id/launch`,
   which is the single place that CREATES spend. The only other Google mutates
@@ -654,7 +654,7 @@ strings. `lib/pricing` now holds five SKUs and one of them has to be sold:
 |---|---|---|
 | `offer` — 3 fresh videos/month, **no Google at all** | ₹999/mo | $39/mo |
 | `managed` — creatives plus a live campaign | ₹1,499/mo fee | $79/mo fee |
-| `evergreen` ("Keep it running") — one ad kept live, no monthly offer, $10 per ad | not sold | $19/mo fee |
+| `evergreen` ("Keep it running") — one ad kept live, no monthly offer, $10 per ad | not sold | $20/mo fee + $35/mo ad budget |
 
 **Evergreen never enters the offer loop.** No offer cycles, no WhatsApp prompt,
 and `POST /offers/current` refuses it (`plan_has_no_offers`): an offer sets an
@@ -700,14 +700,15 @@ customer keeps being charged and the database stays in month one.
 decision and are tested. Anything reaching for `db` or `fetch` belongs in the
 sibling `index.ts`.
 
-## The $19 plan follows the running ad (2026-11-19, migration 0038, `lib/planBilling`)
+## The plan follows the running ad (2026-11-19, migration 0038, `lib/planBilling`)
 
-Owner decision, option B: **"$19 a month while your ad is running. Pause
+Owner decision, option B (amounts since "$55 a month" below): **"$20 a month
+plus your $35 monthly ad budget while your ad is running. Pause
 anytime: no fee while paused."** and **first month included with the first
 ad**, once per account. The customer's first payment is the $10 ad + $35
 minimum budget = $45. Copy everywhere is `web/src/components/PlanPriceLines.tsx`
 (three lines + "Every dollar of your ad budget goes to Google. AdVault earns
-only the $10 and the $19."). Applies to the `evergreen` line only
+only the $10 and the $20."). Applies to the `evergreen` line only
 (`PLAN_FOLLOWS_RUNNING_LINE`); other lines keep the old lifecycle.
 
 - **Running** = live + launched + `ends_on` not past (UTC). No Google call; our
@@ -730,7 +731,7 @@ only the $10 and the $19."). Applies to the `evergreen` line only
   `subscriptions` would have to learn to discount.
 - **First month**: `POST /subscription` for an account with
   `users.plan_first_month_used_at` NULL creates a $0 first invoice and a
-  Stripe Checkout trial to the period end (card saved; the first $19 a month
+  Stripe Checkout trial to the period end (card saved; the first $20 + $35 a month
   later only if an ad still runs, else the trial just ends). Paying the $0
   invoice sets `plan_first_month_used_at` once. 0038 backfilled it for every
   account that ever paid a plan invoice. Launch answers 402 `plan_required
@@ -761,12 +762,10 @@ Owner decision: month one = $10 ad + $10 website + $0 plan (included) + $35
 ad budget; every month after = $20 plan + $35 ad budget. The section above
 still describes the lifecycle; this changes the amounts.
 
-- **Grandfathering** (`planTerms` in `lib/planBilling/policy.ts`, pure,
-  tested): an account that ever PAID a $19 evergreen plan keeps $19 and gets
-  no recharge, on restart and on a new checkout. Live $19 Stripe
-  subscriptions are never touched; their rows keep `amount_minor` 1900 and
-  `budget_recharge_minor` 0. Customer-billed ad accounts get no recharge.
-  Test mode: both lines at 50 cents.
+- **One price set for everyone** (`planTerms` in `lib/planBilling/policy.ts`,
+  pure, tested): $20 plan + $35 recharge. No grandfathering: the $19 plan
+  never had a real customer. Customer-billed ad accounts (Google charges
+  their own card) get no recharge. Test mode: both lines at 50 cents.
 - **Recharge = a second recurring line on the same Stripe subscription**
   (`stripeSubscriptionLine` / `stripeRestartForm`). One invoice a month, the
   included-month trial covers both, `cancel_at_period_end` stops both, so
@@ -781,11 +780,11 @@ still describes the lifecycle; this changes the amounts.
 - **An ad paused only for funds keeps a recharging plan billing**
   (`adWantsPlan`): the next month refills it and switches it back on. A
   customer pause still stops the plan.
-- **Stripe prices by amount** (`stripePlanPriceId`): $19 =
-  `STRIPE_PRICE_US_EVERGREEN` (unchanged), $20 = `STRIPE_PRICE_US_EVERGREEN_20`,
-  $35 budget = `STRIPE_PRICE_US_AD_BUDGET`. Missing ids fall back to inline
-  prices (checkout) or the previous subscription's products (restart), so
-  nothing breaks before the owner creates them.
+- **Stripe prices**: $20 plan = `STRIPE_PRICE_US_EVERGREEN` (must point at
+  a $20 price, not the old $19 one, or the webhook's amount check refuses the
+  payment), $35 budget = `STRIPE_PRICE_US_AD_BUDGET`. Missing ids fall back to
+  inline prices (checkout) or the previous subscription's products (restart),
+  so nothing breaks before the owner creates them.
 - **Website included while the plan runs** (`lib/sitePlanCover`): the plan
   sweep asks SiteVault (`POST /api/internal/sites/<slug>/plan-cover`
   `{until, ref}`) to keep the AdVault-made site on Pro until the plan's paid

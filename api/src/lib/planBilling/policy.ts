@@ -1,13 +1,13 @@
-// The $19 plan follows the running ad (owner decision 2026-11-19, option B).
+// The plan follows the running ad (owner decision 2026-11-19, option B).
 //
-//   "$19 a month while your ad is running. Pause anytime: no fee while paused."
+//   "$20 a month plus your $35 monthly ad budget while your ad is running. Pause anytime: no fee while paused."
 //   First month included with the first ad, once per account.
 //
 // Every pure decision lives here and is tested (policy.test.ts); ./index.ts is
 // the database and Stripe side. Read the "Plan follows the running ad" section
 // of CLAUDE.md first.
 
-import { EVERGREEN_GRANDFATHERED_FEE_MINOR, TEST_PRICE_MINOR } from "../pricing/index.js";
+import { TEST_PRICE_MINOR } from "../pricing/index.js";
 import type { SubscriptionStatus } from "../subscriptions/policy.js";
 
 /** The only line whose fee follows the running ad. Others keep their old lifecycle. */
@@ -100,7 +100,7 @@ export function planBillingAction(args: {
  *   landed (seconds); try again.
  * - `plan_required`: start or restart the plan. `firstMonthIncluded` = this
  *   account has never used its included month: the plan checkout charges $0
- *   today (Stripe trial) and the first $19 a month later, and only if an ad
+ *   today (Stripe trial) and the first $20 + $35 a month later, and only if an ad
  *   is still running then. Otherwise the caller tries an off-session restart
  *   with the saved card before answering this.
  */
@@ -128,7 +128,7 @@ export function planGate(args: {
 // ---------------------------------------------------------------------------
 // "$55 a month" (owner decision 2026-11-19): new plans are $20 a month plus a
 // $35 monthly ad budget recharge, credited to the wallet with every paid
-// month. Existing subscribers stay on $19 with no recharge.
+// month. One price set for everyone (no customers were on the old $19).
 // ---------------------------------------------------------------------------
 
 export type PlanTerms = {
@@ -136,18 +136,12 @@ export type PlanTerms = {
   feeMinor: number;
   /** Ad budget charged with every paid month (subscriptions.budget_recharge_minor). */
   budgetRechargeMinor: number;
-  /** Kept the $19 price of an earlier plan. */
-  grandfathered: boolean;
 };
 
 /**
  * The terms a NEW subscription starts on. Pure.
  *
- * - Grandfathered: an account that ever PAID a Keep it running plan at $19
- *   (`priorPaidPlanFeesMinor` holds amount_minor of its earlier paid
- *   evergreen subscriptions, the included $0 month counting as paid) keeps
- *   $19 and gets no recharge, on a restart and on a new checkout alike. Its
- *   live Stripe subscription is never touched either way.
+ * - Keep it running: the list fee ($20) plus the monthly ad budget ($35).
  * - No recharge for a customer-billed ad account: Google charges their own
  *   card, the wallet never pays for their ads.
  * - Test mode (admin testing as a customer): both lines at the 50-cent test
@@ -159,18 +153,15 @@ export function planTerms(args: {
   listFeeMinor: number;
   /** MONTHLY_AD_BUDGET_RECHARGE_MINOR for the plan's currency (0 when none). */
   rechargeMinor: number;
-  priorPaidPlanFeesMinor: readonly number[];
   billingMode: string | null;
   testMode: boolean;
 }): PlanTerms {
   const test = (minor: number) => (args.testMode && minor > 0 ? TEST_PRICE_MINOR : minor);
   if (args.line !== PLAN_FOLLOWS_RUNNING_LINE) {
-    return { feeMinor: test(args.listFeeMinor), budgetRechargeMinor: 0, grandfathered: false };
+    return { feeMinor: test(args.listFeeMinor), budgetRechargeMinor: 0 };
   }
-  const grandfathered = !args.testMode && args.priorPaidPlanFeesMinor.includes(EVERGREEN_GRANDFATHERED_FEE_MINOR);
-  if (grandfathered) return { feeMinor: EVERGREEN_GRANDFATHERED_FEE_MINOR, budgetRechargeMinor: 0, grandfathered };
   const recharge = args.billingMode === "customer" ? 0 : Math.max(0, args.rechargeMinor);
-  return { feeMinor: test(args.listFeeMinor), budgetRechargeMinor: test(recharge), grandfathered: false };
+  return { feeMinor: test(args.listFeeMinor), budgetRechargeMinor: test(recharge) };
 }
 
 /**

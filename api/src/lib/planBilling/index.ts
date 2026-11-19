@@ -1,6 +1,6 @@
 import { and, desc, eq, inArray, isNotNull, or } from "drizzle-orm";
 import { db } from "../../db/index.js";
-import { campaigns, subscriptionInvoices, subscriptions, users } from "../../db/schema.js";
+import { campaigns, subscriptions, users } from "../../db/schema.js";
 import { notifyOps } from "../ops/notify.js";
 import {
   buysMedia,
@@ -36,7 +36,7 @@ import {
   type PlanTerms,
 } from "./policy.js";
 
-// The $19 plan follows the running ad (owner decision 2026-11-19, option B).
+// The plan follows the running ad (owner decision 2026-11-19, option B).
 // The pure rules are in ./policy.ts. This is the database and Stripe side.
 //
 //   syncPlanBillingForUser(userId)   THE one place that moves the plan to
@@ -95,30 +95,18 @@ export async function hasAdWaitingForBudget(userId: string, now = new Date()): P
 
 /**
  * The terms a NEW plan subscription for this user starts on ("$55 a month",
- * policy.ts planTerms): $20 + the $35 monthly ad budget, or the grandfathered
- * $19 with no recharge for an account that ever paid a $19 plan.
+ * policy.ts planTerms): $20 + the $35 monthly ad budget (no recharge when
+ * Google bills the customer's own card; 50 cents each in test mode).
  */
 export async function planTermsFor(
   userId: string,
   plan: Plan,
   who: { testMode: boolean },
 ): Promise<PlanTerms> {
-  const prior = await db
-    .selectDistinct({ amountMinor: subscriptions.amountMinor })
-    .from(subscriptions)
-    .innerJoin(subscriptionInvoices, eq(subscriptionInvoices.subscriptionId, subscriptions.id))
-    .where(
-      and(
-        eq(subscriptions.userId, userId),
-        eq(subscriptions.line, PLAN_FOLLOWS_RUNNING_LINE),
-        eq(subscriptionInvoices.status, "paid"),
-      ),
-    );
   return planTerms({
     line: plan.line,
     listFeeMinor: plan.monthlyFeeMinor,
     rechargeMinor: MONTHLY_AD_BUDGET_RECHARGE_MINOR[plan.currency] ?? 0,
-    priorPaidPlanFeesMinor: prior.map((p) => p.amountMinor),
     billingMode: await billingModeFor(userId),
     testMode: who.testMode,
   });

@@ -125,7 +125,7 @@ export async function subscriptionRoutes(app: FastifyInstance) {
           status: sub.status,
           amountMinor: sub.amountMinor,
           // "$55 a month" (0041): ad budget charged with each paid month and
-          // added to the wallet. 0 = none (a grandfathered $19 plan).
+          // added to the wallet. 0 = none (customer-billed ad account, other lines).
           budgetRechargeMinor: sub.budgetRechargeMinor,
           currencyCode: sub.currencyCode,
           display: formatMinor(sub.amountMinor, sub.currencyCode as Currency),
@@ -180,8 +180,8 @@ export async function subscriptionRoutes(app: FastifyInstance) {
         // people pay us" without a filter someone will forget.
         // Admin "Test as customer" is billed as standard, at the test price.
         const who = await billingIdentity(req.userId!);
-        // "$55 a month" (planTerms): $20 + the $35 monthly ad budget for new
-        // plans; an account that ever paid the $19 plan keeps $19, no recharge.
+        // "$55 a month" (planTerms): $20 + the $35 monthly ad budget, the
+        // same for everyone.
         const terms = await planTermsFor(req.userId!, plan, who);
         const amountMinor = terms.feeMinor;
         if (who.marginMode === "at_cost") {
@@ -201,8 +201,8 @@ export async function subscriptionRoutes(app: FastifyInstance) {
           returnUrl = `${env.WEB_ORIGIN}/dashboard/campaigns/${campaignId}`;
         }
 
-        // The $19 plan's first month is included once per account (0038,
-        // lib/planBilling): $0 today (a Stripe trial), card saved, first $19
+        // The plan's first month is included once per account (0038,
+        // lib/planBilling): $0 today (a Stripe trial), card saved, first $20 + $35
         // a month later and only if an ad is still running then.
         const firstMonthIncluded =
           plan.line === PLAN_FOLLOWS_RUNNING_LINE && (await firstMonthAvailable(req.userId!));
@@ -285,7 +285,7 @@ export async function subscriptionRoutes(app: FastifyInstance) {
         const { immediate } = req.body as { immediate: boolean };
         const sub = await liveSubscriptionFor(req.userId!);
         if (!sub) return reply.code(404).send({ error: "no_subscription" });
-        // The $19 plan follows the running ad: it stops by itself when no ad
+        // The plan follows the running ad: it stops by itself when no ad
         // runs, and the sync would undo a cancel while one does. Pausing the
         // ad is how a customer stops paying.
         if (sub.line === PLAN_FOLLOWS_RUNNING_LINE && (await hasRunningAd(req.userId!))) {

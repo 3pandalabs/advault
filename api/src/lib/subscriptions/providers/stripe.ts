@@ -1,5 +1,5 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
-import { isCurrency } from "../../pricing/index.js";
+import { isCurrency, PLANS } from "../../pricing/index.js";
 import { internalStripeMetadata, isUndeliverableEmail } from "../../testMode/policy.js";
 import type {
   SubscriptionCheckout,
@@ -29,18 +29,14 @@ const PRICE_IDS: Record<string, string | undefined> = {
  * The fixed Stripe price for a plan at a given monthly amount, or null (the
  * caller then sends an inline monthly price).
  *
- * Keep it running has two live amounts since "$55 a month" (2026-11-19):
- * $19 (`STRIPE_PRICE_US_EVERGREEN`, the original price; grandfathered
- * subscriptions keep it, and Stripe keeps charging them on it) and $20
- * (`STRIPE_PRICE_US_EVERGREEN_20`, new subscriptions). Picking by amount
- * means a grandfathered restart can never land on the $20 price. Read at call
- * time so the env can be set without a code change.
+ * Keep it running: `STRIPE_PRICE_US_EVERGREEN` is the $20 price ("$55 a
+ * month", 2026-11-19). Only used when the amount is the plan's list fee, so
+ * any other amount (test mode's 50 cents) goes inline. Read at call time so
+ * the env can be set without a code change.
  */
 export function stripePlanPriceId(planKey: string, amountMinor: number): string | null {
   if (planKey === "us-evergreen") {
-    if (amountMinor === 1_900) return process.env.STRIPE_PRICE_US_EVERGREEN || null;
-    if (amountMinor === 2_000) return process.env.STRIPE_PRICE_US_EVERGREEN_20 || null;
-    return null;
+    return amountMinor === PLANS["us-evergreen"]!.monthlyFeeMinor ? process.env.STRIPE_PRICE_US_EVERGREEN || null : null;
   }
   return PRICE_IDS[planKey] || null;
 }
@@ -100,7 +96,7 @@ export function stripeSubscriptionLine(req: SubscriptionCheckoutRequest): Record
     if (priceId) {
       plan = { "line_items[0][price]": priceId, "line_items[0][quantity]": "1" };
     } else if (req.planKey === "us-evergreen") {
-      // The $20 price not created yet: charge the right amount inline rather
+      // STRIPE_PRICE_US_EVERGREEN unset: charge the right amount inline rather
       // than refuse every new customer's plan (and with it every launch).
       console.warn(
         JSON.stringify({ msg: "no Stripe price for this plan amount; using an inline price", planKey: req.planKey, amountMinor: req.amountMinor }),

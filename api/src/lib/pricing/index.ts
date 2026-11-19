@@ -158,10 +158,8 @@ export const PLANS: Record<string, Plan> = {
     key: "us-evergreen",
     currency: "USD",
     line: "evergreen",
-    // $20/month platform fee for NEW subscriptions ("$55 a month", owner
-    // decision 2026-11-19; $19 until then). Subscriptions started at $19 keep
-    // it: the amount is fixed on the subscription row and on its Stripe price
-    // (EVERGREEN_GRANDFATHERED_FEE_MINOR, lib/planBilling planTerms).
+    // $20/month platform fee ("$55 a month", owner decision 2026-11-19; $19
+    // until then, never sold to a real customer, so nobody is grandfathered).
     monthlyFeeMinor: 2_000,
     // Ads are bought one at a time ($10 each), never bundled into the fee.
     includedCreativesPerMonth: 0,
@@ -173,13 +171,6 @@ export const PLANS: Record<string, Plan> = {
     blurb: "One ad kept running on YouTube around your business. $10 per ad, no monthly offers.",
   },
 };
-
-/**
- * The Keep it running fee before "$55 a month" (2026-11-19). Accounts that
- * ever paid a plan at this price keep it, with no monthly budget recharge
- * (lib/planBilling planTerms).
- */
-export const EVERGREEN_GRANDFATHERED_FEE_MINOR = 1_900;
 
 /**
  * "$55 a month" (2026-11-19): every PAID month of a new Keep it running plan

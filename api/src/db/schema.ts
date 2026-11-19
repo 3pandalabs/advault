@@ -67,7 +67,7 @@ export const users = pgTable(
     // ("INTERNAL · ", Stripe `internal=1`). `internalLabel` is the product.
     isInternal: boolean("is_internal").notNull().default(false),
     internalLabel: text("internal_label"),
-    // The $19 plan's included first month (0038, lib/planBilling): set when
+    // The plan's included first month (0038, lib/planBilling): set when
     // it was used. NULL = this account's next plan starts with a free month.
     planFirstMonthUsedAt: timestamp("plan_first_month_used_at", { withTimezone: true }),
 
@@ -992,8 +992,8 @@ export const subscriptions = pgTable(
     firstMonthIncluded: boolean("first_month_included").notNull().default(false),
     includedUntil: timestamp("included_until", { withTimezone: true }),
     // Ad budget charged with every paid month (0041, "$55 a month"): 3500 =
-    // $35 credited to the wallet each month; 0 = none (grandfathered $19
-    // plans and every line other than evergreen).
+    // $35 credited to the wallet each month; 0 = none (customer-billed ad
+    // accounts and every line other than evergreen).
     budgetRechargeMinor: integer("budget_recharge_minor").notNull().default(0),
 
     // pending  — created, first payment not yet confirmed

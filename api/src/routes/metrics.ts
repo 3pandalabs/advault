@@ -130,7 +130,7 @@ export async function metricsRoutes(app: FastifyInstance) {
         -- 3PandaLabs' own internal accounts (users.is_internal, 0032): those pay
         -- full price but are the org paying itself, reported separately below.
         (select count(*) from subscriptions where status = 'active' and not cancel_at_period_end and (included_until is null or included_until <= now()) and user_id not in (select id from users where role = 'admin' or test_owner_id is not null or is_internal))::int as paying_subscribers,
-        -- The $19 plan follows the running ad (0038, lib/planBilling): a plan
+        -- The plan follows the running ad (0038, lib/planBilling): a plan
         -- stopping at period end (no ad running) or still in its included
         -- free month is not recurring revenue, so MRR and paying subscribers
         -- above skip both; they are counted here instead.

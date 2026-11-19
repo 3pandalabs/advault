@@ -105,18 +105,17 @@ describe("$55 a month: Stripe lines", () => {
     returnUrl: "https://x.test",
   };
 
-  it("picks the $19 and $20 prices by amount, so a grandfathered plan never lands on $20", () => {
-    process.env.STRIPE_PRICE_US_EVERGREEN = "price_19";
-    process.env.STRIPE_PRICE_US_EVERGREEN_20 = "price_20";
-    expect(stripe.stripePlanPriceId("us-evergreen", 1900)).toBe("price_19");
+  it("uses STRIPE_PRICE_US_EVERGREEN for the $20 plan, inline for any other amount", () => {
+    process.env.STRIPE_PRICE_US_EVERGREEN = "price_20";
     expect(stripe.stripePlanPriceId("us-evergreen", 2000)).toBe("price_20");
     expect(stripe.stripePlanPriceId("us-evergreen", 50)).toBeNull();
-    delete process.env.STRIPE_PRICE_US_EVERGREEN_20;
+    expect(stripe.stripePlanPriceId("us-evergreen", 1900)).toBeNull();
+    delete process.env.STRIPE_PRICE_US_EVERGREEN;
     expect(stripe.stripePlanPriceId("us-evergreen", 2000)).toBeNull();
   });
 
   it("a new plan is two recurring lines: the $20 plan and the $35 ad budget", () => {
-    process.env.STRIPE_PRICE_US_EVERGREEN_20 = "price_20";
+    process.env.STRIPE_PRICE_US_EVERGREEN = "price_20";
     process.env.STRIPE_PRICE_US_AD_BUDGET = "price_budget";
     expect(stripe.stripeSubscriptionLine({ ...req, budgetMinor: 3500 })).toEqual({
       "line_items[0][price]": "price_20",
@@ -124,16 +123,15 @@ describe("$55 a month: Stripe lines", () => {
       "line_items[1][price]": "price_budget",
       "line_items[1][quantity]": "1",
     });
-    // Grandfathered: one line, the $19 price.
-    process.env.STRIPE_PRICE_US_EVERGREEN = "price_19";
-    expect(stripe.stripeSubscriptionLine({ ...req, amountMinor: 1900, budgetMinor: 0 })).toEqual({
-      "line_items[0][price]": "price_19",
+    // A customer-billed ad account: one line, the plan.
+    expect(stripe.stripeSubscriptionLine({ ...req, budgetMinor: 0 })).toEqual({
+      "line_items[0][price]": "price_20",
       "line_items[0][quantity]": "1",
     });
   });
 
   it("without the new price objects it charges the right amounts inline", () => {
-    delete process.env.STRIPE_PRICE_US_EVERGREEN_20;
+    delete process.env.STRIPE_PRICE_US_EVERGREEN;
     delete process.env.STRIPE_PRICE_US_AD_BUDGET;
     expect(stripe.stripeSubscriptionLine({ ...req, budgetMinor: 3500 })).toMatchObject({
       "line_items[0][price_data][unit_amount]": "2000",
@@ -148,7 +146,7 @@ describe("$55 a month: Stripe lines", () => {
     });
   });
 
-  it("a restart carries the budget line too, and a grandfathered one does not", () => {
+  it("a restart carries the budget line too, and one with no recharge does not", () => {
     const common = {
       customerRef: "cus_1",
       paymentMethod: "pm_1",
@@ -165,7 +163,7 @@ describe("$55 a month: Stripe lines", () => {
       "items[1][price_data][unit_amount]": "3500",
       "items[1][price_data][product]": "prod_budget",
     });
-    const none = stripe.stripeRestartForm({ ...common, priceId: "price_19", amountMinor: 1900 });
+    const none = stripe.stripeRestartForm({ ...common, priceId: "price_20", amountMinor: 2000 });
     expect(Object.keys(none).some((k) => k.startsWith("items[1]"))).toBe(false);
   });
 });

@@ -7,7 +7,7 @@ import { ensurePlanForRunning, syncPlanBillingForUser } from "./index.js";
 
 /**
  * A top-up landed (API, payment webhook). If the empty budget had paused an
- * ad, make sure the $19 plan covers it (restart off-session with the saved
+ * ad, make sure the plan covers it (restart off-session with the saved
  * card when its period ran out while paused), switch the ad back on, then let
  * the plan follow (un-stop a stopping one). Never throws.
  */

@@ -1,4 +1,4 @@
-// The $19 plan follows the running ad (2026-11-19): first month included once,
+// The plan follows the running ad (2026-11-19): first month included once,
 // stop at period end when no ad runs, un-stop inside the period, restart with
 // the saved card after it, the Stripe webhook's first-payment duplicate, and
 // the pause / resume routes. PGlite; Stripe and Google mocked.
@@ -416,62 +416,6 @@ describe("$55 a month: the monthly $35 ad budget recharge", () => {
   });
 });
 
-describe("$55 a month: existing $19 subscribers are grandfathered", () => {
-  /** An account that paid the old $19 plan, now ended. */
-  async function legacy(email: string) {
-    const userId = await newUser(email, "advertiser", "plan_first_month_used_at = now()");
-    const accountId = await account(userId);
-    const s = await pg.query<{ id: string }>(
-      `insert into subscriptions (user_id, plan_key, line, currency_code, amount_minor, provider, status, provider_ref,
-         provider_subscription_ref, provider_customer_ref, current_period_start, current_period_end)
-       values ($1, 'us-evergreen', 'evergreen', 'USD', 1900, 'stripe', 'canceled', $2, $2, 'cus_old',
-         now() - interval '40 days', now() - interval '10 days') returning id`,
-      [userId, email.startsWith("gf-restart") ? "sub_old" : `sub_old_${email}`],
-    );
-    await pg.query(
-      `insert into subscription_invoices (subscription_id, user_id, amount_minor, currency_code, period_start, period_end, status, external_ref)
-       values ($1, $2, 1900, 'USD', now() - interval '40 days', now() - interval '10 days', 'paid', 'stripe:in_old')`,
-      [s.rows[0]!.id, userId],
-    );
-    await pg.query(`insert into wallets (user_id, currency_code, balance_minor) values ($1, 'USD', 10000)`, [userId]);
-    return { userId, accountId };
-  }
-
-  it("a restart keeps $19 and adds no recharge", async () => {
-    const { userId, accountId } = await legacy("gf-restart@x.test");
-    const id = await campaign(userId, accountId, "paused");
-    holder.restart.mockResolvedValueOnce({ ok: true, subscriptionRef: "sub_gf", customerRef: "cus_old", invoiceRef: "in_gf", amountPaidMinor: 1900 });
-    const res = await app.inject({ method: "POST", url: `/campaigns/${id}/resume`, headers: { "x-test-user": userId } });
-    expect(res.json()).toMatchObject({ planRestarted: true });
-    expect(holder.restart.mock.calls[0]![0]).toMatchObject({ previousSubscriptionRef: "sub_old", amountMinor: 1900, budgetMinor: 0 });
-    const subs = await pg.query<{ amount_minor: number; budget_recharge_minor: number }>(
-      `select amount_minor, budget_recharge_minor from subscriptions where user_id = $1 and status = 'active'`,
-      [userId],
-    );
-    expect(subs.rows).toEqual([{ amount_minor: 1900, budget_recharge_minor: 0 }]);
-    expect((await invoices(userId)).at(-1)).toMatchObject({ amount_minor: 1900, budget_minor: 0, status: "paid" });
-  });
-
-  it("a new checkout keeps $19 and adds no recharge", async () => {
-    const { userId } = await legacy("gf-checkout@x.test");
-    const res = await app.inject({ method: "POST", url: "/subscription", headers: { "x-test-user": userId }, payload: { planKey: "us-evergreen" } });
-    expect(res.json()).toMatchObject({ amountMinor: 1900, budgetRechargeMinor: 0, firstMonthIncluded: false });
-    expect(holder.createCheckout.mock.calls.at(-1)![0]).toMatchObject({ amountMinor: 1900, budgetMinor: 0 });
-  });
-
-  it("an existing live $19 subscription is never repriced: renewals stay $19 with no budget", async () => {
-    const userId = await newUser("gf-live@x.test", "advertiser", "plan_first_month_used_at = now()");
-    const s = await pg.query<{ id: string }>(
-      `insert into subscriptions (user_id, plan_key, line, currency_code, amount_minor, provider, status, current_period_start, current_period_end)
-       values ($1, 'us-evergreen', 'evergreen', 'USD', 1900, 'stripe', 'active', now() - interval '31 days', now() - interval '1 day') returning id`,
-      [userId],
-    );
-    const { openNextInvoice } = await import("../subscriptions/index.js");
-    const next = await openNextInvoice(s.rows[0]!.id);
-    expect(next!.invoice).toMatchObject({ amountMinor: 1900, budgetMinor: 0 });
-  });
-});
-
 describe("billing follows running state", () => {
   it("stops at period end when no ad runs, idempotently, then un-cancels when one runs again", async () => {
     const { userId, accountId } = await startIncluded("follow@x.test");
@@ -577,7 +521,7 @@ describe("billing follows running state", () => {
     expect(holder.enable).not.toHaveBeenCalled();
     expect((await subRows(userId)).every((s) => s.status === "canceled")).toBe(true);
 
-    // ...and that checkout charges $19 now: no second free month.
+    // ...and that checkout charges $20 now: no second free month.
     await app.inject({ method: "POST", url: "/subscription", headers: { "x-test-user": userId }, payload: { planKey: "us-evergreen" } });
     expect((holder.createCheckout.mock.calls.at(-1)![0] as { trialEnd: Date | null }).trialEnd).toBeNull();
     expect((await invoices(userId)).at(-1)!.amount_minor).toBe(2000);
