@@ -1149,12 +1149,12 @@ export type SubscriptionView = {
     pastDue: boolean;
     /** The included first month: nothing is charged until this date. */
     includedUntil?: string | null;
-    /** The automatic monthly ad-budget recharge ("$55 a month": 3500); 0 or absent when Google bills the customer's own card. */
+    /** The chosen monthly ad budget, recharged automatically ("from $55 a month", min 3500); 0 or absent when Google bills the customer's own card. */
     budgetRechargeMinor?: number;
   } | null;
   entitled: boolean;
   /** The plan follows the running ad (2026-11-19). */
-  plan?: { firstMonthAvailable: boolean; adRunning: boolean };
+  plan?: { firstMonthAvailable: boolean; adRunning: boolean; choice?: PlanChoice };
   invoices?: {
     id: string;
     amountMinor: number;
@@ -1170,15 +1170,52 @@ export function getSubscription() {
   return api<SubscriptionView>("/subscription");
 }
 
-export function subscribe(planKey: string, campaignId?: string) {
+/** "Keep it running" (monthly, recommended) or "Just this once" (no plan, no recharge). */
+export type PlanChoice = "monthly" | "once";
+
+/**
+ * Starts Keep it running. `adBudgetCents` = the chosen MONTHLY ad budget
+ * (whole dollars, min $35), recharged with every paid month.
+ */
+export function subscribe(planKey: string, campaignId?: string, adBudgetCents?: number) {
   return api<{
     subscriptionId: string;
     invoiceId: string;
     firstMonthIncluded?: boolean;
+    chargedTodayMinor?: number;
+    renewalMinor?: number;
+    renewsOn?: string | null;
     provider: string;
     redirectUrl: string | null;
     clientPayload: Record<string, unknown>;
-  }>("/subscription", { method: "POST", body: JSON.stringify({ planKey, ...(campaignId ? { campaignId } : {}) }) });
+  }>("/subscription", {
+    method: "POST",
+    body: JSON.stringify({
+      planKey,
+      ...(campaignId ? { campaignId } : {}),
+      ...(adBudgetCents ? { adBudgetMinor: adBudgetCents } : {}),
+    }),
+  });
+}
+
+/**
+ * "Just this once" / "Stop renewing" ('once': a live plan stops at the end of
+ * its paid period, the ad runs on its budget) or "Keep it running"
+ * ('monthly': takes a stop back, or checkoutRequired -> subscribe()).
+ */
+export function setPlanChoice(choice: PlanChoice) {
+  return api<{ choice: PlanChoice; checkoutRequired: boolean; renews: boolean; servesUntil: string | null }>(
+    "/subscription/choice",
+    { method: "PUT", body: JSON.stringify({ choice }) },
+  );
+}
+
+/** Changes the monthly ad budget from the next monthly payment (nothing charged now). */
+export function setMonthlyAdBudget(amountCents: number) {
+  return api<{ ok: true; budgetRechargeMinor: number; effectiveFrom: string | null; testMode: boolean }>(
+    "/subscription/ad-budget",
+    { method: "PUT", body: JSON.stringify({ amountMinor: amountCents }) },
+  );
 }
 
 /** "Pause anytime: no fee while paused." Pausing the last running ad stops the plan at period end. */

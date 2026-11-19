@@ -8,9 +8,10 @@ import { ADD_MORE_LINE, googleMinimumSentence, spreadSentence } from "@/lib/spre
 
 // Server-rendered. The cost simulator inside is the only client component, so the
 // page produces a real link preview and is up even when the API is not.
-// Prices here are the "$55 a month" Keep it running plan (owner 2026-11-19;
-// lib/pricing us-evergreen $20 + the $35 monthly ad-budget recharge, the
-// us-new_ad and us-website $10s); change them together with web/src/lib/prices.
+// Prices here are "from $55 a month" (owner 2026-11-19): Keep it running =
+// lib/pricing us-evergreen $20 + the customer's chosen monthly ad budget (from
+// $35), recharged; or "Just this once" (no plan, no renewals). Plus the
+// us-new_ad and us-website $10s. Change them together with web/src/lib/prices.
 // Times-shown numbers always come from timesShownEstimate, never typed in.
 
 const EST = timesShownEstimate(3_500, "USD");
@@ -74,7 +75,11 @@ const FAQ = [
   },
   {
     q: "What does it cost to keep my ad running?",
-    a: `$55 a month. The first month: your ad $10 (made once), your website $10, the AdVault plan $0 (first month included) and a $35 ad budget. Every month after, while your ad runs: the $20 plan plus $35 ad budget, recharged automatically. 100% of the ad budget goes to Google, and AdVault earns only the $10s and the $20. ${ADD_MORE_LINE}`,
+    a: `From $55 a month. The first month: your ad $10 (made once), your website $10, the AdVault plan $0 (first month included) and your ad budget, from $35. Every month after, while your ad runs: the $20 plan plus your monthly ad budget (from $35), recharged each month; change it anytime. $35 makes it $55 a month, $100 makes it $120. 100% of the ad budget goes to Google, and AdVault earns only the $10s and the $20. ${ADD_MORE_LINE}`,
+  },
+  {
+    q: "Can I pay just once?",
+    a: "Yes. Pick \"Just this once\" when you launch: the same payment today (your ad, your website and your ad budget), no plan and no renewals. Your ad stops when the budget runs out, and an AdVault-made website stays live with a year of Pro. You can turn on Keep it running later; it then starts that day at $20 plus your monthly ad budget.",
   },
   {
     q: "What happens to ad budget I don't use?",
@@ -82,11 +87,11 @@ const FAQ = [
   },
   {
     q: "How often will my ad be shown?",
-    a: `For $35 a month we estimate your ad is shown ${SHOWN_WORDS} times to people near you, depending on your area. ${TIMING} It's an estimate, not a guarantee. Your results screen shows the real numbers. ${ADD_MORE_LINE}`,
+    a: `For a $35 ad budget we estimate your ad is shown ${SHOWN_WORDS} times to people near you, depending on your area. ${TIMING} It's an estimate, not a guarantee. Your results screen shows the real numbers. ${ADD_MORE_LINE}`,
   },
   {
     q: "Is there a contract?",
-    a: "No. Pause anytime: no fee and no ad-budget recharge while paused. When no ad is running, the $20 plan stops at the end of the month you've paid for, and you're never charged for a month with no ad running. Resume and it starts again. The videos we made are yours to keep.",
+    a: "No. Stop renewing anytime in one click on your Subscription page, or pause: no fee and no ad-budget recharge while paused. When no ad is running, the $20 plan stops at the end of the month you've paid for, and you're never charged for a month with no ad running. Resume and it starts again. Or pay just once and never renew. The videos we made are yours to keep.",
   },
   {
     q: "Can I change my ad later?",
@@ -143,7 +148,7 @@ export default function LandingPage() {
           people near you. No agency, no video team, no Google Ads.
         </p>
         <p className="mt-4 text-xl font-semibold tracking-tight">
-          <span className="text-amber-300">$55 a month.</span> We make your ad and your website, and show your
+          <span className="text-amber-300">From $55 a month.</span> We make your ad and your website, and show your
           business about {SHOWN} times to people near you.
         </p>
         <p className="mt-2 text-sm text-zinc-400">
@@ -242,7 +247,8 @@ export default function LandingPage() {
       <section id="pricing" className="mx-auto w-full max-w-5xl scroll-mt-6 px-6 pb-16">
         <h2 className="text-2xl font-semibold tracking-tight">Simple pricing</h2>
         <p className="mt-2 mb-5 text-sm text-zinc-400">
-          $55 a month. One plan, no setup fee, no contract. Pause anytime: no fee and no recharge while paused.
+          From $55 a month: the $20 plan plus your monthly ad budget (from $35), recharged each month; change it
+          anytime; 100% of the budget goes to Google. No setup fee, no contract. Or pay just once.
         </p>
         <div className="grid gap-4 sm:grid-cols-2">
           <Card className="border-amber-400/20 bg-amber-400/[0.04]">
@@ -252,21 +258,29 @@ export default function LandingPage() {
             </p>
             <p className="mt-3 text-sm text-zinc-400">
               Your ad $10 (made once: script, voiceover, captions, both video formats) + your website $10 + the
-              AdVault plan $0 (first month included) + $35 ad budget, 100% to Google. A new ad later is $10 too.
+              AdVault plan $0 (first month included) + your ad budget from $35, 100% to Google. A new ad later is
+              $10 too.
             </p>
           </Card>
           <Card className="border-amber-400/20 bg-amber-400/[0.04]">
-            <CardDescription>Every month after</CardDescription>
+            <CardDescription>Every month after: Keep it running (recommended)</CardDescription>
             <p className="mt-2 text-4xl font-semibold tracking-tight">
-              $55 <span className="text-base font-normal text-zinc-400">a month while your ad runs</span>
+              from $55 <span className="text-base font-normal text-zinc-400">a month while your ad runs</span>
             </p>
             <p className="mt-3 text-sm text-zinc-400">
-              The AdVault plan $20 + $35 ad budget, recharged automatically, 100% to Google. Your website stays
-              included. Pause anytime: no fee and no recharge while paused. Unused budget stays in your account and
-              is refunded if you leave.
+              The AdVault plan $20 + your monthly ad budget (from $35), recharged automatically, 100% to Google;
+              change it anytime. Your website stays included. Stop renewing anytime in one click. Pause anytime: no
+              fee and no recharge while paused. Unused budget stays in your account and is refunded if you leave.
             </p>
           </Card>
         </div>
+        <Card className="mt-4">
+          <CardDescription>Or: Just this once</CardDescription>
+          <p className="mt-2 text-sm text-zinc-300">
+            One payment. No renewals. Your ad stops when the budget runs out. The same first payment (your ad, your
+            website and your ad budget), no plan. Your AdVault-made website stays live with a year of Pro.
+          </p>
+        </Card>
         <Card className="mt-4">
           <CardDescription>What you pay</CardDescription>
           <PlanPriceLines className="mt-3" addMoreHref="/signup" />
@@ -274,7 +288,7 @@ export default function LandingPage() {
         <Card className="mt-4">
           <CardDescription>When your ad shows</CardDescription>
           <p className="mt-2 text-sm text-zinc-300">
-            Your ad is shown about {SHOWN} times each month to people near you. {TIMING}
+            With a $35 monthly budget, your ad is shown about {SHOWN} times each month to people near you. {TIMING}
           </p>
         </Card>
         <ul className="mt-6 grid gap-2 text-sm text-zinc-300 sm:grid-cols-2">

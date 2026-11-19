@@ -6,14 +6,18 @@ import {
   cancelSubscription,
   getSubscription,
   listPlans,
+  setPlanChoice,
   subscribe,
   type Plan,
   type SubscriptionView,
 } from "@/lib/api/browser";
 import { Badge, Card, CardDescription, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { formatDate } from "@/lib/utils";
+import { formatDate, formatMoney } from "@/lib/utils";
 import { PlanPriceLines } from "@/components/PlanPriceLines";
+import { MonthlyBudgetCard } from "@/components/MonthlyBudgetCard";
+import { TopUpPicker } from "@/components/TopUpPicker";
+import { MONTHLY_AD_BUDGET_CENTS, monthlyTotalCents, oneMonthFromToday } from "@/lib/prices";
 
 // The subscription. This page is what makes someone a paying customer, and
 // before it existed there was no such thing in the product: every plan carried
@@ -55,6 +59,8 @@ export default function SubscriptionPage() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // The monthly ad budget a new plan starts with.
+  const [startBudget, setStartBudget] = useState(MONTHLY_AD_BUDGET_CENTS);
 
   const refresh = () =>
     getSubscription()
@@ -79,7 +85,7 @@ export default function SubscriptionPage() {
     setBusy(true);
     setError(null);
     try {
-      const result = await subscribe(planKey);
+      const result = await subscribe(planKey, undefined, startBudget);
       if (result.redirectUrl) {
         // Hosted checkout — Paddle, Stripe or a Razorpay mandate page.
         window.location.assign(result.redirectUrl);
@@ -98,6 +104,47 @@ export default function SubscriptionPage() {
           ? "You already have a subscription."
           : "Could not start the subscription. Please try again.",
       );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // One click + a confirm (owner, 2026-11-19): "Stop renewing" is the
+  // "Just this once" choice. The plan stops at the end of the paid month
+  // (cancel_at_period_end); the ad keeps running on its budget until it runs out.
+  async function onStopRenewing() {
+    if (!sub) return;
+    const until = sub.currentPeriodEnd ? formatDate(sub.currentPeriodEnd) : "the end of this month";
+    if (
+      !window.confirm(
+        `Stop renewing? Nothing more is charged after ${until}. Your ad keeps running on its budget until it runs out.`,
+      )
+    )
+      return;
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await setPlanChoice("once");
+      setNotice(
+        `Done. Your plan won't renew${r.servesUntil ? `; it ends ${formatDate(r.servesUntil)}` : ""}. Your ad keeps running on its budget until it runs out.`,
+      );
+      await refresh();
+    } catch {
+      setError("Could not stop renewing just now. Please try again.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onKeepRunning() {
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await setPlanChoice("monthly");
+      setNotice(r.renews ? "Keep it running is back on. Your plan renews as before." : "Keep it running is on.");
+      await refresh();
+    } catch {
+      setError("Could not turn Keep it running back on just now.");
     } finally {
       setBusy(false);
     }
@@ -132,9 +179,10 @@ export default function SubscriptionPage() {
   const firstMonthAvailable = view?.plan?.firstMonthAvailable !== false;
   // The API sends includedUntil only while the included month is still running.
   const inIncludedMonth = Boolean(sub?.includedUntil);
-  // "$55 a month": the plan also recharges the ad budget each month. 0 / no
+  // "From $55 a month": the plan also recharges the chosen ad budget each month. 0 / no
   // field when Google bills the customer's own card (or another line).
   const rechargeMinor = sub?.budgetRechargeMinor ?? 0;
+  const oneTime = view?.plan?.choice === "once";
 
   return (
     <div className="space-y-6">
@@ -143,7 +191,7 @@ export default function SubscriptionPage() {
         <p className="mt-1 text-sm text-zinc-400">
           {sub && rechargeMinor === 0
             ? "Your plan runs while your ad is running. Pause anytime: no fee while paused."
-            : "$20 a month plus $35 ad budget, while your ad is running. Pause anytime: no fee and no recharge while paused."}
+            : "$20 a month plus your monthly ad budget (from $35), while your ad is running. Change it anytime. Pause anytime: no fee and no recharge while paused."}
         </p>
       </div>
 
@@ -185,10 +233,36 @@ export default function SubscriptionPage() {
             </p>
           ) : null}
 
-          {evergreen ? (
-            // The plan follows the running ad (2026-11-19): no cancel button.
-            <p className="mt-4 text-sm text-zinc-400">
+          {evergreen && sub.currentPeriodEnd ? (
+            <p className="mt-4 text-base font-medium text-zinc-100">
               {sub.cancelAtPeriodEnd
+                ? `Won't renew — ends ${formatDate(sub.currentPeriodEnd)}`
+                : `Renews on ${formatDate(sub.currentPeriodEnd)} at ${fmt(sub.amountMinor + rechargeMinor, sub.currencyCode)}`}
+            </p>
+          ) : null}
+
+          {evergreen && rechargeMinor > 0 ? <MonthlyBudgetCard className="mt-3" /> : null}
+
+          {evergreen ? (
+            <div className="mt-4 flex flex-wrap gap-2">
+              {!sub.cancelAtPeriodEnd ? (
+                <Button variant="ghost" onClick={onStopRenewing} disabled={busy}>
+                  Stop renewing
+                </Button>
+              ) : oneTime ? (
+                <Button onClick={onKeepRunning} disabled={busy}>
+                  Keep it running
+                </Button>
+              ) : null}
+            </div>
+          ) : null}
+
+          {evergreen ? (
+            // The plan follows the running ad (2026-11-19).
+            <p className="mt-4 text-sm text-zinc-400">
+              {sub.cancelAtPeriodEnd && oneTime
+                ? "You chose not to renew. Your ad keeps running on its budget until it runs out; nothing more is charged."
+                : sub.cancelAtPeriodEnd
                 ? `No ad is running, so your plan stops on ${sub.currentPeriodEnd ? formatDate(sub.currentPeriodEnd) : "the end of this month"} and nothing more is charged. Resume an ad before then and it simply carries on; after that, resuming restarts it at ${sub.display} a month${rechargeMinor > 0 ? ` plus ${fmt(rechargeMinor, sub.currencyCode)} ad budget` : ""}.`
                 : adRunning
                   ? `Your ad is running, so your plan renews each month. Pause your ad on its campaign page and the plan stops at the end of the month you've paid for: no fee${rechargeMinor > 0 ? " and no recharge" : ""} while paused.`
@@ -231,19 +305,30 @@ export default function SubscriptionPage() {
                 {plan.display.monthlyFee}
                 <span className="text-base font-normal text-zinc-400"> / month while your ad runs</span>
               </p>
+              {oneTime ? (
+                <p className="mt-3 rounded-lg border border-white/10 p-3 text-sm text-zinc-300">
+                  You&apos;re on <span className="font-medium text-zinc-100">Just this once</span>: no plan and no
+                  renewals. Your ad stops when its budget runs out.
+                </p>
+              ) : null}
+              <p className="mt-4 mb-1 text-sm font-medium text-zinc-200">Your monthly ad budget</p>
+              <TopUpPicker mode="choose" currency="USD" value={startBudget} onChange={setStartBudget} showEstimate={false} />
               <PlanPriceLines
                 className="mt-3"
                 testMode={testMode}
                 firstMonthIncluded={firstMonthAvailable}
+                budgetCents={startBudget}
                 addMoreHref="/dashboard/wallet"
               />
-              <p className="mt-3 text-sm text-zinc-400">
+              <p className="mt-3 text-sm text-amber-200">
                 {firstMonthAvailable
-                  ? "You start the plan when you launch your first ad: $0 that day."
-                  : "Your plan restarts when you resume or launch an ad."}
+                  ? "Plan $0 today: your first month is included."
+                  : `Charged today: ${formatMoney(monthlyTotalCents(startBudget), "USD")} ($20 plan + your monthly ad budget; your included month was used by your first ad).`}{" "}
+                Renews at {formatMoney(monthlyTotalCents(startBudget), "USD")}/month from{" "}
+                {formatDate(oneMonthFromToday().toISOString())}. Cancel anytime in one click.
               </p>
               <Button className="mt-4" onClick={() => onSubscribe(plan.key)} disabled={busy}>
-                {firstMonthAvailable ? "Start my plan ($0 today)" : "Start my plan"}
+                {oneTime ? "Turn on Keep it running" : firstMonthAvailable ? "Start my plan ($0 today)" : "Start my plan"}
               </Button>
             </Card>
           ))}

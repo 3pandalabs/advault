@@ -5,7 +5,7 @@ import { getWallet, type Wallet } from "@/lib/api/browser";
 import { Badge, Card, CardDescription, CardTitle } from "@/components/ui/card";
 import { BudgetBanner } from "@/components/BudgetBanner";
 import { TopUpPicker } from "@/components/TopUpPicker";
-import { MONTHLY_RECHARGE_LINE } from "@/lib/prices";
+import { MonthlyBudgetCard } from "@/components/MonthlyBudgetCard";
 import { ADD_MORE_LINE } from "@/lib/spread";
 import { formatDate } from "@/lib/utils";
 
@@ -95,9 +95,11 @@ export default function WalletPage() {
       </Card>
 
       <Card className="mt-4" id="add">
-        <CardTitle>Add to your ad budget</CardTitle>
+        <CardTitle>Your ad budget</CardTitle>
+        <MonthlyBudgetCard className="mt-3" />
+        <p className="mt-4 text-sm font-medium text-zinc-200">Add a one-time top-up</p>
         <CardDescription className="mt-1">
-          {MONTHLY_RECHARGE_LINE} {ADD_MORE_LINE} More budget means more days of showing.
+          {ADD_MORE_LINE} More budget means more days of showing.
         </CardDescription>
         <div className="mt-4">
           <TopUpPicker

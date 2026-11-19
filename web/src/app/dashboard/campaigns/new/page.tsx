@@ -1130,7 +1130,7 @@ export default function NewCampaignPage() {
             </div>
 
             <div>
-              <Label>Add to your ad budget</Label>
+              <Label>Your monthly ad budget</Label>
               <div className="mt-1.5">
                 <TopUpPicker
                   mode="choose"
@@ -1140,10 +1140,11 @@ export default function NewCampaignPage() {
                 />
               </div>
               <FieldHint>
-                Nothing is charged now — you add it before your ad goes live. With your AdVault plan,
-                $35 is added to your ad budget each month (100% to Google). You only pay for what
-                Google delivers; unused budget stays in your account. Want it shown more? Add to your
-                ad budget anytime.
+                Nothing is charged now. This is your ad budget each month, from $35, 100% to Google:
+                you add it before your ad goes live, and with Keep it running the same amount is added
+                again each month (change it anytime). Prefer one payment? Pick &quot;Just this once&quot;
+                when you launch. You only pay for what Google delivers; unused budget stays in your
+                account.
               </FieldHint>
             </div>
 

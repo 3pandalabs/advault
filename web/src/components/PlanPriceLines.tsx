@@ -2,15 +2,17 @@ import Link from "next/link";
 import { timesShownEstimate } from "@/lib/budget";
 import { ADD_MORE_LINE } from "@/lib/spread";
 import { shownPrice } from "@/lib/testMode";
+import { formatMoney } from "@/lib/utils";
 
-// The price, said the same way everywhere (owner decision 2026-11-19, "$55 a
-// month"): the price lines and the trust line. Used on the home page, the
-// campaign page (pay / launch), the wizard's pay step and the subscription
-// page. Change it here.
+// The price, said the same way everywhere (owner decision 2026-11-19, "from
+// $55 a month"): the price lines and the trust line for Keep it running. Used
+// on the home page, the campaign page (pay / launch), the wizard's pay step and
+// the subscription page. Change it here.
 //
 // Month one: ad $10 + website $10 + plan $0 (first month included, once per
-// account, api/src/lib/planBilling) + ad budget $35. Every month after, while
-// the ad runs: plan $20 + the $35 ad budget, recharged automatically.
+// account, api/src/lib/planBilling) + the chosen ad budget (from $35). Every
+// month after, while the ad runs: plan $20 + the SAME ad budget, recharged
+// automatically; change it anytime. "Just this once" has no plan line.
 
 const n = (x: number) => x.toLocaleString("en-US");
 
@@ -19,8 +21,11 @@ export function PlanPriceLines({
   firstMonthIncluded = true,
   website = true,
   addMoreHref,
+  budgetCents,
   className = "",
 }: {
+  /** The chosen monthly ad budget; absent = "from $35". */
+  budgetCents?: number;
   /** Admin testing as a customer: the $10s and $20 are charged at the test price (never the ad budget). */
   testMode?: boolean;
   /** False once the account has used its included month. */
@@ -31,7 +36,7 @@ export function PlanPriceLines({
   addMoreHref?: string;
   className?: string;
 }) {
-  const est = timesShownEstimate(3_500, "USD");
+  const est = timesShownEstimate(budgetCents ?? 3_500, "USD");
   return (
     <div className={`text-sm ${className}`}>
       <ul className="space-y-1.5">
@@ -57,7 +62,8 @@ export function PlanPriceLines({
         <li className="flex justify-between gap-3">
           <span className="text-zinc-400">Ad budget</span>
           <span className="text-right text-zinc-100">
-            $35 a month, 100% to Google, recharged each month{" "}
+            {budgetCents ? `${formatMoney(budgetCents, "USD")} a month` : "From $35 a month"}, your choice, 100% to Google,
+            recharged each month; change it anytime{" "}
             <span className="text-zinc-400">
               (shown about {n(est.low)}–{n(est.high)} times)
             </span>
