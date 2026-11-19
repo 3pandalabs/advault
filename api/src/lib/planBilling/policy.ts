@@ -188,7 +188,7 @@ export function planGateBody(gate: Exclude<PlanGate, { ok: true }>): Record<stri
       firstMonthIncluded: gate.firstMonthIncluded,
       detail: gate.firstMonthIncluded
         ? "Start your AdVault plan: $0 today, your first month is included. Then $20 a month plus your $35 monthly ad budget, only while your ad runs."
-        : "Restart your AdVault plan to run your ad. Pause anytime: no fee while paused.",
+        : "Restart your AdVault plan: $20 a month plus your $35 monthly ad budget while your ad runs. Pause anytime: no fee while paused.",
     };
   }
   if (gate.error === "plan_pending") {
