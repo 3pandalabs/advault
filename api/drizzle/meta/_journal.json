@@ -260,6 +260,13 @@
       "when": 1795505000000,
       "tag": "0036_campaign_google_audience",
       "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1795505100000,
+      "tag": "0037_campaign_ad_schedule",
+      "breakpoints": true
     }
   ]
 }

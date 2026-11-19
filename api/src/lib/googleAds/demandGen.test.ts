@@ -7,6 +7,7 @@ import {
   parseLaunchResponse,
   type LaunchPlan,
 } from "./demandGen.js";
+import { adScheduleCriteria } from "../schedule/policy.js";
 
 const basePlan: LaunchPlan = {
   customerId: "1234567890",
@@ -243,6 +244,20 @@ describe("buildLaunchOperations — housing (real estate)", () => {
     expect(() => ops({ ...housingPlan, proximity: undefined, geoTargetConstants: ["geoTargetConstants/9001"] })).toThrow(
       /housing/,
     );
+  });
+});
+
+describe("buildLaunchOperations — ad schedule", () => {
+  it("adds one campaign AdSchedule criterion per day, none by default", () => {
+    const sched = (o: Op[]) =>
+      o.filter((x) => x.campaignCriterionOperation && "adSchedule" in x.campaignCriterionOperation.create);
+    expect(sched(ops())).toHaveLength(0);
+    const adSchedule = adScheduleCriteria({ days: ["mon", "fri"], startHour: 9, endHour: 17 });
+    const withSchedule = sched(ops({ ...basePlan, adSchedule }));
+    expect(withSchedule.map((x) => x.campaignCriterionOperation!.create)).toEqual([
+      { campaign: "customers/1234567890/campaigns/-2", adSchedule: adSchedule[0] },
+      { campaign: "customers/1234567890/campaigns/-2", adSchedule: adSchedule[1] },
+    ]);
   });
 });
 

@@ -9,7 +9,8 @@ import { isGoogleAdsConfigured } from "../lib/googleAds/env.js";
 import { mccAccessToken } from "../lib/googleAds/mcc.js";
 import { GoogleOAuthError, refreshAccessToken } from "../lib/googleAds/oauth.js";
 import { GoogleAdsApiError } from "../lib/googleAds/client.js";
-import { applyAudienceEdit } from "../lib/googleAds/targeting.js";
+import { applyTargetingEdit } from "../lib/googleAds/targeting.js";
+import { adScheduleCriteria, adScheduleSchema, normalizeAdSchedule } from "../lib/schedule/policy.js";
 import { audienceDimensions, languageConstants } from "../lib/audience/google.js";
 import {
   TARGETING_VIOLATION_DETAIL,
@@ -21,8 +22,9 @@ import {
 import { loadOwnedCampaign } from "../lib/ownership.js";
 
 // ---------------------------------------------------------------------------
-// PUT /campaigns/:id/targeting — "Who should see it", before AND after launch
-// (2026-11-20).
+// PUT /campaigns/:id/targeting — "Who should see it" and "When it shows"
+// (days + hours, 0037), before AND after launch (2026-11-20). Either or both;
+// a field left out is left alone.
 //
 // Not launched yet: saved on the row, like PATCH; launch sends it.
 // Launched (live or paused, a Google campaign exists): applied at Google
@@ -37,9 +39,14 @@ import { loadOwnedCampaign } from "../lib/ownership.js";
 
 const body = z
   .object({
-    audienceFilters: audienceFiltersSchema.nullable(),
+    audienceFilters: audienceFiltersSchema.nullable().optional(),
+    // null = every day, all day.
+    adSchedule: adScheduleSchema.nullable().optional(),
   })
-  .strict();
+  .strict()
+  .refine((b) => b.audienceFilters !== undefined || b.adSchedule !== undefined, {
+    message: "send audienceFilters and/or adSchedule",
+  });
 
 export async function targetingRoutes(app: FastifyInstance) {
   app.addHook("onRequest", requireAuth);
@@ -53,7 +60,10 @@ export async function targetingRoutes(app: FastifyInstance) {
       const campaign = await loadOwnedCampaign(campaignId, req.userId!, reply);
       if (!campaign) return;
 
-      const audienceFilters = normalizeAudienceFilters(input.audienceFilters);
+      const touchAudience = input.audienceFilters !== undefined;
+      const touchSchedule = input.adSchedule !== undefined;
+      const audienceFilters = touchAudience ? normalizeAudienceFilters(input.audienceFilters) : campaign.audienceFilters;
+      const adSchedule = touchSchedule ? normalizeAdSchedule(input.adSchedule) : campaign.adSchedule;
       const violations = targetingViolations({ ...campaign, audienceFilters });
       // Only the audience rule is this route's business; a ZIP/address
       // problem on the row is PATCH's and launch's to report.
@@ -68,7 +78,7 @@ export async function targetingRoutes(app: FastifyInstance) {
       if (!launched) {
         const [updated] = await db
           .update(campaigns)
-          .set({ audienceFilters, updatedAt: new Date() })
+          .set({ audienceFilters, adSchedule, updatedAt: new Date() })
           .where(eq(campaigns.id, campaignId))
           .returning();
         return { campaign: updated, appliedAtGoogle: false };
@@ -82,7 +92,7 @@ export async function targetingRoutes(app: FastifyInstance) {
       if (!account || account.status === "revoked" || !customerId || !campaign.googleAdGroupResourceName) {
         return reply.code(409).send({
           error: "ad_account_unavailable",
-          detail: "We can't reach this ad's Google account right now, so its audience can't be changed.",
+          detail: "We can't reach this ad's Google account right now, so this can't be changed.",
         });
       }
 
@@ -101,22 +111,36 @@ export async function targetingRoutes(app: FastifyInstance) {
       }
 
       try {
-        const result = await applyAudienceEdit(
+        const refs = {
+          customerId,
+          campaignResourceName: campaign.googleCampaignResourceName!,
+          adGroupResourceName: campaign.googleAdGroupResourceName,
+        };
+        const result = await applyTargetingEdit(
           { accessToken, customerId, loginCustomerId: account.loginCustomerId },
+          refs,
           {
-            customerId,
-            campaignResourceName: campaign.googleCampaignResourceName!,
-            adGroupResourceName: campaign.googleAdGroupResourceName,
-            audienceDimensions: audienceDimensions(audienceFilters),
-            languageConstants: languageConstants(audienceFilters),
-            housing: isHousingCategory(campaign.businessCategory),
-            // Audience names are unique per account; launch used the bare suffix.
-            audienceName: `AdVault audience ${campaign.id.slice(0, 8)} ${Date.now().toString(36)}`,
+            audience: touchAudience
+              ? {
+                  ...refs,
+                  audienceDimensions: audienceDimensions(audienceFilters),
+                  languageConstants: languageConstants(audienceFilters),
+                  housing: isHousingCategory(campaign.businessCategory),
+                  // Audience names are unique per account; launch used the bare suffix.
+                  audienceName: `AdVault audience ${campaign.id.slice(0, 8)} ${Date.now().toString(36)}`,
+                }
+              : undefined,
+            adSchedule: touchSchedule ? adScheduleCriteria(adSchedule) : undefined,
           },
         );
         const [updated] = await db
           .update(campaigns)
-          .set({ audienceFilters, googleAudienceResourceName: result.audienceResourceName, updatedAt: new Date() })
+          .set({
+            audienceFilters,
+            adSchedule,
+            googleAudienceResourceName: result.audienceResourceName,
+            updatedAt: new Date(),
+          })
           .where(eq(campaigns.id, campaignId))
           .returning();
         return { campaign: updated, appliedAtGoogle: true, changedAtGoogle: result.changed };

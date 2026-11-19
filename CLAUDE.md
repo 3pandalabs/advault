@@ -221,6 +221,15 @@ orphaned a budget on every failure. Don't split it back up.
   update/remove shapes parse. The wizard's filters stay parked
   (`AUDIENCE_FILTERS_ENABLED = false`), but the campaign page shows "Who
   should see it" for every launched campaign.
+- **Ad schedule (2026-11-20, migration 0037, `lib/schedule/policy.ts`).**
+  `campaigns.ad_schedule` = `{days, startHour, endHour}` (one window for the
+  chosen days, no overnight), NULL = every day, all day. Launch sends one
+  `CampaignCriterion.adSchedule` per day (minute ZERO); the same targeting
+  route changes it on a launched campaign (unchanged days kept). Hours are the
+  AD ACCOUNT's time zone (America/New_York for US accounts we create,
+  Asia/Kolkata for India), and the campaign page's "When it shows" card says
+  so. Google accepted AdSchedule on a DEMAND_GEN campaign (upgraded targeting
+  on and off) in validateOnly mutates against the test customer, 2026-11-20.
 - **Location targeting is PRESENCE only** (`geoTargetTypeSetting` on the campaign).
   Google defaults to presence-or-interest, which also serves people elsewhere who
   merely search about the area. A walk-in shop pays for those views, and the

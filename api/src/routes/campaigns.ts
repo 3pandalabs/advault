@@ -8,6 +8,7 @@ import { loadOwnedCampaign } from "../lib/ownership.js";
 import { budgetBelowMinimum } from "../lib/pricing/index.js";
 import { realtySchema } from "../lib/realty/index.js";
 import { markAppUsed } from "../lib/sharedAccount/index.js";
+import { adScheduleSchema, normalizeAdSchedule } from "../lib/schedule/policy.js";
 import {
   TARGETING_VIOLATION_DETAIL,
   audienceFiltersSchema,
@@ -81,6 +82,8 @@ const campaignFields = z.object({
   targetAddress: targetAddressSchema.nullish(),
   // Optional "Who should see it" filters. Absent/null = everyone.
   audienceFilters: audienceFiltersSchema.nullish(),
+  // Optional days + hours (lib/schedule). Absent/null = every day, all day.
+  adSchedule: adScheduleSchema.nullish(),
   // Real estate only: listing/open-house ad or agent ad (lib/realty).
   realty: realtySchema.nullish(),
 });
@@ -134,6 +137,7 @@ export async function campaignRoutes(app: FastifyInstance) {
       .values({
         ...body,
         runDays: body.runDays ?? null,
+        adSchedule: normalizeAdSchedule(body.adSchedule),
         targetAddress: body.targetAddress ?? null,
         audienceFilters: targeting.audienceFilters,
         realty: body.realty ?? null,
@@ -203,7 +207,7 @@ export async function campaignRoutes(app: FastifyInstance) {
       }
       // Same for the audience of a paused-but-launched campaign: the row would
       // diverge from Google. PUT /campaigns/:id/targeting applies it at Google.
-      if (body.audienceFilters !== undefined && campaign.googleCampaignResourceName) {
+      if ((body.audienceFilters !== undefined || body.adSchedule !== undefined) && campaign.googleCampaignResourceName) {
         return reply.code(409).send({ error: "campaign_already_launched" });
       }
       // Same floor as create, against the row as it will be.
@@ -232,6 +236,7 @@ export async function campaignRoutes(app: FastifyInstance) {
         .set({
           ...body,
           ...(body.audienceFilters !== undefined ? { audienceFilters: targeting.audienceFilters } : {}),
+          ...(body.adSchedule !== undefined ? { adSchedule: normalizeAdSchedule(body.adSchedule) } : {}),
           updatedAt: new Date(),
         })
         .where(eq(campaigns.id, campaignId))

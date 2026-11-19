@@ -34,6 +34,7 @@ import { SquareLogo } from "./square-logo";
 import { VideoUpload } from "./video-upload";
 import { ResultsCard } from "./results-card";
 import { AudienceCard } from "./audience-card";
+import { ScheduleCard } from "./schedule-card";
 import { BudgetEditor, RunLengthPicker } from "./budget-editor";
 import { BUDGET_BELOW_MINIMUM_MESSAGE, adSpendTotalCents, runLengthLabel, type RunDays } from "@/lib/budget";
 import { WebsiteCard } from "./website-card";
@@ -782,6 +783,11 @@ export default function CampaignDetailPage({
           onSaved={(c) => setCampaign((prev) => (prev ? { ...prev, ...c } : prev))}
         />
       )}
+
+      <ScheduleCard
+        campaign={campaign}
+        onSaved={(c) => setCampaign((prev) => (prev ? { ...prev, ...c } : prev))}
+      />
 
       {usesWallet && <AdBudgetCard campaign={campaign} wallet={wallet} />}
 

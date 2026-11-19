@@ -1,6 +1,7 @@
 "use client";
 
 import type { AudienceFilters, TargetAddress } from "@/lib/audience";
+import type { AdSchedule } from "@/lib/schedule";
 
 // Browser-side calls go to the public, Cloudflare-proxied hostname. The
 // orange-to-orange restriction that forces server-side code onto
@@ -179,6 +180,8 @@ export type Campaign = {
   targetAddress: TargetAddress | null;
   /** null = everyone. */
   audienceFilters: AudienceFilters | null;
+  /** Days + hours the ad may show; null = every day, all day (migration 0037). */
+  adSchedule?: AdSchedule | null;
   dailyBudgetCents: number;
   currencyCode: string;
   /** 7 or 14 days; null = always on (migration 0033). */
@@ -555,11 +558,15 @@ export function updateCampaign(
 }
 
 /**
- * "Who should see it", before or after launch (PUT /campaigns/:id/targeting).
+ * "Who should see it" and/or "When it shows", before or after launch
+ * (PUT /campaigns/:id/targeting). A field left out is left alone.
  * After launch Google gets it first; 502 `google_ads_error` (with `detail`)
  * means Google refused and nothing changed.
  */
-export function updateTargeting(campaignId: string, input: { audienceFilters: AudienceFilters | null }) {
+export function updateTargeting(
+  campaignId: string,
+  input: { audienceFilters?: AudienceFilters | null; adSchedule?: AdSchedule | null },
+) {
   return api<{ campaign: Campaign; appliedAtGoogle: boolean; changedAtGoogle?: boolean }>(
     `/campaigns/${campaignId}/targeting`,
     { method: "PUT", body: JSON.stringify(input) },
