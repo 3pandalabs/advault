@@ -74,6 +74,9 @@ const campaignFields = z.object({
   // guardrail against a mistyped budget, not a product limit.
   dailyBudgetCents: z.number().int().min(100).max(50_000),
   currencyCode: z.string().length(3).default("USD"),
+  // How long the ad runs: 7 or 14 days, null/absent = always on (migration
+  // 0033). Launch sends Google an end date for 7/14 (runEndDate in lib/pricing).
+  runDays: z.union([z.literal(7), z.literal(14)]).nullish(),
   // Real estate only: the listing address a radius is drawn around.
   targetAddress: targetAddressSchema.nullish(),
   // Optional "Who should see it" filters. Absent/null = everyone.
@@ -130,6 +133,7 @@ export async function campaignRoutes(app: FastifyInstance) {
       .insert(campaigns)
       .values({
         ...body,
+        runDays: body.runDays ?? null,
         targetAddress: body.targetAddress ?? null,
         audienceFilters: targeting.audienceFilters,
         realty: body.realty ?? null,
@@ -192,6 +196,11 @@ export async function campaignRoutes(app: FastifyInstance) {
       // Checked against the row as it WILL be, so changing only the category
       // to "Real estate" on a campaign with age filters is refused too.
       const body = req.body as Partial<CampaignInput>;
+      // The run length only matters at launch (it becomes Google's end date),
+      // so once a campaign exists at Google changing it here would be a lie.
+      if (body.runDays !== undefined && campaign.googleCampaignResourceName) {
+        return reply.code(409).send({ error: "campaign_already_launched" });
+      }
       // Same floor as create, against the row as it will be.
       const below = budgetBelowMinimum(
         body.dailyBudgetCents ?? campaign.dailyBudgetCents,

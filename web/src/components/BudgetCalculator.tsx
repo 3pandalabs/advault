@@ -23,9 +23,10 @@ type Estimate = {
   display: { adBudget: string; monthlyFee: string; monthlyTotal: string; newAd: string | null };
 };
 
-// US only for now (India pricing returns when India launches). $30 / $90 /
-// $150 a month = $1 / $3 / $5 a day on Keep it running.
-const PRESETS = [3_000, 9_000, 15_000];
+// US only for now (India pricing returns when India launches). $152 / $304 /
+// $456 a month = $5 / $10 / $15 a day (x 30.4) on Keep it running. $5 a day
+// is Google's Demand Gen minimum, so nothing below it is offered.
+const PRESETS = [15_200, 30_400, 45_600];
 
 function fmt(n: number) {
   return new Intl.NumberFormat("en-US").format(n);
@@ -57,7 +58,7 @@ export function BudgetCalculator() {
       <h3 className="text-lg font-semibold">How many views does my budget buy?</h3>
 
       <p className="mt-2 text-sm text-zinc-400">
-        Pick a monthly ad budget. We&apos;ll show what it reaches in your neighborhood.
+        Pick a monthly ad budget, from $5 a day — Google&apos;s minimum. We&apos;ll show what it reaches in your neighborhood.
  More budget means more views; your ad price stays the same.
       </p>
 

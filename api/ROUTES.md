@@ -91,10 +91,10 @@ Server to server from the SiteVault Worker, bearer `SITEVAULT_INTERNAL_TOKEN`
 
 | Method | Path | Notes |
 |---|---|---|
-| POST | `/campaigns` | Creates a draft. Nothing chargeable. Optional `audienceFilters` `{ages?, genders?, parentalStatuses?, incomes?, languages?}` (null/absent = everyone; values in `lib/audience/policy.ts`) and, for real estate, `targetAddress` `{street, city, state, postalCode}` with `targetZipCodes: []`. **400** `housing_demographics_not_allowed` / `housing_zip_targeting_not_allowed` / `listing_address_required` / `zip_codes_required` with a `detail` sentence (US housing-ads policy: no age, gender, parental status or ZIP targeting; income and language allowed).  Real estate also takes `realty` `{adType: 'listing'|'agent', price?, beds?, baths? (.5 steps), openHouse?: {date, start, end}}` (lib/realty): a listing ad names the street, price, beds/baths and open house; an agent ad promotes the agent and city. |
+| POST | `/campaigns` | Creates a draft. Nothing chargeable. Optional `audienceFilters` `{ages?, genders?, parentalStatuses?, incomes?, languages?}` (null/absent = everyone; values in `lib/audience/policy.ts`) and, for real estate, `targetAddress` `{street, city, state, postalCode}` with `targetZipCodes: []`. **400** `housing_demographics_not_allowed` / `housing_zip_targeting_not_allowed` / `listing_address_required` / `zip_codes_required` with a `detail` sentence (US housing-ads policy: no age, gender, parental status or ZIP targeting; income and language allowed).  Real estate also takes `realty` `{adType: 'listing'|'agent', price?, beds?, baths? (.5 steps), openHouse?: {date, start, end}}` (lib/realty): a listing ad names the street, price, beds/baths and open house; an agent ad promotes the agent and city. Optional `runDays` `7 | 14 | null` (absent/null = always on; migration 0033): launch turns 7/14 into `endsOn` and Google's `Campaign.end_date_time`. |
 | GET | `/campaigns` | |
 | GET | `/campaigns/:campaignId` | Includes creatives — what the dashboard polls. |
-| PATCH | `/campaigns/:campaignId` | 409 `campaign_is_live`. Same targeting fields and 400s as POST, checked against the row as it would be after the patch. |
+| PATCH | `/campaigns/:campaignId` | 409 `campaign_is_live`. Same targeting fields and 400s as POST, checked against the row as it would be after the patch. `runDays` (7/14/null) is changeable until the campaign exists at Google, then **409** `campaign_already_launched`. |
 | DELETE | `/campaigns/:campaignId` | 409 `campaign_is_live` — deleting the row would not stop the spend. |
 | GET | `/campaigns/:campaignId/before-after` | Owner only. `{allowed, pairs: [{beforeAssetId, afterAssetId, beforeKey, afterKey}], attestedAt}` (lib/beforeAfter). `allowed` = the category may show before & after (trades only). A deleted photo drops its pair. |
 | PUT | `/campaigns/:campaignId/before-after` | Owner only, any status (never re-renders). Body `{pairs: [{beforeAssetId, afterAssetId}] (max 2), attested}`; `[]` removes them. **400** `before_after_not_for_category` / `before_after_attestation_required` / `before_after_same_photo` / `before_after_duplicate_photo` (with `detail`), `unknown_assets` (not the user's own photo). Stores `before_after`, `before_after_attested_at/by`. Used by the next ad made and by "Make me a website". |
@@ -221,6 +221,14 @@ PATCH `dailyBudgetCents` fixes them (POST/PATCH `/campaigns` refuse a budget
 under the floor, PATCH with 400 `budget_below_minimum`). Google's own
 `BUDGET_BELOW_PER_DAY_MINIMUM` is mapped to the same 409 (with Google's
 minimum), and the campaign is not marked failed.
+
+Run length (migration 0033): a campaign with `run_days` 7 or 14 gets
+`endDateTime: "<last day> 23:59:59"` on the Demand Gen campaign create
+(`end_date_time`, which replaced the date-only `end_date` in v23; account time
+zone). The last day is today's UTC date + run_days - 1 (`runEndDate` in
+`lib/pricing`), stored as `campaigns.ends_on`; Google stops the campaign by
+itself. `run_days` NULL sends no end date (always on). The daily budget is
+unchanged either way.
 
 `billing_not_configured` is the one that matters most: without it, launching
 into a customer-funded account with no card **succeeds** and the campaign then

@@ -19,7 +19,7 @@ const STEPS = [
   },
   {
     title: "Pick a budget and go live",
-    body: "From $1 a day. We run the campaign on YouTube and Shorts for people near you. You never open Google Ads.",
+    body: "From $5 a day — Google's minimum. We run the campaign on YouTube and Shorts for people near you. You never open Google Ads.",
   },
 ];
 
@@ -63,12 +63,12 @@ const FAQ = [
     a: "No. We create and run the ad account for you. You never log in to Google Ads, and you don't need a YouTube channel.",
   },
   {
-    q: "What does the $49 a month pay for?",
-    a: "$30 goes to Google as your ad budget (about $1 a day) and $19 is the AdVault fee. Add more budget any time for more views. The fee stays $19.",
+    q: "What does it cost to keep my ad running?",
+    a: "$19 a month is the AdVault fee. Your ad budget goes to Google, from $5 a day — Google's minimum. One week is $35, two weeks $70, or keep it always on (about $152 a month). The fee stays $19.",
   },
   {
     q: "How many people will see my ad?",
-    a: "At $1 a day we estimate 5,000 to 10,000 local views a month, depending on your area. It's an estimate, not a guarantee. Your dashboard shows the real numbers.",
+    a: "For one week at $5 a day ($35) we estimate 6,000 to 11,500 local views, depending on your area. It's an estimate, not a guarantee. Your dashboard shows the real numbers.",
   },
   {
     q: "Is there a contract?",
@@ -130,7 +130,7 @@ export default function LandingPage() {
         </p>
         <p className="mt-4 text-xl font-semibold tracking-tight">
           <span className="text-amber-300">$10</span> makes your ad.{" "}
-          <span className="text-amber-300">From $49/month</span> keeps it running.
+          <span className="text-amber-300">$19/month</span> keeps it running, plus ad budget from $5 a day.
         </p>
         <p className="mt-2 text-base text-zinc-300">
           YouTube ads need a website to go live. No website? Don&apos;t worry, we&apos;ve got you covered: we&apos;ll
@@ -239,11 +239,11 @@ export default function LandingPage() {
           <Card className="border-amber-400/20 bg-amber-400/[0.04]">
             <CardDescription>Keeping it running</CardDescription>
             <p className="mt-2 text-4xl font-semibold tracking-tight">
-              From $49 <span className="text-base font-normal text-zinc-400">/ month</span>
+              $19 <span className="text-base font-normal text-zinc-400">/ month + ad budget</span>
             </p>
             <p className="mt-3 text-sm text-zinc-400">
-              $30 ad budget paid to Google (about $1 a day) + $19 AdVault fee. More budget
-              means more views; the fee stays $19.
+              Ad budget goes to Google, from $5 a day — Google&apos;s minimum: $35 runs your ad
+              for a week. More budget means more views; the fee stays $19.
             </p>
           </Card>
         </div>

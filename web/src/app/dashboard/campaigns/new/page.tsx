@@ -20,7 +20,14 @@ import { Button } from "@/components/ui/button";
 import { Card, CardDescription, CardTitle } from "@/components/ui/card";
 import { FieldHint, Input, Label, Textarea } from "@/components/ui/input";
 import { parseDollarsToCents } from "@/lib/utils";
-import { MAX_DAILY_BUDGET_CENTS, minDailyBudgetCents } from "@/lib/budget";
+import {
+  MAX_DAILY_BUDGET_CENTS,
+  RUN_CHOICES,
+  adSpendTotalCents,
+  formatUsdCents,
+  minDailyBudgetCents,
+  type RunDays,
+} from "@/lib/budget";
 import { SuggestionChips } from "@/components/SuggestionChips";
 import { callToActionSuggestions, campaignNameSuggestions } from "@/lib/suggestions";
 import { AudienceFiltersEditor, HOUSING_NOTICE } from "@/components/AudienceFiltersEditor";
@@ -142,6 +149,8 @@ function offerPlaceholder(category: string, isListing: boolean): string {
 export default function NewCampaignPage() {
   const router = useRouter();
   const [step, setStep] = useState(1);
+  // "How long should your ad run?" 1 week by default: the smallest total.
+  const [runDays, setRunDays] = useState<RunDays>(7);
   // Set while the API writes the script for a free/admin ad (~20 s).
   const [writingSince, setWritingSince] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -191,7 +200,8 @@ export default function NewCampaignPage() {
     offerDetails: "",
     zipInput: "",
     radiusMiles: "10",
-    dailyBudget: "15",
+    // Google's $5/day Demand Gen minimum.
+    dailyBudget: "5",
     // Real estate only: the listing (or office) the radius is drawn around,
     // the kind of ad, and the listing facts the script uses.
     realtyType: "listing",
@@ -365,6 +375,7 @@ export default function NewCampaignPage() {
           : null,
         radiusMiles: Number(form.radiusMiles),
         dailyBudgetCents,
+        runDays,
         audienceFilters: filtersForSave(audienceFilters, housing),
         realty: !housing
           ? null
@@ -1112,6 +1123,47 @@ export default function NewCampaignPage() {
                   </FieldHint>
                 )}
               </div>
+            </div>
+
+            <div>
+              <Label>How long should your ad run?</Label>
+              <div className="mt-1.5 grid gap-2 sm:grid-cols-3" role="radiogroup" aria-label="How long should your ad run?">
+                {RUN_CHOICES.map((c) => {
+                  const selected = runDays === c.value;
+                  const total =
+                    budgetCents !== null && !budgetOutOfRange
+                      ? formatUsdCents(adSpendTotalCents(budgetCents, c.value))
+                      : null;
+                  return (
+                    <button
+                      key={c.label}
+                      type="button"
+                      role="radio"
+                      aria-checked={selected}
+                      onClick={() => setRunDays(c.value)}
+                      className={`rounded-lg border px-3 py-2 text-left text-sm transition ${
+                        selected
+                          ? "border-amber-400 bg-amber-400/10 text-amber-200"
+                          : "border-white/10 text-zinc-400 hover:border-white/25"
+                      }`}
+                    >
+                      <span className="block font-medium">{c.label}</span>
+                      <span className="block text-xs text-zinc-400">
+                        {total === null
+                          ? "—"
+                          : c.value === null
+                            ? `about ${total} per month`
+                            : `${total} total`}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+              <FieldHint>
+                {runDays === null
+                  ? "Runs until you pause it. Google never charges more than your daily budget."
+                  : "Google stops the ad by itself at the end, so it never spends more than this."}
+              </FieldHint>
             </div>
 
             <div>

@@ -12,7 +12,9 @@ import {
   budgetBelowMinimum,
   budgetMinimumBody,
   minDailyBudgetMinorFor,
+  runEndDate,
   type BudgetMinimumBody,
+  type RunDays,
 } from "../lib/pricing/index.js";
 import { billingIdentity } from "../lib/testMode/index.js";
 import { launchPlanBlock } from "../lib/subscriptions/policy.js";
@@ -453,6 +455,9 @@ export async function launchRoutes(app: FastifyInstance) {
           logo: existingLogo
             ? { existing: existingLogo }
             : { name: logoAssetName(logo.id), base64: logoBytes.toString("base64") },
+          // 1 or 2 weeks: Google stops the campaign by itself on this day.
+          // Today's UTC date as the start (runEndDate explains the time zone).
+          endDate: runEndDate(new Date().toISOString().slice(0, 10), (campaign.runDays ?? null) as RunDays),
         };
 
         const zipCodes = {
@@ -496,6 +501,7 @@ export async function launchRoutes(app: FastifyInstance) {
             status: "live",
             launchError: null,
             launchedAt: new Date(),
+            endsOn: plan.endDate ?? null,
             updatedAt: new Date(),
             // The ad video joins the SiteVault website now (lib/siteVideo).
             ...(wantsSiteVideo({ requested: videoOnWebsite, sitevaultSlug: slugFromSiteUrl(campaign.landingUrl), advaultMade: Boolean(campaign.sitevaultEditEnc) })

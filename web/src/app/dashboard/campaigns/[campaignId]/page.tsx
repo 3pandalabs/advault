@@ -30,8 +30,8 @@ import { SquareLogo } from "./square-logo";
 import { VideoUpload } from "./video-upload";
 import { PerformanceCard } from "./performance-card";
 import { AudienceCard } from "./audience-card";
-import { BudgetEditor } from "./budget-editor";
-import { BUDGET_BELOW_MINIMUM_MESSAGE } from "@/lib/budget";
+import { BudgetEditor, RunLengthPicker } from "./budget-editor";
+import { BUDGET_BELOW_MINIMUM_MESSAGE, adSpendTotalCents, runLengthLabel, type RunDays } from "@/lib/budget";
 import { WebsiteCard } from "./website-card";
 import { BeforeAfterCard } from "./before-after-card";
 import { SiteOfferOption, payLabel } from "./site-offer-option";
@@ -390,6 +390,7 @@ export default function CampaignDetailPage({
           <h1 className="text-2xl font-semibold tracking-tight">{campaign.name}</h1>
           <p className="mt-1 text-sm text-zinc-400">
             {formatMoney(campaign.dailyBudgetCents, campaign.currencyCode)}/day &middot;{" "}
+            {runLengthLabel(campaign.runDays, campaign.endsOn)} &middot;{" "}
             {campaign.targetAddress
               ? `${campaign.radiusMiles} miles around ${campaign.targetAddress.street}, ${campaign.targetAddress.city}`
               : `${campaign.targetZipCodes.join(", ")} within ${campaign.radiusMiles} miles`}
@@ -768,6 +769,10 @@ export default function CampaignDetailPage({
                 ? "Your campaign is live. Google reviews new ads first, usually within a day, then they start showing in your area."
                 : "Sent to Google Ads. Open your Google Ads account to review it and switch it on — it was created paused and is not spending yet."}
             </CardDescription>
+            <p className="mt-2 text-sm text-zinc-400">
+              {runLengthLabel(campaign.runDays, campaign.endsOn)}
+              {campaign.runDays ? ". Google stops it by itself on the last day." : ". Runs until it is paused."}
+            </p>
             {/* Google's own ad review, synced hourly. */}
             {googleReview && (
               <div className="mt-3 flex flex-wrap items-center gap-2 text-sm text-zinc-400">
@@ -846,7 +851,17 @@ export default function CampaignDetailPage({
                 ? `Launching starts your ads with a ${formatMoney(campaign.dailyBudgetCents, campaign.currencyCode)} daily budget, paid from your AdVault balance. Google reviews new ads first, usually within a day.`
                 : `This creates a paused campaign in your Google Ads account with a ${formatMoney(campaign.dailyBudgetCents, campaign.currencyCode)} daily budget. It does not start spending until you enable it there.`}
             </CardDescription>
+            {/* The run length picked in the wizard, and what it adds up to. */}
+            <p className="mt-2 text-sm text-zinc-400">
+              {campaign.runDays === 7 || campaign.runDays === 14
+                ? `${runLengthLabel(campaign.runDays)}: about ${formatMoney(adSpendTotalCents(campaign.dailyBudgetCents, campaign.runDays as RunDays), campaign.currencyCode)} in ad spend, then Google stops it by itself.`
+                : `Always on: about ${formatMoney(adSpendTotalCents(campaign.dailyBudgetCents, null), campaign.currencyCode)} a month in ad spend, until you pause it.`}
+            </p>
             <BudgetEditor
+              campaign={campaign}
+              onSaved={(c) => setCampaign((prev) => (prev ? { ...prev, ...c } : prev))}
+            />
+            <RunLengthPicker
               campaign={campaign}
               onSaved={(c) => setCampaign((prev) => (prev ? { ...prev, ...c } : prev))}
             />
