@@ -173,14 +173,37 @@ export const PLANS: Record<string, Plan> = {
 };
 
 /**
- * "$55 a month" (2026-11-19): every PAID month of a new Keep it running plan
- * also charges this much ad budget, credited to the customer's ad budget
- * wallet (100% goes to Google). $35 = about 7 days at Google's $5/day minimum,
- * spread across the month by the ad schedule (lib/schedule/spread.ts). Not in
- * the included first month: that month's $35 is the customer's first top-up.
- * US only, like the plan.
+ * "From $55 a month" (2026-11-19): every PAID month of a Keep it running plan
+ * also charges the customer's CHOSEN monthly ad budget, credited to their ad
+ * budget wallet (100% goes to Google). The customer picks it (whole dollars,
+ * at least $35) at checkout and can change it anytime from the next invoice
+ * (`PUT /subscription/ad-budget`). $35 = about 6 days at Google's $5/day
+ * minimum, spread across the month by the ad schedule (lib/schedule/spread.ts).
+ * Not in the included first month: that month's budget is the customer's
+ * first top-up. US only, like the plan.
  */
-export const MONTHLY_AD_BUDGET_RECHARGE_MINOR: Partial<Record<Currency, number>> = { USD: 3_500 };
+export const MIN_MONTHLY_AD_BUDGET_MINOR: Partial<Record<Currency, number>> = { USD: 3_500 };
+/** Upper bound on a chosen monthly ad budget: a typo guard, not a product limit. */
+export const MAX_MONTHLY_AD_BUDGET_MINOR = 1_000_000;
+/** Stripe charges the budget as quantity x a $1 unit price. */
+export const MONTHLY_AD_BUDGET_UNIT_MINOR = 100;
+
+/**
+ * Why a chosen monthly ad budget is not allowed, or null when it is: at
+ * least the currency's minimum ($35), whole dollars, under the typo guard.
+ * A currency with no recharge (no minimum set) allows none.
+ */
+export function monthlyAdBudgetProblem(
+  amountMinor: number,
+  currency: Currency,
+): null | { error: "budget_below_minimum" | "budget_not_whole_dollars" | "budget_too_large" | "no_monthly_budget"; minMinor: number } {
+  const minMinor = MIN_MONTHLY_AD_BUDGET_MINOR[currency] ?? 0;
+  if (minMinor <= 0) return { error: "no_monthly_budget", minMinor };
+  if (!Number.isInteger(amountMinor) || amountMinor < minMinor) return { error: "budget_below_minimum", minMinor };
+  if (amountMinor % MONTHLY_AD_BUDGET_UNIT_MINOR !== 0) return { error: "budget_not_whole_dollars", minMinor };
+  if (amountMinor > MAX_MONTHLY_AD_BUDGET_MINOR) return { error: "budget_too_large", minMinor };
+  return null;
+}
 
 /**
  * The lowest daily budget a campaign in this currency may have: the highest

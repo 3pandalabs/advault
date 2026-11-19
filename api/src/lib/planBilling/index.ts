@@ -4,7 +4,8 @@ import { campaigns, subscriptions, users } from "../../db/schema.js";
 import { notifyOps } from "../ops/notify.js";
 import {
   buysMedia,
-  MONTHLY_AD_BUDGET_RECHARGE_MINOR,
+  MIN_MONTHLY_AD_BUDGET_MINOR,
+  monthlyAdBudgetProblem,
   planByKey,
   type Currency,
   type Plan,
@@ -18,6 +19,7 @@ import {
   stripeRestartOffSession,
   stripeSessionRefs,
   stripeSetCancelAtPeriodEnd,
+  stripeSetAdBudgetQuantity,
   stripeSubscriptions,
 } from "../subscriptions/providers/stripe.js";
 import { billingIdentity } from "../testMode/index.js";
@@ -95,18 +97,20 @@ export async function hasAdWaitingForBudget(userId: string, now = new Date()): P
 
 /**
  * The terms a NEW plan subscription for this user starts on ("$55 a month",
- * policy.ts planTerms): $20 + the $35 monthly ad budget (no recharge when
- * Google bills the customer's own card; 50 cents each in test mode).
+ * policy.ts planTerms): $20 + the chosen monthly ad budget (default and
+ * minimum $35; no recharge when Google bills the customer's own card; 50
+ * cents each in test mode). The caller validates `chosenBudgetMinor`.
  */
 export async function planTermsFor(
   userId: string,
   plan: Plan,
   who: { testMode: boolean },
+  chosenBudgetMinor?: number | null,
 ): Promise<PlanTerms> {
   return planTerms({
     line: plan.line,
     listFeeMinor: plan.monthlyFeeMinor,
-    rechargeMinor: MONTHLY_AD_BUDGET_RECHARGE_MINOR[plan.currency] ?? 0,
+    rechargeMinor: MIN_MONTHLY_AD_BUDGET_MINOR[plan.currency] ? (chosenBudgetMinor ?? MIN_MONTHLY_AD_BUDGET_MINOR[plan.currency]!) : 0,
     billingMode: await billingModeFor(userId),
     testMode: who.testMode,
   });
@@ -227,6 +231,61 @@ async function uncancel(sub: SubRow): Promise<"ok" | "gone" | "failed"> {
   return "ok";
 }
 
+export type AdBudgetChange =
+  | { ok: true; budgetRechargeMinor: number; effectiveFrom: Date | null; testMode: boolean }
+  | {
+      ok: false;
+      error:
+        | "no_subscription"
+        | "no_monthly_budget"
+        | "plan_pending"
+        | "stripe_error"
+        | "budget_below_minimum"
+        | "budget_not_whole_dollars"
+        | "budget_too_large";
+      minMinor?: number;
+    };
+
+/**
+ * "From $55 a month": change the customer's monthly ad budget on their live
+ * plan. Whole dollars, at least $35. No proration: the Stripe budget item's
+ * quantity changes with `proration_behavior=none`, so it applies from the
+ * next invoice and nothing is charged or refunded now; the invoice already
+ * paid keeps the amount it charged (and credited). Raising, lowering and
+ * keeping the minimum all work. Test mode (admin testing as a customer)
+ * keeps charging the 50-cent test unit: the request is validated, nothing
+ * changes.
+ */
+export async function changeMonthlyAdBudget(userId: string, amountMinor: number): Promise<AdBudgetChange> {
+  const sub = await liveSubscriptionFor(userId);
+  if (!sub) return { ok: false, error: "no_subscription" };
+  if (sub.line !== PLAN_FOLLOWS_RUNNING_LINE || sub.budgetRechargeMinor <= 0) return { ok: false, error: "no_monthly_budget" };
+  const problem = monthlyAdBudgetProblem(amountMinor, sub.currencyCode as Currency);
+  if (problem) return { ok: false, error: problem.error === "no_monthly_budget" ? "no_monthly_budget" : problem.error, minMinor: problem.minMinor };
+
+  const who = await billingIdentity(userId);
+  if (who.testMode) {
+    return { ok: true, budgetRechargeMinor: sub.budgetRechargeMinor, effectiveFrom: sub.currentPeriodEnd, testMode: true };
+  }
+  if (sub.budgetRechargeMinor !== amountMinor) {
+    const ref = await stripeRefFor(sub);
+    if (!ref) return { ok: false, error: "plan_pending" };
+    try {
+      const r = await stripeSetAdBudgetQuantity(ref, amountMinor);
+      if (!r.ok) {
+        log("monthly ad budget change: no budget line on the Stripe subscription", { userId, subscriptionId: sub.id });
+        return { ok: false, error: "stripe_error" };
+      }
+    } catch (err) {
+      log("monthly ad budget change failed", { userId, error: String(err) });
+      return { ok: false, error: "stripe_error" };
+    }
+    // Invoices opened from now on carry the new amount (openNextInvoice).
+    await db.update(subscriptions).set({ budgetRechargeMinor: amountMinor }).where(eq(subscriptions.id, sub.id));
+  }
+  return { ok: true, budgetRechargeMinor: amountMinor, effectiveFrom: sub.currentPeriodEnd, testMode: false };
+}
+
 export type RestartResult =
   | { ok: true; budgetCreditedMinor?: number }
   | { ok: false; reason: "exempt" | "checkout_required" | "no_saved_card" | "card_declined" | "stripe_error" | "already_live" };
@@ -267,7 +326,8 @@ export async function restartPlanOffSession(userId: string, now = new Date()): P
   const prevRef = await stripeRefFor(prev);
   if (!prevRef) return { ok: false, reason: "no_saved_card" };
 
-  const terms = await planTermsFor(userId, plan, who);
+  // The restart keeps the monthly ad budget the customer chose last time.
+  const terms = await planTermsFor(userId, plan, who, prev.budgetRechargeMinor >= (MIN_MONTHLY_AD_BUDGET_MINOR[plan.currency] ?? Infinity) ? prev.budgetRechargeMinor : null);
   const amountMinor = terms.feeMinor;
   const budgetMinor = terms.budgetRechargeMinor;
   let created;

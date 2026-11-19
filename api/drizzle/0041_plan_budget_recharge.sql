@@ -1,15 +1,15 @@
--- "$55 a month" (owner decision 2026-11-19): the AdVault plan goes from $19 to
--- $20, and each month the subscription also charges $35 of ad budget,
--- credited to the customer's ad budget wallet (lib/planBilling,
+-- "From $55 a month" (owner decision 2026-11-19): the AdVault plan goes from
+-- $19 to $20, and each month the subscription also charges the customer's
+-- chosen ad budget (min $35), credited to their ad budget wallet (lib/planBilling,
 -- lib/subscriptions). Same for everyone: the $19 plan had no real customers,
 -- so nothing is grandfathered. Both new columns default to 0.
 --
 -- subscriptions.budget_recharge_minor   ad budget charged with every PAID
---                                       month of this subscription (3500 =
---                                       $35; 0 = none, e.g. customer-billed).
---                                       Fixed when the subscription starts,
---                                       like amount_minor, so a later price
---                                       change never reaches it.
+--                                       month of this subscription: the
+--                                       customer's chosen amount (3500 = $35;
+--                                       0 = none, e.g. customer-billed).
+--                                       PUT /subscription/ad-budget changes it
+--                                       from the next invoice on.
 -- subscription_invoices.budget_minor    the ad budget part of THIS invoice
 --                                       (0 for the included first month).
 --                                       The provider charges amount_minor +

@@ -991,8 +991,9 @@ export const subscriptions = pgTable(
     // First period is the included month (0038): a $0 invoice / Stripe trial.
     firstMonthIncluded: boolean("first_month_included").notNull().default(false),
     includedUntil: timestamp("included_until", { withTimezone: true }),
-    // Ad budget charged with every paid month (0041, "$55 a month"): 3500 =
-    // $35 credited to the wallet each month; 0 = none (customer-billed ad
+    // Ad budget charged with every paid month (0041, "from $55 a month"): the
+    // customer's chosen amount (min 3500 = $35), credited to the wallet each
+    // month; changeable for the next invoice; 0 = none (customer-billed ad
     // accounts and every line other than evergreen).
     budgetRechargeMinor: integer("budget_recharge_minor").notNull().default(0),
 

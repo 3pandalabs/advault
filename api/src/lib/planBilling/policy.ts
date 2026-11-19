@@ -126,9 +126,10 @@ export function planGate(args: {
 }
 
 // ---------------------------------------------------------------------------
-// "$55 a month" (owner decision 2026-11-19): new plans are $20 a month plus a
-// $35 monthly ad budget recharge, credited to the wallet with every paid
-// month. One price set for everyone (no customers were on the old $19).
+// "From $55 a month" (owner decision 2026-11-19): plans are $20 a month plus
+// the customer's chosen monthly ad budget (at least $35), credited to the
+// wallet with every paid month. One price set for everyone (no customers were
+// on the old $19).
 // ---------------------------------------------------------------------------
 
 export type PlanTerms = {
@@ -141,7 +142,7 @@ export type PlanTerms = {
 /**
  * The terms a NEW subscription starts on. Pure.
  *
- * - Keep it running: the list fee ($20) plus the monthly ad budget ($35).
+ * - Keep it running: the list fee ($20) plus the chosen monthly ad budget.
  * - No recharge for a customer-billed ad account: Google charges their own
  *   card, the wallet never pays for their ads.
  * - Test mode (admin testing as a customer): both lines at the 50-cent test
@@ -151,7 +152,7 @@ export type PlanTerms = {
 export function planTerms(args: {
   line: string;
   listFeeMinor: number;
-  /** MONTHLY_AD_BUDGET_RECHARGE_MINOR for the plan's currency (0 when none). */
+  /** The customer's chosen monthly ad budget (0 when none). */
   rechargeMinor: number;
   billingMode: string | null;
   testMode: boolean;
@@ -187,8 +188,8 @@ export function planGateBody(gate: Exclude<PlanGate, { ok: true }>): Record<stri
       error: "plan_required",
       firstMonthIncluded: gate.firstMonthIncluded,
       detail: gate.firstMonthIncluded
-        ? "Start your AdVault plan: $0 today, your first month is included. Then $20 a month plus your $35 monthly ad budget, only while your ad runs."
-        : "Restart your AdVault plan: $20 a month plus your $35 monthly ad budget while your ad runs. Pause anytime: no fee while paused.",
+        ? "Start your AdVault plan: $0 today, your first month is included. Then $20 a month plus your monthly ad budget (from $35), only while your ad runs."
+        : "Restart your AdVault plan: $20 a month plus your monthly ad budget (from $35) while your ad runs. Pause anytime: no fee while paused.",
     };
   }
   if (gate.error === "plan_pending") {

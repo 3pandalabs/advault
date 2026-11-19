@@ -23,7 +23,7 @@ Product catalogue → Add product:
 | Product | Price | Env var on `advault-api` |
 |---|---|---|
 | AdVault Keep it running | $20.00 USD, recurring monthly (replaces the old $19 price; archive that one) | `STRIPE_PRICE_US_EVERGREEN` |
-| AdVault ad budget | $35.00 USD, recurring monthly | `STRIPE_PRICE_US_AD_BUDGET` |
+| AdVault ad budget | **$1.00 USD, recurring monthly, per unit** (the subscription line's quantity = the customer's monthly budget in dollars) | `STRIPE_PRICE_US_AD_BUDGET` |
 | AdVault Managed | $79.00 USD, recurring monthly | `STRIPE_PRICE_US_MANAGED` (only if sold) |
 | AdVault Monthly offer | $39.00 USD, recurring monthly | `STRIPE_PRICE_US_OFFER` (only if sold) |
 
@@ -47,7 +47,7 @@ endpoints: each endpoint gets its own secret and the app reads only one.
 ## 5. Env on `advault-api` (Coolify)
 
 `STRIPE_SECRET_KEY` (the restricted key), `STRIPE_WEBHOOK_SECRET`,
-`STRIPE_PRICE_US_EVERGREEN` (the $20 price), `STRIPE_PRICE_US_AD_BUDGET` (the $35 price). Redeploy.
+`STRIPE_PRICE_US_EVERGREEN` (the $20 price), `STRIPE_PRICE_US_AD_BUDGET` (the $1 unit price). Redeploy.
 
 ## 6. Test
 

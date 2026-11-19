@@ -122,10 +122,15 @@ describe("$55 a month: plan terms", () => {
     testMode: false,
   };
 
-  it("every plan is $20 plus a $35 monthly ad budget", () => {
+  it("every plan is $20 plus the monthly ad budget ($35 by default)", () => {
     expect(planTerms(base)).toEqual({ feeMinor: 2_000, budgetRechargeMinor: 3_500 });
     // No ad account yet (the default is platform-billed): same.
     expect(planTerms({ ...base, billingMode: null })).toEqual({ feeMinor: 2_000, budgetRechargeMinor: 3_500 });
+  });
+
+  it("the recharge is the customer's chosen budget ($100 -> $120 a month); test mode stays 50 cents", () => {
+    expect(planTerms({ ...base, rechargeMinor: 10_000 })).toEqual({ feeMinor: 2_000, budgetRechargeMinor: 10_000 });
+    expect(planTerms({ ...base, rechargeMinor: 10_000, testMode: true })).toEqual({ feeMinor: 50, budgetRechargeMinor: 50 });
   });
 
   it("no recharge when Google bills the customer's own card", () => {

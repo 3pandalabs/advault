@@ -38,8 +38,9 @@ export type SubscriptionCheckoutRequest = {
    */
   trialEnd?: Date | null;
   /**
-   * "$55 a month" (0041): ad budget charged with every paid month as a second
-   * recurring line on the same subscription, credited to the wallet when the
+   * "From $55 a month" (0041): the customer's chosen monthly ad budget,
+   * charged with every paid month as a second recurring line on the same
+   * subscription (quantity x a $1 unit price), credited to the wallet when the
    * invoice is paid. 0/absent = none. Stripe only (the plan it applies to is
    * US-only).
    */
@@ -77,6 +78,11 @@ export type SubscriptionEvent =
       /** Provider subscription / customer ids (Stripe sub_ / cus_), when present. */
       providerSubscriptionRef?: string | null;
       providerCustomerRef?: string | null;
+      /**
+       * "From $55 a month": the monthly ad budget THIS provider invoice
+       * charged, read from its own lines; undefined when it cannot tell.
+       */
+      budgetMinor?: number;
     }
   | { kind: "failed"; invoiceId: string; reason: string; raw: unknown }
   | { kind: "canceled"; subscriptionId: string; raw: unknown }

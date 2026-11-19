@@ -45,6 +45,7 @@ const holder = vi.hoisted(() => {
     })),
     pause: vi.fn(async () => undefined),
     enable: vi.fn(async () => undefined),
+    setBudgetQty: vi.fn(async (_ref: string, _minor: number): Promise<{ ok: true } | { ok: false; reason: "no_budget_line" }> => ({ ok: true })),
   };
 });
 
@@ -73,6 +74,7 @@ vi.mock("../subscriptions/providers/stripe.js", async (orig) => {
     stripeSubscriptions: { ...real.stripeSubscriptions, isConfigured: () => true, createCheckout: holder.createCheckout },
     stripeSetCancelAtPeriodEnd: holder.setCancel,
     stripeRestartOffSession: holder.restart,
+    stripeSetAdBudgetQuantity: holder.setBudgetQty,
     stripeSessionRefs: vi.fn(async () => ({ subscription: null, customer: null })),
     stripeCancelNow: vi.fn(async () => undefined),
     stripeExpireSession: vi.fn(async () => undefined),
@@ -205,6 +207,7 @@ beforeEach(() => {
   holder.createCheckout.mockClear();
   holder.pause.mockClear();
   holder.enable.mockClear();
+  holder.setBudgetQty.mockClear();
 });
 
 /** A new customer who starts the plan with the included month and pays it ($0) via the webhook. */
@@ -329,7 +332,7 @@ describe("first month included", () => {
   });
 });
 
-describe("$55 a month: the monthly $35 ad budget recharge", () => {
+describe("from $55 a month: the monthly ad budget recharge", () => {
   const cycle = (id: string, amount: number, subscriptionId: string, invoiceId: string) =>
     webhook({
       type: "invoice.paid",
@@ -413,6 +416,134 @@ describe("$55 a month: the monthly $35 ad budget recharge", () => {
     // The customer's own pause is a real pause: no fee, no recharge.
     await pg.query(`update campaigns set paused_for_funds_at = null where id = $1`, [id]);
     expect(await plan.syncPlanBillingForUser(userId)).toMatchObject({ action: "stop_at_period_end", ok: true });
+  });
+});
+
+describe("from $55 a month: the customer chooses the monthly ad budget", () => {
+  const cycle = (id: string, amount: number, subscriptionId: string, invoiceId: string, extra: Record<string, unknown> = {}) =>
+    webhook({
+      type: "invoice.paid",
+      data: {
+        object: {
+          id,
+          billing_reason: "subscription_cycle",
+          amount_paid: amount,
+          currency: "usd",
+          subscription: "sub_1",
+          subscription_details: { metadata: { subscription_id: subscriptionId, invoice_id: invoiceId, app: "advault" } },
+          ...extra,
+        },
+      },
+    });
+  const wallet = async (userId: string) =>
+    (await pg.query<{ balance_minor: number }>(`select balance_minor from wallets where user_id = $1`, [userId])).rows[0]?.balance_minor ?? 0;
+  const recharge = async (userId: string) =>
+    (await pg.query<{ b: number }>(`select budget_recharge_minor as b from subscriptions where user_id = $1 and status = 'active'`, [userId])).rows[0]!.b;
+  const put = (userId: string, amountMinor: number) =>
+    app.inject({ method: "PUT", url: "/subscription/ad-budget", headers: { "x-test-user": userId }, payload: { amountMinor } });
+
+  it("the budget picked at checkout is the monthly amount ($100 -> $120 a month)", async () => {
+    const userId = await newUser("choose@x.test");
+    const res = await app.inject({
+      method: "POST",
+      url: "/subscription",
+      headers: { "x-test-user": userId },
+      payload: { planKey: "us-evergreen", adBudgetMinor: 10_000 },
+    });
+    expect(res.statusCode).toBe(201);
+    expect(res.json()).toMatchObject({ amountMinor: 2000, budgetRechargeMinor: 10_000 });
+    expect(holder.createCheckout.mock.calls.at(-1)![0]).toMatchObject({ amountMinor: 2000, budgetMinor: 10_000 });
+  });
+
+  it("checkout refuses a budget under $35 or not in whole dollars", async () => {
+    const userId = await newUser("choose-bad@x.test");
+    for (const amountMinor of [3_400, 3_550]) {
+      const res = await app.inject({
+        method: "POST",
+        url: "/subscription",
+        headers: { "x-test-user": userId },
+        payload: { planKey: "us-evergreen", adBudgetMinor: amountMinor },
+      });
+      expect(res.statusCode).toBe(400);
+    }
+    expect(holder.createCheckout).not.toHaveBeenCalled();
+  });
+
+  it("a change applies to the next invoice only, with no proration, and the recharge credits what the invoice charged", async () => {
+    const { userId, subscriptionId, invoiceId } = await startIncluded("change@x.test");
+    const before = await wallet(userId);
+    // Month two at the $35 chosen at the start.
+    expect((await cycle("in_m2", 5500, subscriptionId, invoiceId)).json()).toMatchObject({ budgetCreditedMinor: 3500 });
+
+    // Raise to $100: Stripe's budget quantity changes (no proration), nothing is charged now.
+    const up = await put(userId, 10_000);
+    expect(up.statusCode).toBe(200);
+    expect(up.json()).toMatchObject({ ok: true, budgetRechargeMinor: 10_000 });
+    expect(holder.setBudgetQty).toHaveBeenCalledWith("sub_1", 10_000);
+    expect(await recharge(userId)).toBe(10_000);
+    // The month already paid keeps what it charged and credited.
+    const paid = (await invoices(userId)).filter((i) => i.status === "paid");
+    expect(paid.map((i) => i.amount_minor)).toEqual([0, 2000]);
+    expect(await wallet(userId)).toBe(before + 3500);
+
+    // Month three: $20 + $100.
+    expect((await cycle("in_m3", 12_000, subscriptionId, invoiceId)).json()).toMatchObject({ budgetCreditedMinor: 10_000 });
+    expect(await wallet(userId)).toBe(before + 13_500);
+
+    // Lower back to the $35 minimum: also works.
+    expect((await put(userId, 3_500)).json()).toMatchObject({ ok: true, budgetRechargeMinor: 3_500 });
+    expect((await cycle("in_m4", 5500, subscriptionId, invoiceId)).json()).toMatchObject({ budgetCreditedMinor: 3500 });
+    expect(await wallet(userId)).toBe(before + 17_000);
+  });
+
+  it("the credit follows the invoice's own budget line, not the current setting", async () => {
+    const { userId, subscriptionId, invoiceId } = await startIncluded("line@x.test");
+    const before = await wallet(userId);
+    await put(userId, 10_000);
+    // Stripe had already billed this month at the old quantity (35 x $1).
+    const lines = {
+      lines: {
+        data: [
+          { amount: 2000, quantity: 1, price: { id: "price_evergreen", unit_amount: 2000 } },
+          { amount: 3500, quantity: 35, price: { id: "price_unit", unit_amount: 100 } },
+        ],
+      },
+    };
+    expect((await cycle("in_old_qty", 5500, subscriptionId, invoiceId, lines)).json()).toMatchObject({ budgetCreditedMinor: 3500 });
+    expect(await wallet(userId)).toBe(before + 3500);
+  });
+
+  it("the minimum is enforced and only whole dollars are taken", async () => {
+    const { userId } = await startIncluded("min@x.test");
+    expect((await put(userId, 3_499)).statusCode).toBe(400);
+    expect((await put(userId, 3_400)).json()).toMatchObject({ error: "budget_below_minimum", minMinor: 3500 });
+    expect((await put(userId, 4_250)).json()).toMatchObject({ error: "budget_not_whole_dollars" });
+    expect(holder.setBudgetQty).not.toHaveBeenCalled();
+    expect(await recharge(userId)).toBe(3500);
+    // Keeping the minimum is fine and touches nothing.
+    expect((await put(userId, 3_500)).statusCode).toBe(200);
+    expect(holder.setBudgetQty).not.toHaveBeenCalled();
+  });
+
+  it("no plan, or a Stripe subscription without a budget line, is refused", async () => {
+    const none = await newUser("nobudget@x.test");
+    expect((await put(none, 5_000)).statusCode).toBe(404);
+    const { userId } = await startIncluded("noline@x.test");
+    holder.setBudgetQty.mockResolvedValueOnce({ ok: false, reason: "no_budget_line" });
+    expect((await put(userId, 5_000)).statusCode).toBe(502);
+    expect(await recharge(userId)).toBe(3500);
+  });
+
+  it("a restart keeps the budget the customer chose", async () => {
+    const { userId, accountId } = await startIncluded("keepchoice@x.test");
+    await put(userId, 7_000);
+    const id = await campaign(userId, accountId, "paused");
+    await pg.query(`insert into wallets (user_id, currency_code, balance_minor) values ($1, 'USD', 10000)`, [userId]);
+    await pg.query(`update subscriptions set status = 'canceled' where user_id = $1`, [userId]);
+    holder.restart.mockResolvedValueOnce({ ok: true, subscriptionRef: "sub_k", customerRef: "cus_1", invoiceRef: "in_k", amountPaidMinor: 9000 });
+    const res = await app.inject({ method: "POST", url: `/campaigns/${id}/resume`, headers: { "x-test-user": userId } });
+    expect(res.json()).toMatchObject({ planRestarted: true });
+    expect(holder.restart.mock.calls[0]![0]).toMatchObject({ amountMinor: 2000, budgetMinor: 7_000 });
   });
 });
 
