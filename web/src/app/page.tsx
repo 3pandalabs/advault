@@ -44,17 +44,6 @@ const DEMOS = [
   { src: "/demo/advault.mp4", poster: "/demo/advault.jpg", title: "AdVault itself", note: "Our own ad" },
 ];
 
-const FOR_WHOM = [
-  "Real estate agents",
-  "Salons",
-  "Barbershops",
-  "Dentists",
-  "Restaurants",
-  "Bakeries",
-  "Gyms",
-  "Plumbers",
-];
-
 const FAQ = [
   {
     q: "I don't have a website. Can I still advertise?",
@@ -163,16 +152,6 @@ export default function LandingPage() {
         </div>
         <p className="mt-3 text-sm text-zinc-500">No contract. Cancel any time.</p>
 
-        <div className="mt-8 flex flex-wrap gap-2">
-          {FOR_WHOM.map((w) => (
-            <span
-              key={w}
-              className="rounded-full border border-white/10 bg-white/[0.03] px-3 py-1 text-sm text-zinc-400"
-            >
-              {w}
-            </span>
-          ))}
-        </div>
       </section>
 
       <section id="ads" className="mx-auto w-full max-w-5xl scroll-mt-6 px-6 pb-16">
