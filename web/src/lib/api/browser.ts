@@ -429,6 +429,56 @@ export const getAdminBusiness = () => api<AdminBusiness>("/admin/business");
 export const getCampaignMetrics = (id: string, days = 7) =>
   api<CampaignMetrics>(`/campaigns/${id}/metrics?days=${days}`);
 
+// "How your ad is doing" (GET /campaigns/:id/results, 2026-11-19).
+export type ResultsRange = "7d" | "30d" | "all";
+export type ResultsBreakdownItem = {
+  segment: string;
+  label: string;
+  share: number;
+  impressions: number;
+  views: number;
+  clicks: number;
+  spendMinor: number;
+};
+/** null = Google reported nothing for it yet (or withheld it): "Not enough views yet". */
+export type ResultsBreakdown = ResultsBreakdownItem[] | null;
+export type CampaignResults =
+  | { campaignId: string; launched: false; range: ResultsRange }
+  | {
+      campaignId: string;
+      launched: true;
+      range: ResultsRange;
+      since: string;
+      currency: string;
+      note: string;
+      totals: {
+        impressions: number;
+        views: number;
+        clicks: number;
+        spendMinor: number;
+        spendDisplay: string;
+        costMicros: number;
+        costPerViewMinor: number | null;
+        costPerViewDisplay: string | null;
+        costPerClickMinor: number | null;
+        costPerClickDisplay: string | null;
+      } | null;
+      balance: { balanceMinor: number; display: string; daysLeft: number | null } | null;
+      trend: { date: string; views: number; clicks: number; spendMinor: number; costPerViewMinor: number | null }[];
+      breakdowns: {
+        age: ResultsBreakdown;
+        gender: ResultsBreakdown;
+        device: ResultsBreakdown;
+        network: ResultsBreakdown;
+        location: ResultsBreakdown;
+        hour: ResultsBreakdown;
+        dayOfWeek: ResultsBreakdown;
+      };
+      lastSyncedAt: string | null;
+    };
+export const getCampaignResults = (id: string, range: ResultsRange = "7d") =>
+  api<CampaignResults>(`/campaigns/${id}/results?range=${range}`);
+
 export const listAdAccounts = () =>
   api<{ configured: boolean; managedOffered?: boolean; accounts: AdAccount[] }>("/ad-accounts");
 

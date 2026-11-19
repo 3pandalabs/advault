@@ -1307,6 +1307,31 @@ export const campaignDailyMetrics = pgTable(
   ],
 );
 
+// Results-screen breakdowns (migration 0035, lib/adMetrics/segments.ts): one
+// row per (campaign, report date, dimension, segment), same counts as
+// campaign_daily_metrics. Read-only copy of Google's reports.
+export const campaignSegmentMetrics = pgTable(
+  "campaign_segment_metrics",
+  {
+    campaignId: uuid("campaign_id")
+      .notNull()
+      .references(() => campaigns.id, { onDelete: "cascade" }),
+    date: date("date", { mode: "string" }).notNull(),
+    // age | gender | device | network | hour | postal | city (CHECK)
+    dimension: text("dimension").notNull(),
+    // Google's enum / hour number / geoTargetConstants/<id>
+    segment: text("segment").notNull(),
+    // Resolved place name for postal/city rows; NULL otherwise.
+    label: text("label"),
+    impressions: bigint("impressions", { mode: "number" }).notNull().default(0),
+    views: bigint("views", { mode: "number" }).notNull().default(0),
+    clicks: bigint("clicks", { mode: "number" }).notNull().default(0),
+    costMicros: bigint("cost_micros", { mode: "number" }).notNull().default(0),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("uq_campaign_segment_metrics").on(t.campaignId, t.date, t.dimension, t.segment)],
+);
+
 // Prepaid vendor balances over time (migration 0018). fal's credit balance is
 // read hourly by the renderer (render/falBalanceWatch.ts); the readings size
 // the low-balance alert from the real spend rate (lib/vendors/balancePolicy.ts).

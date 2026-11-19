@@ -319,6 +319,25 @@ It must never call a mutate endpoint. Routes (`/campaigns/:id/metrics`,
   the whole query.
 - **Rates are computed from summed counts** (`lib/adMetrics/policy.ts`), never
   selected from Google — per-day averages cannot be summed across a range.
+- **The results screen (2026-11-19, migration 0035).** The campaign page's
+  "How your ad is doing" (`results-card.tsx`, `GET /campaigns/:id/results`)
+  replaced the 7-day Performance card: cost per view as the hero with cost
+  per click beside it (each with a plain "What's this?" and the sum in words),
+  views / clicks / times shown / spent / budget left / days left at the
+  current pace, two sparklines, and who / where / when breakdowns. The sweep
+  stores those in `campaign_segment_metrics` (campaign, date, dimension,
+  segment), one read-only search per dimension (`lib/adMetrics/segments.ts`):
+  `age_range_view`, `gender_view`, `segments.device`,
+  `segments.ad_network_type`, `segments.hour`, and `user_location_view`
+  `segments.geo_target_postal_code` / `geo_target_city` (names via
+  `geo_target_constant`). Day of week comes from the daily rows. Every field
+  name was accepted by Google on 2026-11-19 (read-only queries against the
+  test customer); result shapes are from the REST reference. Breakdowns run
+  every 3 hours (`AD_SEGMENTS_SYNC_INTERVAL_MS`), not hourly, to spare the
+  Basic-access daily operation cap; a campaign with no rows is backfilled
+  from launch (max 90 days). An empty breakdown is `null` = "Not enough views
+  yet", never zeros. Demand Gen targets demographics via an Audience, not
+  age/gender criteria, so age/gender may stay empty for our campaigns.
 - `/admin/metrics` takes an admin session or the optional
   `ADMIN_ANALYTICS_TOKEN`, never the shared `METRICS_TOKEN`: it names
   businesses and their spend, which `/metrics` deliberately never does.
