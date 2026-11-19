@@ -70,7 +70,9 @@ export function TopUpPicker({
       setError(
         err instanceof ApiError && err.code === "checkout_failed"
           ? "Could not start checkout. Please try again."
-          : "Something went wrong. Please try again.",
+          : err instanceof ApiError && err.code === "topup_below_minimum" && err.detail
+            ? err.detail
+            : "Something went wrong. Please try again.",
       );
     } finally {
       setBusy(false);

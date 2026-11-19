@@ -193,6 +193,47 @@ describe("POST /wallet/topup", () => {
   });
 });
 
+describe("POST /wallet/topup minimum (server side)", () => {
+  const topup = (user: string, payload: Record<string, unknown>) =>
+    app.inject({ method: "POST", url: "/wallet/topup", headers: { "x-test-user": user }, payload });
+
+  it("refuses an ad budget top-up under $35 before any checkout", async () => {
+    holder.createCheckout.mockClear();
+    const res = await topup(userId, { amountMinor: 3_499 });
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toMatchObject({ error: "topup_below_minimum", minMinor: 3_500, currencyCode: "USD" });
+    expect(res.json().detail).toContain("$35");
+    expect(holder.createCheckout).not.toHaveBeenCalled();
+    const n = await pg.query<{ n: number }>(`select count(*)::int as n from payments where user_id = $1 and amount_minor = 3499`, [userId]);
+    expect(n.rows[0]!.n).toBe(0);
+  });
+
+  it("accepts exactly $35", async () => {
+    holder.createCheckout.mockClear();
+    const res = await topup(userId, { amountMinor: 3_500 });
+    expect(res.statusCode).toBe(201);
+    expect(holder.createCheckout.mock.calls[0]![0]).toMatchObject({ amountMinor: 3_500 });
+  });
+
+  it("does not apply to a creation fee", async () => {
+    holder.createCheckout.mockClear();
+    const res = await topup(userId, { amountMinor: 1_000, purpose: "creation_fee" });
+    expect(res.statusCode).toBe(201);
+  });
+
+  it("test mode: validates the requested amount, then charges 50 cents", async () => {
+    const r = await pg.query<{ id: string }>(
+      `insert into users (email, password_hash, role, test_as_customer) values ('admin-test@x.invalid', 'x', 'admin', true) returning id`,
+    );
+    const admin = r.rows[0]!.id;
+    holder.createCheckout.mockClear();
+    expect((await topup(admin, { amountMinor: 50 })).statusCode).toBe(400);
+    const ok = await topup(admin, { amountMinor: 3_500 });
+    expect(ok.statusCode).toBe(201);
+    expect(holder.createCheckout.mock.calls[0]![0]).toMatchObject({ amountMinor: 50, testMode: true });
+  });
+});
+
 describe("resumeFundedCampaigns", () => {
   it("restarts a paused-for-funds campaign once the balance covers 3 days", async () => {
     const { resumeFundedCampaigns } = await import("../lib/billing/resume.js");

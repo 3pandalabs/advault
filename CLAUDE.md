@@ -245,7 +245,7 @@ orphaned a budget on every failure. Don't split it back up.
 - **Top-up first (2026-11-19, migration 0034).** The run-length picker is now
   behind "Advanced: stop on a date"; the default is always on (`run_days`
   NULL). The wizard, campaign page and wallet page lead with "Add to your ad
-  budget" ($35 / $50 / $100 / custom, min $35 in the UI) and "Your $50 lasts
+  budget" ($35 / $50 / $100 / custom, min $35; enforced server side too since 2026-11-20, 400 `topup_below_minimum` on the requested amount) and "Your $50 lasts
   about 10 days at $5 a day" (`daysOfBudget` in `lib/wallet/runway.ts`,
   mirrored in `web/src/lib/budget.ts`). The wizard only remembers the amount
   (sessionStorage); the campaign page's budget card charges it. The ad runs
