@@ -5,6 +5,7 @@ import { requireAuth } from "../auth/plugin.js";
 import { db } from "../db/index.js";
 import { campaigns, creatives } from "../db/schema.js";
 import { loadOwnedCampaign } from "../lib/ownership.js";
+import { budgetBelowMinimum } from "../lib/pricing/index.js";
 import { realtySchema } from "../lib/realty/index.js";
 import { markAppUsed } from "../lib/sharedAccount/index.js";
 import {
@@ -32,7 +33,7 @@ const postalCode = z
   .string()
   .regex(/^\d{5}$|^\d{6}$/, "must be a 5-digit US ZIP or 6-digit Indian PIN code");
 
-const campaignInput = z.object({
+const campaignFields = z.object({
   name: z.string().min(1).max(120),
   businessName: z.string().min(1).max(160),
   businessCategory: z.string().min(1).max(80),
@@ -65,10 +66,12 @@ const campaignInput = z.object({
       message: "mix of US ZIP and Indian PIN codes",
     }),
   radiusMiles: z.number().int().min(1).max(50).default(10),
-  // Minor units. A $1/day floor (lowered from $5 on 2026-11-10 so a shop can
-  // start tiny; Google spends very small budgets slowly, which is why the
-  // wizard suggests $15). The $500/day ceiling is a guardrail against a
-  // mistyped budget, not a product limit. Matches us-managed in lib/pricing.
+  // Minor units. The real floor is per currency and checked below
+  // (budgetBelowMinimum in lib/pricing): $5/day for USD, Google's Demand Gen
+  // per-day minimum. It was lowered to $1 on 2026-11-10 and every $1-$4.99
+  // campaign then failed at launch with BUDGET_BELOW_PER_DAY_MINIMUM (found
+  // by a validateOnly dry run, 2026-11-19). The $500/day ceiling is a
+  // guardrail against a mistyped budget, not a product limit.
   dailyBudgetCents: z.number().int().min(100).max(50_000),
   currencyCode: z.string().length(3).default("USD"),
   // Real estate only: the listing address a radius is drawn around.
@@ -79,7 +82,20 @@ const campaignInput = z.object({
   realty: realtySchema.nullish(),
 });
 
-type CampaignInput = z.infer<typeof campaignInput>;
+// The create schema: the fields plus the currency-aware budget floor. PATCH
+// uses campaignFields.partial() and checks the floor against the merged row.
+export const campaignInput = campaignFields.superRefine((v, ctx) => {
+  const below = budgetBelowMinimum(v.dailyBudgetCents, v.currencyCode);
+  if (below) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["dailyBudgetCents"],
+      message: `must be at least ${below.minDailyBudgetMinor} (${below.currencyCode} minor units): ${below.detail}`,
+    });
+  }
+});
+
+type CampaignInput = z.infer<typeof campaignFields>;
 
 /**
  * Normalises the filters and applies the targeting rules (housing policy,
@@ -157,7 +173,7 @@ export async function campaignRoutes(app: FastifyInstance) {
     {
       schema: {
         params: z.object({ campaignId: z.string().uuid() }),
-        body: campaignInput.partial(),
+        body: campaignFields.partial(),
       },
     },
     async (req, reply) => {
@@ -176,6 +192,14 @@ export async function campaignRoutes(app: FastifyInstance) {
       // Checked against the row as it WILL be, so changing only the category
       // to "Real estate" on a campaign with age filters is refused too.
       const body = req.body as Partial<CampaignInput>;
+      // Same floor as create, against the row as it will be.
+      const below = budgetBelowMinimum(
+        body.dailyBudgetCents ?? campaign.dailyBudgetCents,
+        body.currencyCode ?? campaign.currencyCode,
+      );
+      if (below && (body.dailyBudgetCents !== undefined || body.currencyCode !== undefined)) {
+        return reply.code(400).send(below);
+      }
       const targeting = checkTargeting({
         businessCategory: body.businessCategory ?? campaign.businessCategory,
         targetZipCodes: body.targetZipCodes ?? campaign.targetZipCodes,

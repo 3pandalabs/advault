@@ -146,9 +146,11 @@ export const PLANS: Record<string, Plan> = {
     monthlyFeeMinor: 7_900, // $79/month platform fee
     includedCreativesPerMonth: 2,
     suggestedAdBudgetMinor: 10_000, // $100
-    // $1/day (was $5 until 2026-11-10): lets the ad say "from $1 a day". The
-    // wizard still suggests $15; tiny budgets deliver slowly, so nudge up.
-    minDailyBudgetMinor: 100, // $1/day
+    // $5/day: Google's per-day minimum for a Demand Gen campaign budget in USD.
+    // It was lowered to $1 on 2026-11-10 and Google refused it
+    // (BUDGET_BELOW_PER_DAY_MINIMUM, budgetPerDayMinimumMicros 5000000), found
+    // by a validateOnly dry run on 2026-11-19. Do not go below it again.
+    minDailyBudgetMinor: 500, // $5/day
     label: "US — Managed Ads",
     blurb: "Your offer running on YouTube around your business, handled end to end.",
   },
@@ -159,12 +161,57 @@ export const PLANS: Record<string, Plan> = {
     monthlyFeeMinor: 1_900, // $19/month platform fee
     // Ads are bought one at a time ($10 each), never bundled into the fee.
     includedCreativesPerMonth: 0,
-    suggestedAdBudgetMinor: 3_000, // $30 = $1/day, the floor
-    minDailyBudgetMinor: 100, // $1/day
+    // $30 was sized for the old $1/day floor; at Google's $5/day minimum it
+    // covers about 6 days. Repricing it is a business decision, not made here.
+    suggestedAdBudgetMinor: 3_000,
+    minDailyBudgetMinor: 500, // $5/day, Google's Demand Gen minimum (see us-managed)
     label: "US — Keep it running",
     blurb: "One ad kept running on YouTube around your business. $10 per ad, no monthly offers.",
   },
 };
+
+/**
+ * The lowest daily budget a campaign in this currency may have: the highest
+ * floor among the plans that buy media in it (USD $5 = Google's Demand Gen
+ * per-day minimum; INR ₹100). A currency no plan sells has no floor here.
+ * Used by campaign create/edit and re-checked at launch.
+ */
+export function minDailyBudgetMinorFor(currency: string): number {
+  let min = 0;
+  for (const p of Object.values(PLANS)) {
+    if (p.currency === currency && buysMedia(p.line)) min = Math.max(min, p.minDailyBudgetMinor);
+  }
+  return min;
+}
+
+/**
+ * Null when the budget meets its currency's floor, else what to tell the
+ * advertiser. The one rule behind campaign create/edit and the launch
+ * pre-check, so all three say the same thing.
+ */
+export function budgetBelowMinimum(dailyBudgetMinor: number, currency: string): BudgetMinimumBody | null {
+  const min = minDailyBudgetMinorFor(currency);
+  return dailyBudgetMinor >= min ? null : budgetMinimumBody(min, currency);
+}
+
+/** The 409/400 body for a budget under the floor (also used for Google's own refusal). */
+export type BudgetMinimumBody = {
+  error: "budget_below_minimum";
+  minDailyBudgetMinor: number;
+  currencyCode: string;
+  detail: string;
+};
+
+export function budgetMinimumBody(minDailyBudgetMinor: number, currency: string): BudgetMinimumBody {
+  const symbol = currency === "USD" ? "$" : currency === "INR" ? "₹" : `${currency} `;
+  const amount = `${symbol}${(minDailyBudgetMinor / MINOR_PER_MAJOR).toLocaleString("en-US")}`;
+  return {
+    error: "budget_below_minimum",
+    minDailyBudgetMinor,
+    currencyCode: currency,
+    detail: `Google needs at least ${amount} a day for this kind of ad. Raise your daily budget to launch.`,
+  };
+}
 
 // Only the lines sold in every market: evergreen is US-only, so it is looked
 // up by key (planByKey) rather than through here.

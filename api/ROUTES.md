@@ -210,7 +210,17 @@ Failure codes worth handling in a client: `google_ads_not_configured` (503),
 `video_pending_review` (409), `video_rejected` (409),
 `no_resolvable_zip_codes` (400), `logo_required` (409), `logo_invalid` (409,
 with `reason`), `manager_account` (409), `google_ads_error` (502, `detail`
-lists Google's per-field reasons).
+lists Google's per-field reasons), `budget_below_minimum` (409, with
+`minDailyBudgetMinor`, `currencyCode` and a plain `detail`).
+
+`budget_below_minimum` is checked right after `already_launched`, dry run
+included, against the currency's floor (`minDailyBudgetMinorFor` in
+`lib/pricing`: **$5/day USD**, Google's Demand Gen per-day minimum; ₹100/day
+INR). Campaigns saved while the floor was $1 (2026-11-10 to 2026-11-19) hit it;
+PATCH `dailyBudgetCents` fixes them (POST/PATCH `/campaigns` refuse a budget
+under the floor, PATCH with 400 `budget_below_minimum`). Google's own
+`BUDGET_BELOW_PER_DAY_MINIMUM` is mapped to the same 409 (with Google's
+minimum), and the campaign is not marked failed.
 
 `billing_not_configured` is the one that matters most: without it, launching
 into a customer-funded account with no card **succeeds** and the campaign then

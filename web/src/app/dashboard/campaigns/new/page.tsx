@@ -20,6 +20,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardDescription, CardTitle } from "@/components/ui/card";
 import { FieldHint, Input, Label, Textarea } from "@/components/ui/input";
 import { parseDollarsToCents } from "@/lib/utils";
+import { MAX_DAILY_BUDGET_CENTS, minDailyBudgetCents } from "@/lib/budget";
 import { SuggestionChips } from "@/components/SuggestionChips";
 import { callToActionSuggestions, campaignNameSuggestions } from "@/lib/suggestions";
 import { AudienceFiltersEditor, HOUSING_NOTICE } from "@/components/AudienceFiltersEditor";
@@ -66,10 +67,9 @@ const FORMATS = [
 
 const MAX_PHOTOS = 5;
 
-// Mirror the API's dailyBudgetCents bounds (api/src/routes/campaigns.ts) so the
-// form says so up front instead of the server rejecting it after submit.
-const MIN_DAILY_BUDGET_CENTS = 100;
-const MAX_DAILY_BUDGET_CENTS = 50_000;
+// Mirror the API's bounds (lib/budget.ts) so the form says so up front instead
+// of the server rejecting it after submit. The wizard is USD only.
+const MIN_DAILY_BUDGET_CENTS = minDailyBudgetCents("USD"); // $5, Google's Demand Gen minimum
 
 // API field names -> the label the advertiser sees, for naming rejected fields.
 const FIELD_LABELS: Record<string, string> = {
@@ -1107,7 +1107,8 @@ export default function NewCampaignPage() {
                 ) : (
                   <FieldHint>
                     Between {MIN_DAILY_BUDGET_CENTS / 100} and {MAX_DAILY_BUDGET_CENTS / 100} a
-                    day. Google never charges more than this per day.
+                    day ({MIN_DAILY_BUDGET_CENTS / 100} is Google&apos;s minimum for this kind of
+                    ad). Google never charges more than this per day.
                   </FieldHint>
                 )}
               </div>
