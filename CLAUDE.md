@@ -504,6 +504,31 @@ the API copy, then the web copy).
   "Lunch and dinner" (11–2 and 5–9 every day) and "Dinner only". A tap only
   fills the "When it shows" editor; the owner saves it. It is wired to Google
   through the existing ad schedule (above).
+- **Badges** (`badges.ts`, migration 0039, `routes/badges.ts`, campaign page
+  `badges-card.tsx`): per-category trust badges (license number, licensed &
+  insured, background-checked, 12-month warranty, ASE certified, licensed
+  pesticide applicator, upfront pricing, most insurance accepted, financing,
+  24/7 emergency service), max 4, the owner ticks "These are true for my
+  business today" (who/when stored). `generateForCampaign` copies the chips
+  onto `script.badges` (ONLY attested ones; the script edit route keeps the
+  stored ones, like `beforeAfter`) and passes them to the writer as
+  `confirmedFacts`; the template shows them as chips on the END CARD. The
+  ffmpeg fallback does not show them. NOT on the SiteVault website: its
+  internal API has no field for them (would need a SiteVault change).
+- **Plan offer builder** (`planOffer.ts`, `components/PlanOfferBuilder.tsx`):
+  Landscaping, Cleaning, HVAC. Price per visit / month / season + optional
+  first-visit deal (% off, amount off, free) -> "Weekly mowing from $35 a
+  visit. First visit 50% off." It only fills the offer box (wizard and the
+  campaign page's "Your offer" card, `offer-card.tsx`); nothing is stored.
+- **Claim checks** (`claims.ts`, `components/ClaimWarnings.tsx`): warnings
+  with the reason as the owner types (dentistry: painless / best dentist /
+  guarantees; lawn: 100% pet-safe / non-toxic / guaranteed green; any
+  category: 0% or no-interest financing without terms, #1 / the best,
+  guarantees). **Only a housing exclusion in a real-estate ad ("adults only",
+  "no kids", "no section 8") is BLOCKED** (Google housing policy + Fair
+  Housing Act): POST/PATCH `/campaigns` and `PUT /campaigns/:id/offer` answer
+  400 `claim_not_allowed`. Real estate's targeting limits are unchanged
+  (`lib/audience/policy.ts`).
 
 ## Google Ads API access: developer tokens are gone, and the version pin is load-bearing
 

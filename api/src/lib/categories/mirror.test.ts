@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
 
 const WEB = join(__dirname, "../../../../web/src/lib/categories");
 
-const MIRRORED = ["key.ts", "seasons.ts", "schedulePresets.ts"];
+const MIRRORED = ["key.ts", "seasons.ts", "schedulePresets.ts", "badges.ts", "planOffer.ts", "claims.ts"];
 
 function shared(text: string): string {
   const t = text.replace(/\r\n/g, "\n");

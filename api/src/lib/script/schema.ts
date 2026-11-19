@@ -100,6 +100,10 @@ export const adScriptSchema = z.object({
     .array(z.object({ beforeKey: z.string().min(1).max(500), afterKey: z.string().min(1).max(500) }))
     .max(2)
     .optional(),
+  // Set by lib/creatives/generate.ts from the campaign's attested badges
+  // (lib/categories/badges), never by the model and never from a script
+  // edit: the end card's trust chips ("Licensed & insured", "LIC #12345").
+  badges: z.array(z.string().min(1).max(28)).max(4).optional(),
 });
 
 export type AdScript = z.infer<typeof adScriptSchema>;

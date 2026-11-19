@@ -40,6 +40,12 @@ export type GenerateScriptInput = {
   imageUrls?: string[];
   /** How many before & after pairs play after the opener (lib/beforeAfter). Not attached as images. */
   beforeAfterPairs?: number;
+  /**
+   * Facts the advertiser confirmed are true (attested badges, and the category
+   * extras: makes serviced, a featured dish). Theirs to claim, so the writer
+   * may use them; lib/creatives/generate.ts builds them, never the model.
+   */
+  confirmedFacts?: string[];
 };
 
 // Structured outputs rather than tool use: there is one shape to return and no
