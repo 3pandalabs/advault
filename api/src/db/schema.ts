@@ -578,6 +578,10 @@ export const campaigns = pgTable(
     // Set when the wallet ran dry and the sync paused it at Google, so the
     // dashboard can say why rather than showing an unexplained pause.
     pausedForFundsAt: timestamp("paused_for_funds_at", { withTimezone: true }),
+    // Set when the spend sync alerted the operator that this campaign's
+    // wallet is running low; cleared once it is healthy again, so each
+    // low-balance episode alerts once (migration 0034, lib/wallet/runway.ts).
+    lowBalanceAlertedAt: timestamp("low_balance_alerted_at", { withTimezone: true }),
 
     // When this month's offer stops being true.
     //

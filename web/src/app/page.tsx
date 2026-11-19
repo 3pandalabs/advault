@@ -18,8 +18,8 @@ const STEPS = [
     body: "Your shop, your team, your work. We write the script, add a voiceover and captions, and make the video. Already have a video? Upload it instead.",
   },
   {
-    title: "Pick a budget and go live",
-    body: "From $5 a day — Google's minimum. We run the campaign on YouTube and Shorts for people near you. You never open Google Ads.",
+    title: "Top up and go live",
+    body: "Top up from $35. Your ad runs at $5 a day (Google's minimum) on YouTube and Shorts for people near you, until your budget runs out. You never open Google Ads.",
   },
 ];
 
@@ -64,7 +64,11 @@ const FAQ = [
   },
   {
     q: "What does it cost to keep my ad running?",
-    a: "$19 a month is the AdVault fee. Your ad budget goes to Google, from $5 a day — Google's minimum. One week is $35, two weeks $70, or keep it always on (about $152 a month). The fee stays $19.",
+    a: "$19 a month is the AdVault fee. Top up your ad budget from $35. Your ad runs at $5 a day (Google's minimum) until your budget runs out, so $35 lasts about a week and $50 about 10 days. You only pay for what Google delivers. The fee stays $19.",
+  },
+  {
+    q: "What happens to ad budget I don't use?",
+    a: "You only pay for what Google actually delivers. Unused ad budget stays in your account for your next ad, and if you leave we refund it.",
   },
   {
     q: "How many people will see my ad?",
@@ -130,7 +134,7 @@ export default function LandingPage() {
         </p>
         <p className="mt-4 text-xl font-semibold tracking-tight">
           <span className="text-amber-300">$10</span> makes your ad.{" "}
-          <span className="text-amber-300">$19/month</span> keeps it running, plus ad budget from $5 a day.
+          <span className="text-amber-300">$19/month</span> keeps it running, plus ad budget you top up from $35.
         </p>
         <p className="mt-2 text-base text-zinc-300">
           YouTube ads need a website to go live. No website? Don&apos;t worry, we&apos;ve got you covered: we&apos;ll
@@ -242,8 +246,9 @@ export default function LandingPage() {
               $19 <span className="text-base font-normal text-zinc-400">/ month + ad budget</span>
             </p>
             <p className="mt-3 text-sm text-zinc-400">
-              Ad budget goes to Google, from $5 a day — Google&apos;s minimum: $35 runs your ad
-              for a week. More budget means more views; the fee stays $19.
+              Top up from $35. Your ad runs at $5 a day (Google&apos;s minimum) until your
+              budget runs out. You only pay for what Google delivers; unused budget stays in
+              your account and is refunded if you leave. The fee stays $19.
             </p>
           </Card>
         </div>

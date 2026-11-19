@@ -1,10 +1,12 @@
 import { unfreezeCardsForUser } from "../lib/billing/managedCard.js";
-import { and, eq } from "drizzle-orm";
+import { resumeFundedCampaigns } from "../lib/billing/resume.js";
+import { budgetState } from "../lib/wallet/runway.js";
+import { and, eq, inArray } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { requireAdmin, requireAuth } from "../auth/plugin.js";
 import { db } from "../db/index.js";
-import { adAccounts, payments, users } from "../db/schema.js";
+import { adAccounts, campaigns, payments, users } from "../db/schema.js";
 import { env } from "../env.js";
 import { invoiceShapeFor } from "../lib/billing/policy.js";
 import {
@@ -131,10 +133,45 @@ export async function billingRoutes(app: FastifyInstance) {
         .limit(1);
 
       const wallet = await ensureWallet(req.userId!, user.currencyCode as Currency);
+      // The budget picture for the dashboard banners: live and
+      // paused-for-funds campaigns the wallet pays for (platform billing).
+      const running = await db
+        .select({
+          id: campaigns.id,
+          name: campaigns.name,
+          status: campaigns.status,
+          dailyMinor: campaigns.dailyBudgetCents,
+          pausedForFundsAt: campaigns.pausedForFundsAt,
+        })
+        .from(campaigns)
+        .innerJoin(adAccounts, eq(campaigns.adAccountId, adAccounts.id))
+        .where(
+          and(
+            eq(campaigns.userId, req.userId!),
+            eq(adAccounts.billingMode, "platform"),
+            inArray(campaigns.status, ["live", "paused"]),
+          ),
+        );
+      const live = running.filter((c) => c.status === "live");
+      const pausedForFunds = running.filter((c) => c.status === "paused" && c.pausedForFundsAt);
+      const liveDailyMinor = live.reduce((sum, c) => sum + c.dailyMinor, 0);
+      const { state, daysLeft } = budgetState({
+        balanceMinor: wallet.balanceMinor,
+        currency: wallet.currencyCode as Currency,
+        liveDailyMinor,
+        pausedForFunds: pausedForFunds.length,
+      });
       return {
         balanceMinor: wallet.balanceMinor,
         currencyCode: wallet.currencyCode,
         display: formatMinor(wallet.balanceMinor, wallet.currencyCode as Currency),
+        budget: {
+          state,
+          daysLeft,
+          liveDailyMinor,
+          liveCampaignIds: live.map((c) => c.id),
+          pausedForFunds: pausedForFunds.map((c) => ({ id: c.id, name: c.name })),
+        },
         entries: await listEntries(req.userId!),
       };
     });
@@ -212,11 +249,13 @@ export async function billingRoutes(app: FastifyInstance) {
           body: z.object({
             amountMinor: z.number().int().positive().max(100_000_000),
             purpose: z.enum(["topup", "creation_fee"]).default("topup"),
+            // Top-up started from a campaign page: checkout returns there.
+            campaignId: z.string().uuid().optional(),
           }),
         },
       },
       async (req, reply) => {
-        const body = req.body as { amountMinor: number; purpose: "topup" | "creation_fee" };
+        const body = req.body as { amountMinor: number; purpose: "topup" | "creation_fee"; campaignId?: string };
         const [user] = await db
           .select({ email: users.email, currencyCode: users.currencyCode })
           .from(users)
@@ -225,6 +264,16 @@ export async function billingRoutes(app: FastifyInstance) {
 
         const currency = user.currencyCode as Currency;
         const provider = providerFor(currency);
+        // Back to the campaign page when the top-up started there (own campaign only).
+        let returnTo = `${env.WEB_ORIGIN}/dashboard/wallet`;
+        if (body.campaignId) {
+          const [own] = await db
+            .select({ id: campaigns.id })
+            .from(campaigns)
+            .where(and(eq(campaigns.id, body.campaignId), eq(campaigns.userId, req.userId!)))
+            .limit(1);
+          if (own) returnTo = `${env.WEB_ORIGIN}/dashboard/campaigns/${own.id}`;
+        }
         // Test mode (admin testing as a customer, or a test customer): charge
         // and credit the $0.50 test price, never the amount asked for, so a
         // test top-up can't mint real ad budget it didn't pay for.
@@ -258,7 +307,7 @@ export async function billingRoutes(app: FastifyInstance) {
             internal: who.internal,
             internalLabel: who.internalLabel,
             userEmail: user.email,
-            returnUrl: `${env.WEB_ORIGIN}/dashboard/wallet`,
+            returnUrl: returnTo,
           });
 
           await db
@@ -399,6 +448,10 @@ export async function billingRoutes(app: FastifyInstance) {
         await unfreezeCardsForUser(payment.userId).catch((err) =>
           req.log.error({ err }, "card unfreeze after top-up failed"),
         );
+        // And restart what the empty wallet paused (lib/billing/resume.ts).
+        // Not awaited: it calls Google, and the provider wants its 200 fast.
+        // Never throws; the hourly spend sync retries a failed resume.
+        void resumeFundedCampaigns(payment.userId);
       }
 
       return reply.code(200).send({ ok: true });

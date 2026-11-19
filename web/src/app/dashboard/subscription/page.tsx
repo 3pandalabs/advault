@@ -196,7 +196,7 @@ export default function SubscriptionPage() {
               </p>
               <p className="mt-1 text-sm text-zinc-400">
                 {plan.line === "evergreen"
-                  ? `${plan.display.monthlyFee} AdVault fee + your ad budget, from $5 a day — Google's minimum ($35 runs a week). ${shownPrice("$10", testMode)} one-time for each ad we make. Add budget any time for more views.`
+                  ? `${plan.display.monthlyFee} AdVault fee + your ad budget, topped up from $35 (it runs at $5 a day, Google's minimum, until it runs out). ${shownPrice("$10", testMode)} one-time for each ad we make. Add budget any time for more views.`
                   : `${plan.includedCreativesPerMonth} fresh videos a month`}
                 {plan.line === "managed" ? ` · ${plan.display.allIn} all-in with ad spend` : ""}
               </p>

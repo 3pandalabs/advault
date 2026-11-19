@@ -7,6 +7,7 @@ import {
   ApiError,
   creativeDownloadUrl,
   getCampaign,
+  getWallet,
   generatePaidNewAd,
   getMe,
   getNewAdStatus,
@@ -25,7 +26,10 @@ import {
   type Asset,
   type Campaign,
   type Creative,
+  type Wallet,
 } from "@/lib/api/browser";
+import { AdBudgetCard } from "./ad-budget-card";
+import { BudgetBanner } from "@/components/BudgetBanner";
 import { SquareLogo } from "./square-logo";
 import { VideoUpload } from "./video-upload";
 import { PerformanceCard } from "./performance-card";
@@ -91,7 +95,7 @@ const LAUNCH_ERRORS: Record<string, string> = {
   // The wallet guard on accounts AdVault funds. Previously unmapped, so a 402
   // surfaced as the raw code.
   insufficient_funds:
-    "Your balance is too low to cover this campaign. Top up on the Wallet page and try again.",
+    "Your ad budget needs at least 3 days at your daily budget to start. Add to your ad budget above and try again.",
   // The billing gate. A campaign launched into an account with no payment
   // method succeeds at Google and then never serves, so this is refused rather
   // than allowed through.
@@ -157,12 +161,19 @@ export default function CampaignDetailPage({
     accounts: AdAccount[];
   } | null>(null);
   const [settingUp, setSettingUp] = useState(false);
+  // The ad budget (wallet) and its low / ran-out state, for the banner and card.
+  const [wallet, setWallet] = useState<Wallet | null>(null);
   const [previews, setPreviews] = useState<Record<string, string>>({});
   // SiteVault site: the ad video joins the website at launch (box ticked by default).
   const [videoOnSite, setVideoOnSite] = useState(true);
   // Only a site AdVault made takes the ad video (SiteVault refuses one built there).
   const onSite = Boolean(siteVaultSlug(campaign?.landingUrl)) && Boolean(campaign?.sitevaultEditEnc);
-  const [launchNote, setLaunchNote] = useState<string | null>(null);
+  // Seeded when back from a top-up checkout started on this page (?status=success).
+  const [launchNote, setLaunchNote] = useState<string | null>(() =>
+    typeof window !== "undefined" && new URLSearchParams(window.location.search).get("status") === "success"
+      ? "Thanks — your ad budget top-up went through. It can take a minute to show."
+      : null,
+  );
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [logo, setLogo] = useState<Asset | null>(null);
@@ -215,6 +226,7 @@ export default function CampaignDetailPage({
   useEffect(() => {
     refresh();
     listAdAccounts().then(setAdAccounts).catch(() => undefined);
+    getWallet().then(setWallet).catch(() => undefined);
     getMe()
       .then((me) => {
         setIsAdmin(actsAsAdmin(me));
@@ -382,6 +394,13 @@ export default function CampaignDetailPage({
   );
   const launchedAccount = adAccounts?.accounts.find((a) => a.id === campaign.adAccountId);
   const launchedForCustomer = launchedAccount?.billingMode === "platform";
+  // Does the AdVault ad budget (wallet) pay for this campaign? Platform
+  // billing only; before an account exists, the managed path is the default.
+  const usesWallet = launchedAccount
+    ? launchedAccount.billingMode === "platform"
+    : activeAccounts.length > 0
+      ? activeAccounts.some((a) => a.billingMode === "platform")
+      : Boolean(adAccounts?.managedOffered);
 
   return (
     <div>
@@ -406,6 +425,8 @@ export default function CampaignDetailPage({
           {error}
         </p>
       )}
+      {usesWallet && <BudgetBanner wallet={wallet} campaignId={campaign.id} href="#ad-budget" />}
+
       {launchNote && (
         <p className="mb-4 rounded-lg border border-emerald-400/30 bg-emerald-400/10 px-3 py-2 text-sm text-emerald-200">
           {launchNote}
@@ -760,6 +781,8 @@ export default function CampaignDetailPage({
         />
       )}
 
+      {usesWallet && <AdBudgetCard campaign={campaign} wallet={wallet} />}
+
       <Card className="mt-2 mb-4">
         <CardTitle>Launch</CardTitle>
         {campaign.googleCampaignResourceName ? (
@@ -771,7 +794,11 @@ export default function CampaignDetailPage({
             </CardDescription>
             <p className="mt-2 text-sm text-zinc-400">
               {runLengthLabel(campaign.runDays, campaign.endsOn)}
-              {campaign.runDays ? ". Google stops it by itself on the last day." : ". Runs until it is paused."}
+              {campaign.runDays
+                ? ". Google stops it by itself on the last day."
+                : launchedForCustomer
+                  ? ": runs every day until your ad budget runs out."
+                  : ". Runs until it is paused."}
             </p>
             {/* Google's own ad review, synced hourly. */}
             {googleReview && (
@@ -855,16 +882,22 @@ export default function CampaignDetailPage({
             <p className="mt-2 text-sm text-zinc-400">
               {campaign.runDays === 7 || campaign.runDays === 14
                 ? `${runLengthLabel(campaign.runDays)}: about ${formatMoney(adSpendTotalCents(campaign.dailyBudgetCents, campaign.runDays as RunDays), campaign.currencyCode)} in ad spend, then Google stops it by itself.`
-                : `Always on: about ${formatMoney(adSpendTotalCents(campaign.dailyBudgetCents, null), campaign.currencyCode)} a month in ad spend, until you pause it.`}
+                : usesWallet
+                  ? `Always on: runs at ${formatMoney(campaign.dailyBudgetCents, campaign.currencyCode)} a day until your ad budget runs out.`
+                  : `Always on: about ${formatMoney(adSpendTotalCents(campaign.dailyBudgetCents, null), campaign.currencyCode)} a month in ad spend, until you pause it.`}
             </p>
             <BudgetEditor
               campaign={campaign}
               onSaved={(c) => setCampaign((prev) => (prev ? { ...prev, ...c } : prev))}
             />
-            <RunLengthPicker
-              campaign={campaign}
-              onSaved={(c) => setCampaign((prev) => (prev ? { ...prev, ...c } : prev))}
-            />
+            {/* The PR #124 run length, now behind a disclosure: the default is always on. */}
+            <details className="mt-3 text-sm" open={campaign.runDays === 7 || campaign.runDays === 14}>
+              <summary className="cursor-pointer text-zinc-400 hover:text-zinc-200">Advanced: stop on a date</summary>
+              <RunLengthPicker
+                campaign={campaign}
+                onSaved={(c) => setCampaign((prev) => (prev ? { ...prev, ...c } : prev))}
+              />
+            </details>
             <SquareLogo onChange={setLogo} />
             {onSite && (
               <label className="mt-4 flex items-start gap-2 text-sm text-zinc-300">

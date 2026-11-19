@@ -53,3 +53,41 @@ export function runLengthLabel(runDays: number | null | undefined, endsOn?: stri
   });
   return `Runs ${label} (ends ${end})`;
 }
+
+// Top-up-first model (2026-11-19), mirrored from api/src/lib/wallet/runway.ts.
+// The customer adds to a prepaid ad budget; the ad runs always on at its daily
+// budget until the budget runs out.
+export const TOPUP_PRESETS_CENTS: Record<string, number[]> = {
+  USD: [3_500, 5_000, 10_000],
+  INR: [200_000, 500_000, 1_000_000],
+};
+
+export function topupPresets(currency: string): number[] {
+  return TOPUP_PRESETS_CENTS[currency] ?? TOPUP_PRESETS_CENTS.USD;
+}
+
+/** The smallest top-up: the first preset ($35). */
+export function minTopupCents(currency: string): number {
+  return topupPresets(currency)[0];
+}
+
+/** Whole days a budget lasts at a daily rate: floor, at least 1 while money is left. */
+export function daysOfBudget(balanceCents: number, dailyCents: number): number {
+  if (balanceCents <= 0 || dailyCents <= 0) return 0;
+  return Math.max(1, Math.floor(balanceCents / dailyCents));
+}
+
+/** "about 10 days" / "about 1 day". */
+export function aboutDays(days: number): string {
+  return `about ${days} day${days === 1 ? "" : "s"}`;
+}
+
+/** "Your $50 lasts about 10 days at $5 a day." */
+export function lastsSentence(amountCents: number, dailyCents: number, currency: string, prefix = "Your"): string {
+  const money = (c: number) =>
+    new Intl.NumberFormat("en-US", { style: "currency", currency, minimumFractionDigits: c % 100 === 0 ? 0 : 2 }).format(c / 100);
+  return `${prefix} ${money(amountCents)} lasts ${aboutDays(daysOfBudget(amountCents, dailyCents))} at ${money(dailyCents)} a day.`;
+}
+
+/** sessionStorage key for the top-up amount picked in the wizard (nothing is charged there). */
+export const wizardTopupKey = (campaignId: string) => `advault:topup:${campaignId}`;

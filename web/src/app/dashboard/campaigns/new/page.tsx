@@ -27,7 +27,9 @@ import {
   formatUsdCents,
   minDailyBudgetCents,
   type RunDays,
+  wizardTopupKey,
 } from "@/lib/budget";
+import { TopUpPicker } from "@/components/TopUpPicker";
 import { SuggestionChips } from "@/components/SuggestionChips";
 import { callToActionSuggestions, campaignNameSuggestions } from "@/lib/suggestions";
 import { AudienceFiltersEditor, HOUSING_NOTICE } from "@/components/AudienceFiltersEditor";
@@ -150,7 +152,11 @@ export default function NewCampaignPage() {
   const router = useRouter();
   const [step, setStep] = useState(1);
   // "How long should your ad run?" 1 week by default: the smallest total.
-  const [runDays, setRunDays] = useState<RunDays>(7);
+  // Always on by default (top-up-first model); a stop date is "Advanced".
+  const [runDays, setRunDays] = useState<RunDays>(null);
+  // "Add to your ad budget": only picked here (nothing is charged in the
+  // wizard); the campaign page's budget card starts on this amount.
+  const [topupCents, setTopupCents] = useState<number>(5_000);
   // Set while the API writes the script for a free/admin ad (~20 s).
   const [writingSince, setWritingSince] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -389,6 +395,12 @@ export default function NewCampaignPage() {
                 openHouse: ohAny ? { date: form.ohDate, start: form.ohStart, end: form.ohEnd } : null,
               },
       });
+
+      try {
+        sessionStorage.setItem(wizardTopupKey(campaign.id), String(topupCents));
+      } catch {
+        /* storage blocked: the card falls back to its default */
+      }
 
       // Before & after pairs live on the campaign, so they are saved before the
       // ad is made or paid for (the paid order makes it later from the same row).
@@ -1126,8 +1138,26 @@ export default function NewCampaignPage() {
             </div>
 
             <div>
-              <Label>How long should your ad run?</Label>
-              <div className="mt-1.5 grid gap-2 sm:grid-cols-3" role="radiogroup" aria-label="How long should your ad run?">
+              <Label>Add to your ad budget</Label>
+              <div className="mt-1.5">
+                <TopUpPicker
+                  mode="choose"
+                  currency="USD"
+                  dailyCents={budgetCents !== null && !budgetOutOfRange ? budgetCents : MIN_DAILY_BUDGET_CENTS}
+                  value={topupCents}
+                  onChange={setTopupCents}
+                />
+              </div>
+              <FieldHint>
+                Nothing is charged now — you add it before your ad goes live. Your ad runs every
+                day at your daily budget until the budget runs out. You only pay for what Google
+                delivers; unused budget stays in your account.
+              </FieldHint>
+            </div>
+
+            <details className="text-sm" open={runDays !== null}>
+              <summary className="cursor-pointer text-zinc-400 hover:text-zinc-200">Advanced: stop on a date</summary>
+              <div className="mt-2 grid gap-2 sm:grid-cols-3" role="radiogroup" aria-label="When should your ad stop?">
                 {RUN_CHOICES.map((c) => {
                   const selected = runDays === c.value;
                   const total =
@@ -1147,13 +1177,11 @@ export default function NewCampaignPage() {
                           : "border-white/10 text-zinc-400 hover:border-white/25"
                       }`}
                     >
-                      <span className="block font-medium">{c.label}</span>
+                      <span className="block font-medium">
+                        {c.value === null ? "Don't stop (always on)" : `Stop after ${c.label}`}
+                      </span>
                       <span className="block text-xs text-zinc-400">
-                        {total === null
-                          ? "—"
-                          : c.value === null
-                            ? `about ${total} per month`
-                            : `${total} total`}
+                        {total === null || c.value === null ? "until the budget runs out" : `${total} total`}
                       </span>
                     </button>
                   );
@@ -1161,10 +1189,10 @@ export default function NewCampaignPage() {
               </div>
               <FieldHint>
                 {runDays === null
-                  ? "Runs until you pause it. Google never charges more than your daily budget."
+                  ? "Runs until your ad budget runs out or you pause it."
                   : "Google stops the ad by itself at the end, so it never spends more than this."}
               </FieldHint>
-            </div>
+            </details>
 
             <div>
               <Label htmlFor="landingUrl">Your website (optional)</Label>

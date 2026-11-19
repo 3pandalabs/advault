@@ -1,9 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ApiError, getWallet, topUp, type Wallet } from "@/lib/api/browser";
+import { getWallet, type Wallet } from "@/lib/api/browser";
 import { Badge, Card, CardDescription, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+import { BudgetBanner } from "@/components/BudgetBanner";
+import { TopUpPicker } from "@/components/TopUpPicker";
+import { aboutDays, minDailyBudgetCents } from "@/lib/budget";
 import { formatDate } from "@/lib/utils";
 
 // The ad balance. Under the managed (MCC) model, ads run against 3PandaLabs'
@@ -11,11 +13,6 @@ import { formatDate } from "@/lib/utils";
 // is also the hard cap on their spend. The copy says that plainly rather than
 // treating it as an implementation detail: "your ads stop when it runs out" is
 // a feature to a small business, not a limitation.
-
-const PRESETS: Record<string, number[]> = {
-  INR: [200_000, 500_000, 1_000_000],
-  USD: [10_000, 25_000, 50_000],
-};
 
 function fmt(minor: number, currency: string) {
   return new Intl.NumberFormat(currency === "INR" ? "en-IN" : "en-US", {
@@ -36,8 +33,6 @@ const LABELS: Record<string, string> = {
 export default function WalletPage() {
   const [wallet, setWallet] = useState<Wallet | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [notice, setNotice] = useState<string | null>(null);
 
   const refresh = () =>
     getWallet()
@@ -48,58 +43,31 @@ export default function WalletPage() {
     refresh();
   }, []);
 
-  async function onTopUp(amountMinor: number) {
-    setBusy(true);
-    setError(null);
-    setNotice(null);
-    try {
-      const session = await topUp(amountMinor);
-
-      if (session.redirectUrl) {
-        window.location.assign(session.redirectUrl);
-        return;
-      }
-
-      // No redirect. Either a client-side widget (Razorpay) or the manual
-      // provider, which means no payment vendor is configured for this
-      // currency. Say so instead of leaving a button that appears to do
-      // nothing — a silent no-op on a payment screen is the worst outcome.
-      const payload = session.clientPayload as { manual?: boolean; message?: string };
-      setNotice(
-        payload.manual
-          ? (payload.message ?? "Payment is not available yet. Please contact support.")
-          : "Opening checkout…",
-      );
-      await refresh();
-    } catch (err) {
-      setError(
-        err instanceof ApiError && err.code === "checkout_failed"
-          ? "Could not start checkout. Please try again."
-          : "Something went wrong starting your top-up.",
-      );
-    } finally {
-      setBusy(false);
-    }
-  }
-
   if (error && !wallet) return <p className="text-sm text-red-300">{error}</p>;
   if (!wallet) return <p className="text-sm text-zinc-500">Loading…</p>;
 
-  const presets = PRESETS[wallet.currencyCode] ?? PRESETS.USD;
   const empty = wallet.balanceMinor <= 0;
+  const budget = wallet.budget;
+  // The estimate uses the live campaigns' daily budgets, else the $5 minimum.
+  const dailyCents = budget?.liveDailyMinor || minDailyBudgetCents(wallet.currencyCode);
+  const returned = typeof window !== "undefined" && new URLSearchParams(window.location.search).get("status") === "success";
 
   return (
     <div>
-      <h1 className="text-2xl font-semibold tracking-tight">Ad balance</h1>
+      <h1 className="text-2xl font-semibold tracking-tight">Ad budget</h1>
+
+      <div className="mt-4">
+        <BudgetBanner wallet={wallet} href="#add" />
+      </div>
+      {returned && (
+        <p className="mt-4 rounded-lg border border-emerald-400/30 bg-emerald-400/10 px-3 py-2 text-sm text-emerald-200">
+          Thanks — your payment went through. It can take a minute to show here.
+        </p>
+      )}
 
       {error && (
         <p className="mt-4 rounded-lg border border-red-400/30 bg-red-400/10 px-3 py-2 text-sm text-red-200">
           {error}
-        </p>
-      )}
-      {notice && (
-        <p className="mt-4 rounded-lg border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-sm text-amber-200">
-          {notice}
         </p>
       )}
 
@@ -109,25 +77,37 @@ export default function WalletPage() {
             <p className="text-xs tracking-wide text-zinc-500 uppercase">Available</p>
             <p className="mt-1 text-4xl font-semibold">{wallet.display}</p>
           </div>
-          {empty ? (
-            <Badge tone="danger">Campaigns paused</Badge>
+          {budget?.state === "empty" ? (
+            <Badge tone="danger">Ad paused</Badge>
+          ) : budget?.state === "low" ? (
+            <Badge tone="pending">Running low</Badge>
+          ) : empty ? (
+            <Badge tone="neutral">Empty</Badge>
           ) : (
             <Badge tone="success">Funded</Badge>
           )}
         </div>
+        {budget?.daysLeft ? (
+          <p className="mt-2 text-sm text-zinc-300">
+            Lasts {aboutDays(budget.daysLeft)} at {fmt(budget.liveDailyMinor, wallet.currencyCode)} a day.
+          </p>
+        ) : null}
 
         <CardDescription className="mt-4">
-          Your ads run against this balance and stop when it is empty — you can never be
-          charged more than you have topped up. We add a little headroom before letting a
-          campaign go live so it does not stop mid-day.
+          Your ad runs every day at its daily budget until this runs out. You only pay for
+          what Google delivers, and you can never be charged more than you added. Unused
+          budget stays here for your next ad, and if you leave we refund it.
         </CardDescription>
+      </Card>
 
-        <div className="mt-5 flex flex-wrap gap-2">
-          {presets.map((p) => (
-            <Button key={p} variant="outline" disabled={busy} onClick={() => onTopUp(p)}>
-              Add {fmt(p, wallet.currencyCode)}
-            </Button>
-          ))}
+      <Card className="mt-4" id="add">
+        <CardTitle>Add to your ad budget</CardTitle>
+        <div className="mt-4">
+          <TopUpPicker
+            currency={wallet.currencyCode}
+            dailyCents={dailyCents}
+            balanceCents={wallet.balanceMinor}
+          />
         </div>
       </Card>
 
@@ -136,7 +116,7 @@ export default function WalletPage() {
         <Card>
           <CardTitle>Nothing yet</CardTitle>
           <CardDescription>
-            Top up to launch your first campaign. Every rupee in and out shows up here.
+            Add to your ad budget to launch your first ad. Every dollar in and out shows up here.
           </CardDescription>
         </Card>
       ) : (
