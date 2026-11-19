@@ -17,7 +17,7 @@ import { canLaunch, MIN_FUNDED_DAYS } from "../lib/wallet/index.js";
 // The customer's own pause / resume of a LAUNCHED campaign. Only the status of
 // an existing Google campaign changes here (PAUSED / ENABLED); nothing is
 // created, so launch stays the only route that creates spend. Pausing the last
-// running ad stops the $19 plan at the end of its paid period; resuming inside
+// running ad stops the plan at the end of its paid period; resuming inside
 // that period takes the stop back (no second charge), after it restarts the
 // plan (off-session with the saved card, else 402 plan_required -> checkout).
 //

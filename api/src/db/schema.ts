@@ -67,9 +67,13 @@ export const users = pgTable(
     // ("INTERNAL · ", Stripe `internal=1`). `internalLabel` is the product.
     isInternal: boolean("is_internal").notNull().default(false),
     internalLabel: text("internal_label"),
-    // The $19 plan's included first month (0038, lib/planBilling): set when
+    // The plan's included first month (0038, lib/planBilling): set when
     // it was used. NULL = this account's next plan starts with a free month.
     planFirstMonthUsedAt: timestamp("plan_first_month_used_at", { withTimezone: true }),
+    // "Keep it running" ('monthly') or "Just this once" ('once', 0041): a
+    // one-time customer has no plan and no recharge; the ad runs on its
+    // budget until it runs out (lib/planBilling).
+    planChoice: text("plan_choice").notNull().default("monthly"),
 
     // Set when the user deleted their account (lib/accountDeletion.ts). The row
     // is kept, anonymised, because the financial records point at it.
@@ -991,6 +995,11 @@ export const subscriptions = pgTable(
     // First period is the included month (0038): a $0 invoice / Stripe trial.
     firstMonthIncluded: boolean("first_month_included").notNull().default(false),
     includedUntil: timestamp("included_until", { withTimezone: true }),
+    // Ad budget charged with every paid month (0041, "from $55 a month"): the
+    // customer's chosen amount (min 3500 = $35), credited to the wallet each
+    // month; changeable for the next invoice; 0 = none (customer-billed ad
+    // accounts and every line other than evergreen).
+    budgetRechargeMinor: integer("budget_recharge_minor").notNull().default(0),
 
     // pending  — created, first payment not yet confirmed
     // active   — paid and current
@@ -1062,6 +1071,9 @@ export const subscriptionInvoices = pgTable(
       .references(() => users.id, { onDelete: "cascade" }),
 
     amountMinor: integer("amount_minor").notNull(),
+    // The ad budget part of this invoice (0041): charged on top of
+    // amount_minor and credited to the wallet when paid. 0 = none.
+    budgetMinor: integer("budget_minor").notNull().default(0),
     currencyCode: text("currency_code").notNull(),
     periodStart: timestamp("period_start", { withTimezone: true }).notNull(),
     periodEnd: timestamp("period_end", { withTimezone: true }).notNull(),

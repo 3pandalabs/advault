@@ -101,6 +101,7 @@ describe("test price", () => {
       "line_items[0][price_data][unit_amount]": "50",
       "line_items[0][price_data][recurring][interval]": "month",
       "line_items[0][price_data][product_data][name]": "AdVault plan (test)",
+      "line_items[0][quantity]": "1",
     });
   });
 

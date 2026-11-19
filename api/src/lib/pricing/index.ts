@@ -158,7 +158,9 @@ export const PLANS: Record<string, Plan> = {
     key: "us-evergreen",
     currency: "USD",
     line: "evergreen",
-    monthlyFeeMinor: 1_900, // $19/month platform fee
+    // $20/month platform fee ("$55 a month", owner decision 2026-11-19; $19
+    // until then, never sold to a real customer, so nobody is grandfathered).
+    monthlyFeeMinor: 2_000,
     // Ads are bought one at a time ($10 each), never bundled into the fee.
     includedCreativesPerMonth: 0,
     // $35 = one week at Google's $5/day Demand Gen minimum (was $30, sized
@@ -169,6 +171,39 @@ export const PLANS: Record<string, Plan> = {
     blurb: "One ad kept running on YouTube around your business. $10 per ad, no monthly offers.",
   },
 };
+
+/**
+ * "From $55 a month" (2026-11-19): every PAID month of a Keep it running plan
+ * also charges the customer's CHOSEN monthly ad budget, credited to their ad
+ * budget wallet (100% goes to Google). The customer picks it (whole dollars,
+ * at least $35) at checkout and can change it anytime from the next invoice
+ * (`PUT /subscription/ad-budget`). $35 = about 6 days at Google's $5/day
+ * minimum, spread across the month by the ad schedule (lib/schedule/spread.ts).
+ * Not in the included first month: that month's budget is the customer's
+ * first top-up. US only, like the plan.
+ */
+export const MIN_MONTHLY_AD_BUDGET_MINOR: Partial<Record<Currency, number>> = { USD: 3_500 };
+/** Upper bound on a chosen monthly ad budget: a typo guard, not a product limit. */
+export const MAX_MONTHLY_AD_BUDGET_MINOR = 1_000_000;
+/** Stripe charges the budget as quantity x a $1 unit price. */
+export const MONTHLY_AD_BUDGET_UNIT_MINOR = 100;
+
+/**
+ * Why a chosen monthly ad budget is not allowed, or null when it is: at
+ * least the currency's minimum ($35), whole dollars, under the typo guard.
+ * A currency with no recharge (no minimum set) allows none.
+ */
+export function monthlyAdBudgetProblem(
+  amountMinor: number,
+  currency: Currency,
+): null | { error: "budget_below_minimum" | "budget_not_whole_dollars" | "budget_too_large" | "no_monthly_budget"; minMinor: number } {
+  const minMinor = MIN_MONTHLY_AD_BUDGET_MINOR[currency] ?? 0;
+  if (minMinor <= 0) return { error: "no_monthly_budget", minMinor };
+  if (!Number.isInteger(amountMinor) || amountMinor < minMinor) return { error: "budget_below_minimum", minMinor };
+  if (amountMinor % MONTHLY_AD_BUDGET_UNIT_MINOR !== 0) return { error: "budget_not_whole_dollars", minMinor };
+  if (amountMinor > MAX_MONTHLY_AD_BUDGET_MINOR) return { error: "budget_too_large", minMinor };
+  return null;
+}
 
 /**
  * The lowest daily budget a campaign in this currency may have: the highest
@@ -422,7 +457,7 @@ export const ADD_ONS: Record<string, AddOn> = {
     key: "us-website",
     sku: "website",
     currency: "USD",
-    priceMinor: 1_000, // $10, first year of SiteVault Pro included (then $49/yr on SiteVault)
+    priceMinor: 1_000, // $10; Pro included while the AdVault plan runs (lib/sitePlanCover), else a year of Pro then $49/yr on SiteVault
     firstPurchasePriceMinor: 1_000,
     generatedSeconds: 0,
     label: "US — Your website",

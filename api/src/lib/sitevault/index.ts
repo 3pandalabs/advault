@@ -238,6 +238,36 @@ export async function markSitevaultPaid(slug: string, ref: string): Promise<{ ok
   }
 }
 
+/**
+ * "$55 a month" (2026-11-19): the website is included while the AdVault plan
+ * runs. Asks SiteVault to keep the AdVault-made site on Pro until `until`
+ * (the plan's paid period end). SiteVault never shortens time already paid
+ * for and treats a repeated `ref` as a no-op. NEEDS a SiteVault change
+ * (`POST /api/internal/sites/<slug>/plan-cover`); until it is deployed this
+ * answers sitevault_404 and the sweep simply retries.
+ */
+export async function setSitevaultPlanCover(
+  slug: string,
+  until: Date,
+  ref: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const token = process.env.SITEVAULT_INTERNAL_TOKEN;
+  if (!token) return { ok: false, error: "sitevault_not_configured" };
+  try {
+    const res = await fetch(`${SITEVAULT_URL}/api/internal/sites/${encodeURIComponent(slug)}/plan-cover`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({ until: until.toISOString(), ref }),
+      signal: AbortSignal.timeout(10_000),
+    });
+    const body = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+    if (res.ok && body.ok) return { ok: true };
+    return { ok: false, error: `sitevault_${res.status}${body.error ? `:${body.error}` : ""}` };
+  } catch (err) {
+    return { ok: false, error: `sitevault_unreachable: ${String(err).slice(0, 200)}` };
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Filling the site from the ad. The offer sticker is the ad's own summary of
 // the advertiser's offer ("SPRING CLEANUP" / "$149" / "MOWING FROM $35

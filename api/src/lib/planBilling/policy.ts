@@ -1,12 +1,13 @@
-// The $19 plan follows the running ad (owner decision 2026-11-19, option B).
+// The plan follows the running ad (owner decision 2026-11-19, option B).
 //
-//   "$19 a month while your ad is running. Pause anytime: no fee while paused."
+//   "$20 a month plus your monthly ad budget (from $35) while your ad is running. Pause anytime: no fee while paused."
 //   First month included with the first ad, once per account.
 //
 // Every pure decision lives here and is tested (policy.test.ts); ./index.ts is
 // the database and Stripe side. Read the "Plan follows the running ad" section
 // of CLAUDE.md first.
 
+import { TEST_PRICE_MINOR } from "../pricing/index.js";
 import type { SubscriptionStatus } from "../subscriptions/policy.js";
 
 /** The only line whose fee follows the running ad. Others keep their old lifecycle. */
@@ -71,6 +72,8 @@ export function planBillingAction(args: {
   running: boolean;
   sub: PlanSub;
   now: Date;
+  /** "Just this once": never start, restart or un-stop a plan; only stop one. */
+  oneTime?: boolean;
 }): PlanBillingAction {
   const { sub, running, now } = args;
   if (args.exempt) return { kind: "none", reason: "exempt" };
@@ -78,6 +81,13 @@ export function planBillingAction(args: {
   // A checkout is open; its webhook decides.
   if (sub?.status === "pending") return { kind: "none", reason: "checkout_in_progress" };
   const live = !!sub && (sub.status === "active" || sub.status === "past_due");
+
+  // A one-time customer (or one who pressed "Stop renewing") runs on the ad
+  // budget alone: a plan still in its paid period just runs out.
+  if (args.oneTime) {
+    if (live && !sub!.cancelAtPeriodEnd) return { kind: "stop_at_period_end" };
+    return { kind: "none", reason: "one_time" };
+  }
 
   if (!running) {
     if (live && !sub!.cancelAtPeriodEnd) return { kind: "stop_at_period_end" };
@@ -99,7 +109,7 @@ export function planBillingAction(args: {
  *   landed (seconds); try again.
  * - `plan_required`: start or restart the plan. `firstMonthIncluded` = this
  *   account has never used its included month: the plan checkout charges $0
- *   today (Stripe trial) and the first $19 a month later, and only if an ad
+ *   today (Stripe trial) and the first $20 + $35 a month later, and only if an ad
  *   is still running then. Otherwise the caller tries an off-session restart
  *   with the saved card before answering this.
  */
@@ -114,8 +124,10 @@ export function planGate(args: {
   firstMonthUsed: boolean;
   buysMedia: (line: string) => boolean;
   now: Date;
+  /** "Just this once": no plan needed; the wallet gates still apply. */
+  oneTime?: boolean;
 }): PlanGate {
-  if (args.exempt) return { ok: true };
+  if (args.exempt || args.oneTime) return { ok: true };
   const { sub } = args;
   if (sub && planCoversNow(sub, args.now)) {
     return args.buysMedia(sub.line) ? { ok: true } : { ok: false, error: "plan_has_no_ads" };
@@ -124,9 +136,60 @@ export function planGate(args: {
   return { ok: false, error: "plan_required", firstMonthIncluded: !args.firstMonthUsed };
 }
 
+// ---------------------------------------------------------------------------
+// "From $55 a month" (owner decision 2026-11-19): plans are $20 a month plus
+// the customer's chosen monthly ad budget (at least $35), credited to the
+// wallet with every paid month. One price set for everyone (no customers were
+// on the old $19).
+// ---------------------------------------------------------------------------
+
+export type PlanTerms = {
+  /** The monthly fee this subscription is created at (stored on the row). */
+  feeMinor: number;
+  /** Ad budget charged with every paid month (subscriptions.budget_recharge_minor). */
+  budgetRechargeMinor: number;
+};
+
+/**
+ * The terms a NEW subscription starts on. Pure.
+ *
+ * - Keep it running: the list fee ($20) plus the chosen monthly ad budget.
+ * - No recharge for a customer-billed ad account: Google charges their own
+ *   card, the wallet never pays for their ads.
+ * - Test mode (admin testing as a customer): both lines at the 50-cent test
+ *   price, so the whole flow, recharge included, runs for $1 a month.
+ * - Other lines: the list fee, no recharge.
+ */
+export function planTerms(args: {
+  line: string;
+  listFeeMinor: number;
+  /** The customer's chosen monthly ad budget (0 when none). */
+  rechargeMinor: number;
+  billingMode: string | null;
+  testMode: boolean;
+}): PlanTerms {
+  const test = (minor: number) => (args.testMode && minor > 0 ? TEST_PRICE_MINOR : minor);
+  if (args.line !== PLAN_FOLLOWS_RUNNING_LINE) {
+    return { feeMinor: test(args.listFeeMinor), budgetRechargeMinor: 0 };
+  }
+  const recharge = args.billingMode === "customer" ? 0 : Math.max(0, args.rechargeMinor);
+  return { feeMinor: test(args.listFeeMinor), budgetRechargeMinor: test(recharge) };
+}
+
+/**
+ * Does the plan have a reason to keep billing? An ad running, or (only on a
+ * plan with a monthly budget recharge) an ad that is paused ONLY because its
+ * budget ran out: the next paid month refills the budget and the top-up
+ * resume switches it back on, so that month has an ad running. A customer's
+ * own pause is never "wanting to run": no fee and no recharge while paused.
+ */
+export function adWantsPlan(args: { running: boolean; waitingForBudget: boolean; planRecharges: boolean }): boolean {
+  return args.running || (args.waitingForBudget && args.planRecharges);
+}
+
 /** May an automatic restart (top-up) switch an ad back on? Only with a plan that covers now. */
-export function planAllowsRunning(args: { exempt: boolean; sub: PlanSub; now: Date }): boolean {
-  return args.exempt || planCoversNow(args.sub, args.now);
+export function planAllowsRunning(args: { exempt: boolean; sub: PlanSub; now: Date; oneTime?: boolean }): boolean {
+  return args.exempt || !!args.oneTime || planCoversNow(args.sub, args.now);
 }
 
 /** The 402 body for a refused gate (launch and resume answer the same shape). */
@@ -136,8 +199,8 @@ export function planGateBody(gate: Exclude<PlanGate, { ok: true }>): Record<stri
       error: "plan_required",
       firstMonthIncluded: gate.firstMonthIncluded,
       detail: gate.firstMonthIncluded
-        ? "Start your AdVault plan: $0 today, your first month is included. Then $19 a month while your ad runs."
-        : "Restart your AdVault plan: $19 a month while your ad runs. Pause anytime: no fee while paused.",
+        ? "Start your AdVault plan: $0 today, your first month is included. Then $20 a month plus your monthly ad budget (from $35), only while your ad runs."
+        : "Restart your AdVault plan: $20 a month plus your monthly ad budget (from $35) while your ad runs. Pause anytime: no fee while paused.",
     };
   }
   if (gate.error === "plan_pending") {

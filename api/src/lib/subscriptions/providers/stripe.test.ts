@@ -93,3 +93,125 @@ describe("Stripe plan helpers", () => {
     expect(test["items[0][price]"]).toBeUndefined();
   });
 });
+
+describe("from $55 a month: Stripe lines", () => {
+  const req = {
+    subscriptionId: "s1",
+    invoiceId: "i1",
+    planKey: "us-evergreen",
+    amountMinor: 2000,
+    currency: "USD" as const,
+    userEmail: "a@x.test",
+    returnUrl: "https://x.test",
+  };
+
+  it("uses STRIPE_PRICE_US_EVERGREEN for the $20 plan, inline for any other amount", () => {
+    process.env.STRIPE_PRICE_US_EVERGREEN = "price_20";
+    expect(stripe.stripePlanPriceId("us-evergreen", 2000)).toBe("price_20");
+    expect(stripe.stripePlanPriceId("us-evergreen", 50)).toBeNull();
+    expect(stripe.stripePlanPriceId("us-evergreen", 1900)).toBeNull();
+    delete process.env.STRIPE_PRICE_US_EVERGREEN;
+    expect(stripe.stripePlanPriceId("us-evergreen", 2000)).toBeNull();
+  });
+
+  it("a plan is two recurring lines: the $20 plan and the chosen budget as quantity x the $1 unit price", () => {
+    process.env.STRIPE_PRICE_US_EVERGREEN = "price_20";
+    process.env.STRIPE_PRICE_US_AD_BUDGET = "price_unit";
+    expect(stripe.stripeSubscriptionLine({ ...req, budgetMinor: 3500 })).toEqual({
+      "line_items[0][price]": "price_20",
+      "line_items[0][quantity]": "1",
+      "line_items[1][price]": "price_unit",
+      "line_items[1][quantity]": "35",
+    });
+    expect(stripe.stripeSubscriptionLine({ ...req, budgetMinor: 10_000 })).toMatchObject({ "line_items[1][quantity]": "100" });
+    // A customer-billed ad account: one line, the plan.
+    expect(stripe.stripeSubscriptionLine({ ...req, budgetMinor: 0 })).toEqual({
+      "line_items[0][price]": "price_20",
+      "line_items[0][quantity]": "1",
+    });
+  });
+
+  it("without the price objects it charges the right amounts inline ($1 x quantity)", () => {
+    delete process.env.STRIPE_PRICE_US_EVERGREEN;
+    delete process.env.STRIPE_PRICE_US_AD_BUDGET;
+    expect(stripe.stripeSubscriptionLine({ ...req, budgetMinor: 7000 })).toMatchObject({
+      "line_items[0][price_data][unit_amount]": "2000",
+      "line_items[0][price_data][recurring][interval]": "month",
+      "line_items[1][price_data][unit_amount]": "100",
+      "line_items[1][quantity]": "70",
+      "line_items[1][price_data][recurring][interval]": "month",
+    });
+    // Test mode: both at the 50-cent test price, one unit, never a real price object.
+    process.env.STRIPE_PRICE_US_AD_BUDGET = "price_unit";
+    expect(stripe.stripeSubscriptionLine({ ...req, amountMinor: 50, budgetMinor: 50, testMode: true })).toMatchObject({
+      "line_items[0][price_data][unit_amount]": "50",
+      "line_items[1][price_data][unit_amount]": "50",
+      "line_items[1][quantity]": "1",
+    });
+    delete process.env.STRIPE_PRICE_US_AD_BUDGET;
+  });
+
+  it("a restart carries the chosen budget as a quantity, and one with no recharge does not", () => {
+    const common = {
+      customerRef: "cus_1",
+      paymentMethod: "pm_1",
+      productId: "prod_plan",
+      testMode: false,
+      currency: "USD",
+      subscriptionId: "s2",
+      invoiceId: "i2",
+    };
+    expect(
+      stripe.stripeRestartForm({ ...common, priceId: "price_20", amountMinor: 2000, budgetMinor: 10_000, budgetPriceId: null, budgetProductId: "prod_budget" }),
+    ).toMatchObject({
+      "items[0][price]": "price_20",
+      "items[1][price_data][unit_amount]": "100",
+      "items[1][quantity]": "100",
+      "items[1][price_data][product]": "prod_budget",
+    });
+    expect(
+      stripe.stripeRestartForm({ ...common, priceId: "price_20", amountMinor: 2000, budgetMinor: 3500, budgetPriceId: "price_unit" }),
+    ).toMatchObject({ "items[1][price]": "price_unit", "items[1][quantity]": "35" });
+    const none = stripe.stripeRestartForm({ ...common, priceId: "price_20", amountMinor: 2000 });
+    expect(Object.keys(none).some((k) => k.startsWith("items[1]"))).toBe(false);
+  });
+
+  it("tells the budget item from the plan item", () => {
+    const plan = { id: "si_plan", price: { id: "price_20", unit_amount: 2000 } };
+    const budget = { id: "si_budget", quantity: 35, price: { id: "price_x", unit_amount: 100 } };
+    expect(stripe.splitStripeItems([budget, plan])).toEqual({ plan, budget });
+    process.env.STRIPE_PRICE_US_AD_BUDGET = "price_x";
+    expect(stripe.splitStripeItems([plan, { ...budget, price: { id: "price_x", unit_amount: 100 } }]).budget!.id).toBe("si_budget");
+    delete process.env.STRIPE_PRICE_US_AD_BUDGET;
+    // Test mode: both 50 cents; the second item is the budget.
+    const t0 = { id: "si_0", price: { unit_amount: 50 } };
+    const t1 = { id: "si_1", price: { unit_amount: 50 } };
+    expect(stripe.splitStripeItems([t0, t1])).toEqual({ plan: t0, budget: t1 });
+  });
+
+  it("reads the budget an invoice charged from its own lines", () => {
+    const lines = (budgetQty: number) => ({
+      lines: {
+        data: [
+          { amount: 2000, quantity: 1, price: { id: "price_20", unit_amount: 2000 } },
+          { amount: budgetQty * 100, quantity: budgetQty, price: { id: "price_unit", unit_amount: 100 } },
+        ],
+      },
+    });
+    expect(stripe.stripeInvoiceBudgetMinor(lines(35))).toBe(3500);
+    expect(stripe.stripeInvoiceBudgetMinor(lines(100))).toBe(10_000);
+    // Newer API versions: pricing.price_details instead of price.
+    process.env.STRIPE_PRICE_US_AD_BUDGET = "price_unit";
+    expect(
+      stripe.stripeInvoiceBudgetMinor({ lines: { data: [{ amount: 0, quantity: 35, pricing: { price_details: { price: "price_unit" } } }] } }),
+    ).toBe(0);
+    delete process.env.STRIPE_PRICE_US_AD_BUDGET;
+    expect(stripe.stripeInvoiceBudgetMinor({})).toBeNull();
+    // And the webhook carries it.
+    const ev = verify({
+      type: "invoice.paid",
+      data: { object: { id: "in_9", amount_paid: 12000, currency: "usd", subscription_details: { metadata: meta }, ...lines(100) } },
+    });
+    expect(ev).toMatchObject({ kind: "paid", amountMinor: 12000, budgetMinor: 10_000 });
+  });
+});

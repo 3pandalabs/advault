@@ -15,24 +15,42 @@ import {
   NoSuchPlan,
   resolveInvoiceForPayment,
 } from "../lib/subscriptions/index.js";
-import { entitlesToService, type SubscriptionStatus } from "../lib/subscriptions/policy.js";
+import { entitlesToService, invoiceChargeMinor, type SubscriptionStatus } from "../lib/subscriptions/policy.js";
+import { afterPlanBudgetCredit } from "../lib/planBilling/resume.js";
 import {
   subscriptionProviderByName,
   subscriptionProviderFor,
 } from "../lib/subscriptions/providers/index.js";
 import { billingIdentity } from "../lib/testMode/index.js";
 import { stripeExpireSession } from "../lib/subscriptions/providers/stripe.js";
-import { firstMonthAvailable, hasRunningAd, syncPlanBillingForUser } from "../lib/planBilling/index.js";
+import {
+  changeMonthlyAdBudget,
+  firstMonthAvailable,
+  hasRunningAd,
+  planChoiceFor,
+  planTermsFor,
+  setPlanChoice,
+  syncPlanBillingForUser,
+} from "../lib/planBilling/index.js";
 import { PLAN_FOLLOWS_RUNNING_LINE } from "../lib/planBilling/policy.js";
 import {
   chargeMinor,
   estimateReach,
   formatMinor,
   isCurrency,
+  monthlyAdBudgetProblem,
   planByKey,
   PLANS,
   type Currency,
 } from "../lib/pricing/index.js";
+
+/** Customer-facing words for a refused monthly ad budget. */
+function budgetProblemDetail(error: string, minMinor: number, currency: Currency): string {
+  if (error === "budget_below_minimum") return `The smallest monthly ad budget is ${formatMinor(minMinor, currency)}.`;
+  if (error === "budget_not_whole_dollars") return "Choose a whole-dollar monthly ad budget.";
+  if (error === "budget_too_large") return "That monthly ad budget is larger than we accept online. Contact us.";
+  return "This plan has no monthly ad budget.";
+}
 
 export async function subscriptionRoutes(app: FastifyInstance) {
   // ---------------------------------------------------------------------
@@ -98,6 +116,8 @@ export async function subscriptionRoutes(app: FastifyInstance) {
       const plan = {
         firstMonthAvailable: await firstMonthAvailable(req.userId!),
         adRunning: await hasRunningAd(req.userId!),
+        // "Keep it running" or "Just this once" (0041).
+        choice: await planChoiceFor(req.userId!),
       };
       if (!sub) return { subscription: null, entitled: false, plan };
 
@@ -123,6 +143,11 @@ export async function subscriptionRoutes(app: FastifyInstance) {
           line: sub.line,
           status: sub.status,
           amountMinor: sub.amountMinor,
+          // "From $55 a month" (0041): the chosen monthly ad budget, charged
+          // with each paid month and added to the wallet; change it with PUT
+          // /subscription/ad-budget. 0 = none (customer-billed, other lines).
+          // Test mode stores the 50-cent test charge here.
+          budgetRechargeMinor: sub.budgetRechargeMinor,
           currencyCode: sub.currencyCode,
           display: formatMinor(sub.amountMinor, sub.currencyCode as Currency),
           currentPeriodStart: sub.currentPeriodStart,
@@ -150,13 +175,20 @@ export async function subscriptionRoutes(app: FastifyInstance) {
             planKey: z.string().min(1).max(40),
             // Started from a campaign's Launch / Resume: come back there.
             campaignId: z.string().uuid().optional(),
+            // "From $55 a month": the monthly ad budget the customer chose in
+            // the wizard (whole dollars, at least $35). Default: the minimum.
+            adBudgetMinor: z.number().int().positive().optional(),
           }),
         },
       },
       async (req, reply) => {
-        const { planKey, campaignId } = req.body as { planKey: string; campaignId?: string };
+        const { planKey, campaignId, adBudgetMinor } = req.body as { planKey: string; campaignId?: string; adBudgetMinor?: number };
         const plan = planByKey(planKey);
         if (!plan) return reply.code(400).send({ error: "no_such_plan" });
+        if (adBudgetMinor != null && plan.line === PLAN_FOLLOWS_RUNNING_LINE) {
+          const problem = monthlyAdBudgetProblem(adBudgetMinor, plan.currency);
+          if (problem) return reply.code(400).send({ ...problem, detail: budgetProblemDetail(problem.error, problem.minMinor, plan.currency) });
+        }
 
         const [user] = await db
           .select({ email: users.email, currencyCode: users.currencyCode })
@@ -176,7 +208,10 @@ export async function subscriptionRoutes(app: FastifyInstance) {
         // people pay us" without a filter someone will forget.
         // Admin "Test as customer" is billed as standard, at the test price.
         const who = await billingIdentity(req.userId!);
-        const amountMinor = chargeMinor(plan.monthlyFeeMinor, who.testMode);
+        // "From $55 a month" (planTerms): $20 + the chosen monthly ad budget,
+        // the same terms for everyone.
+        const terms = await planTermsFor(req.userId!, plan, who, adBudgetMinor);
+        const amountMinor = terms.feeMinor;
         if (who.marginMode === "at_cost") {
           return reply.code(409).send({ error: "at_cost_account", message: "No fee is charged on this account." });
         }
@@ -194,8 +229,8 @@ export async function subscriptionRoutes(app: FastifyInstance) {
           returnUrl = `${env.WEB_ORIGIN}/dashboard/campaigns/${campaignId}`;
         }
 
-        // The $19 plan's first month is included once per account (0038,
-        // lib/planBilling): $0 today (a Stripe trial), card saved, first $19
+        // The plan's first month is included once per account (0038,
+        // lib/planBilling): $0 today (a Stripe trial), card saved, first $20 + $35
         // a month later and only if an ad is still running then.
         const firstMonthIncluded =
           plan.line === PLAN_FOLLOWS_RUNNING_LINE && (await firstMonthAvailable(req.userId!));
@@ -208,6 +243,7 @@ export async function subscriptionRoutes(app: FastifyInstance) {
             provider: provider.name,
             amountMinor,
             firstMonthIncluded,
+            budgetRechargeMinor: terms.budgetRechargeMinor,
             // An abandoned checkout no longer blocks the customer for ever.
             replacePending: true,
           });
@@ -239,6 +275,7 @@ export async function subscriptionRoutes(app: FastifyInstance) {
             internalLabel: who.internalLabel,
             returnUrl,
             trialEnd: firstMonthIncluded ? created.subscription.includedUntil : null,
+            budgetMinor: terms.budgetRechargeMinor,
           });
 
           await db
@@ -246,10 +283,22 @@ export async function subscriptionRoutes(app: FastifyInstance) {
             .set({ providerRef: checkout.providerRef, updatedAt: new Date() })
             .where(eq(subscriptions.id, created.subscription.id));
 
+          // Choosing the plan is choosing "Keep it running".
+          if (plan.line === PLAN_FOLLOWS_RUNNING_LINE) {
+            await db.update(users).set({ planChoice: "monthly" }).where(eq(users.id, req.userId!));
+          }
+
           return reply.code(201).send({
             subscriptionId: created.subscription.id,
             invoiceId: created.invoice.id,
             firstMonthIncluded,
+            amountMinor,
+            budgetRechargeMinor: terms.budgetRechargeMinor,
+            // For "Renews at $X/month from <date>. Cancel anytime in one click."
+            // (today's charge is $0 with the included month, else the first month).
+            chargedTodayMinor: firstMonthIncluded ? 0 : amountMinor + terms.budgetRechargeMinor,
+            renewalMinor: amountMinor + terms.budgetRechargeMinor,
+            renewsOn: firstMonthIncluded ? created.subscription.includedUntil : created.subscription.currentPeriodEnd,
             provider: provider.name,
             redirectUrl: checkout.redirectUrl,
             clientPayload: checkout.clientPayload,
@@ -274,7 +323,7 @@ export async function subscriptionRoutes(app: FastifyInstance) {
         const { immediate } = req.body as { immediate: boolean };
         const sub = await liveSubscriptionFor(req.userId!);
         if (!sub) return reply.code(404).send({ error: "no_subscription" });
-        // The $19 plan follows the running ad: it stops by itself when no ad
+        // The plan follows the running ad: it stops by itself when no ad
         // runs, and the sync would undo a cancel while one does. Pausing the
         // ad is how a customer stops paying.
         if (sub.line === PLAN_FOLLOWS_RUNNING_LINE && (await hasRunningAd(req.userId!))) {
@@ -290,6 +339,43 @@ export async function subscriptionRoutes(app: FastifyInstance) {
           cancelAtPeriodEnd: updated?.cancelAtPeriodEnd,
           servesUntil: updated?.currentPeriodEnd,
         };
+      },
+    );
+
+    // "Keep it running" vs "Just this once" / "Stop renewing" (0041). 'once'
+    // stops a live plan at the end of its paid period (cancel_at_period_end;
+    // the ad keeps running on its budget until it runs out) and the plan sync
+    // never restarts it. 'monthly' takes a stop back while an ad runs, or
+    // answers checkoutRequired (POST /subscription; charged from day one once
+    // the included month is used).
+    secured.put(
+      "/subscription/choice",
+      { schema: { body: z.object({ choice: z.enum(["monthly", "once"]) }) } },
+      async (req) => {
+        const { choice } = req.body as { choice: "monthly" | "once" };
+        return setPlanChoice(req.userId!, choice);
+      },
+    );
+
+    // "From $55 a month": change the monthly ad budget, from the next invoice.
+    // No proration (Stripe quantity, proration_behavior=none). 400 below $35
+    // or not whole dollars; 409 with no live plan with a monthly budget
+    // (customer-billed accounts, other lines) or while checkout is settling.
+    secured.put(
+      "/subscription/ad-budget",
+      { schema: { body: z.object({ amountMinor: z.number().int().positive() }) } },
+      async (req, reply) => {
+        const { amountMinor } = req.body as { amountMinor: number };
+        const r = await changeMonthlyAdBudget(req.userId!, amountMinor);
+        if (r.ok) return r;
+        if (r.error === "no_subscription") return reply.code(404).send({ error: r.error });
+        if (r.error === "budget_below_minimum" || r.error === "budget_not_whole_dollars" || r.error === "budget_too_large") {
+          const [u] = await db.select({ currencyCode: users.currencyCode }).from(users).where(eq(users.id, req.userId!)).limit(1);
+          const currency = (u?.currencyCode ?? "USD") as Currency;
+          return reply.code(400).send({ error: r.error, minMinor: r.minMinor, detail: budgetProblemDetail(r.error, r.minMinor ?? 0, currency) });
+        }
+        if (r.error === "stripe_error") return reply.code(502).send({ error: r.error, detail: "We could not change it just now. Try again in a minute." });
+        return reply.code(409).send({ error: r.error });
       },
     );
 
@@ -381,16 +467,30 @@ export async function subscriptionRoutes(app: FastifyInstance) {
             .limit(1);
           if (!invoice) return reply.code(404).send({ error: "unknown_invoice" });
 
+          // "From $55 a month": the ad budget this provider invoice actually
+          // charged (its own budget line) is what gets credited. A budget
+          // changed after we opened this invoice reaches Stripe's next
+          // invoice, so take the line's amount; the fee is still checked.
+          if (event.budgetMinor != null && event.budgetMinor !== invoice.budgetMinor && invoice.status === "pending") {
+            await db
+              .update(subscriptionInvoices)
+              .set({ budgetMinor: event.budgetMinor })
+              .where(and(eq(subscriptionInvoices.id, invoice.id), eq(subscriptionInvoices.status, "pending")));
+            invoice.budgetMinor = event.budgetMinor;
+          }
+
           // Amount comes from the provider's event, but a mismatch against what
           // we opened the invoice for means something is wrong enough to refuse
           // rather than reconcile — a price drift between our plan table and
           // the provider's price object surfaces exactly here.
+          // "$55 a month": the provider collects the fee AND the invoice's
+          // monthly ad budget (0041) in one charge.
           if (
-            event.amountMinor !== invoice.amountMinor ||
+            event.amountMinor !== invoiceChargeMinor(invoice) ||
             event.currency !== invoice.currencyCode
           ) {
             req.log.error(
-              { invoiceId: invoice.id, expected: invoice.amountMinor, got: event.amountMinor },
+              { invoiceId: invoice.id, expected: invoiceChargeMinor(invoice), got: event.amountMinor },
               "subscription amount mismatch",
             );
             return reply.code(409).send({ error: "amount_mismatch" });
@@ -406,6 +506,9 @@ export async function subscriptionRoutes(app: FastifyInstance) {
           // A plan paid for with no ad running stops at the end of this
           // period (lib/planBilling). Not awaited: Stripe wants its 200.
           void syncPlanBillingForUser(invoice.userId);
+          // The month's ad budget landed in the wallet: like a top-up, undo a
+          // card freeze and switch back on what the empty budget paused.
+          if (result.budgetCreditedMinor > 0) void afterPlanBudgetCredit(invoice.userId);
           return reply.code(200).send({ ok: true, ...result });
         }
 

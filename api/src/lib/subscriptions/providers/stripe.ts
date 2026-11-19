@@ -1,5 +1,5 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
-import { isCurrency } from "../../pricing/index.js";
+import { isCurrency, MONTHLY_AD_BUDGET_UNIT_MINOR, PLANS } from "../../pricing/index.js";
 import { internalStripeMetadata, isUndeliverableEmail } from "../../testMode/policy.js";
 import type {
   SubscriptionCheckout,
@@ -24,6 +24,102 @@ const PRICE_IDS: Record<string, string | undefined> = {
   "us-managed": process.env.STRIPE_PRICE_US_MANAGED,
   "us-evergreen": process.env.STRIPE_PRICE_US_EVERGREEN,
 };
+
+/**
+ * The fixed Stripe price for a plan at a given monthly amount, or null (the
+ * caller then sends an inline monthly price).
+ *
+ * Keep it running: `STRIPE_PRICE_US_EVERGREEN` is the $20 price ("$55 a
+ * month", 2026-11-19). Only used when the amount is the plan's list fee, so
+ * any other amount (test mode's 50 cents) goes inline. Read at call time so
+ * the env can be set without a code change.
+ */
+export function stripePlanPriceId(planKey: string, amountMinor: number): string | null {
+  if (planKey === "us-evergreen") {
+    return amountMinor === PLANS["us-evergreen"]!.monthlyFeeMinor ? process.env.STRIPE_PRICE_US_EVERGREEN || null : null;
+  }
+  return PRICE_IDS[planKey] || null;
+}
+
+/**
+ * The "AdVault ad budget" $1/month UNIT price, or null = inline $1 unit price.
+ * The customer's chosen monthly ad budget is quantity x $1 on one line
+ * ("from $55 a month", 2026-11-19), so one price covers every amount.
+ */
+export function stripeAdBudgetPriceId(): string | null {
+  return process.env.STRIPE_PRICE_US_AD_BUDGET || null;
+}
+
+/** Quantity of $1 units for a monthly ad budget (whole dollars, validated upstream). */
+export function adBudgetQuantity(budgetMinor: number): number {
+  return Math.max(0, Math.round(budgetMinor / MONTHLY_AD_BUDGET_UNIT_MINOR));
+}
+
+type StripeItemLike = { id?: string; quantity?: number; price?: { id?: string; product?: unknown; unit_amount?: number | null } };
+
+/**
+ * Which of a subscription's items is the plan and which the monthly ad
+ * budget. The budget is the STRIPE_PRICE_US_AD_BUDGET price, else the item at
+ * the $1 unit amount (the plan is never $1), else (test mode, both lines at
+ * 50 cents) the second item.
+ */
+export function splitStripeItems<T extends StripeItemLike>(items: readonly T[]): { plan: T | undefined; budget: T | undefined } {
+  const budgetPrice = stripeAdBudgetPriceId();
+  let budget = items.find((i) => budgetPrice && i.price?.id === budgetPrice);
+  budget ??= items.find((i) => i.price?.unit_amount === MONTHLY_AD_BUDGET_UNIT_MINOR);
+  budget ??= items.length > 1 ? items[1] : undefined;
+  const plan = items.find((i) => i !== budget);
+  return { plan, budget };
+}
+
+/**
+ * The monthly ad budget a paid Stripe invoice actually charged, read from its
+ * own lines (the budget line's amount), or null when it cannot tell (no
+ * lines, as on checkout.session.completed, or test mode's 50-cent lines).
+ * The webhook credits THIS, not the subscription's current setting, so a
+ * change made mid-month never reaches an invoice already billed.
+ */
+export function stripeInvoiceBudgetMinor(invoice: Record<string, unknown>): number | null {
+  const lines = (invoice.lines as { data?: unknown[] } | undefined)?.data;
+  if (!Array.isArray(lines) || lines.length === 0) return null;
+  const budgetPrice = stripeAdBudgetPriceId();
+  let found: number | null = null;
+  for (const raw of lines) {
+    const l = raw as {
+      amount?: number;
+      quantity?: number | null;
+      price?: { id?: string; unit_amount?: number | null } | null;
+      pricing?: { price_details?: { price?: unknown }; unit_amount_decimal?: string | null } | null;
+    };
+    const priceId = l.price?.id ?? stripeIdOf(l.pricing?.price_details?.price);
+    const unit = l.price?.unit_amount ?? (l.pricing?.unit_amount_decimal != null ? Number(l.pricing.unit_amount_decimal) : null);
+    const isBudget = (budgetPrice && priceId === budgetPrice) || unit === MONTHLY_AD_BUDGET_UNIT_MINOR;
+    if (isBudget && typeof l.amount === "number") found = (found ?? 0) + l.amount;
+  }
+  return found;
+}
+
+/**
+ * Change the monthly ad budget on a live Stripe subscription: the budget
+ * item's quantity, `proration_behavior=none`, so it applies from the next
+ * invoice and nothing is charged or refunded now.
+ */
+export async function stripeSetAdBudgetQuantity(
+  subscriptionRef: string,
+  budgetMinor: number,
+): Promise<{ ok: true } | { ok: false; reason: "no_budget_line" }> {
+  const sub = await stripeCall<StripeSubscriptionObject>("GET", `/subscriptions/${subscriptionRef}`);
+  const { budget } = splitStripeItems(sub.items?.data ?? []);
+  if (!budget?.id) return { ok: false, reason: "no_budget_line" };
+  await stripeCall("POST", `/subscription_items/${budget.id}`, {
+    quantity: String(adBudgetQuantity(budgetMinor)),
+    proration_behavior: "none",
+  });
+  return { ok: true };
+}
+
+const PLAN_PRODUCT_NAME = "AdVault Keep it running";
+const BUDGET_PRODUCT_NAME = "AdVault ad budget (100% goes to Google)";
 
 /**
  * Stripe signs `${timestamp}.${rawBody}` and sends
@@ -56,17 +152,49 @@ function verifySignature(rawBody: string, header: string | undefined): boolean {
  * so no test price object has to exist in Stripe.
  */
 export function stripeSubscriptionLine(req: SubscriptionCheckoutRequest): Record<string, string> {
+  const inline = (i: number, amountMinor: number, name: string, quantity = 1): Record<string, string> => ({
+    [`line_items[${i}][price_data][currency]`]: req.currency.toLowerCase(),
+    [`line_items[${i}][price_data][unit_amount]`]: String(amountMinor),
+    [`line_items[${i}][price_data][recurring][interval]`]: "month",
+    [`line_items[${i}][price_data][product_data][name]`]: name,
+    [`line_items[${i}][quantity]`]: String(quantity),
+  });
+
+  let plan: Record<string, string>;
   if (req.testMode) {
-    return {
-      "line_items[0][price_data][currency]": req.currency.toLowerCase(),
-      "line_items[0][price_data][unit_amount]": String(req.amountMinor),
-      "line_items[0][price_data][recurring][interval]": "month",
-      "line_items[0][price_data][product_data][name]": "AdVault plan (test)",
-    };
+    plan = inline(0, req.amountMinor, "AdVault plan (test)");
+  } else {
+    const priceId = stripePlanPriceId(req.planKey, req.amountMinor);
+    if (priceId) {
+      plan = { "line_items[0][price]": priceId, "line_items[0][quantity]": "1" };
+    } else if (req.planKey === "us-evergreen") {
+      // STRIPE_PRICE_US_EVERGREEN unset: charge the right amount inline rather
+      // than refuse every new customer's plan (and with it every launch).
+      console.warn(
+        JSON.stringify({ msg: "no Stripe price for this plan amount; using an inline price", planKey: req.planKey, amountMinor: req.amountMinor }),
+      );
+      plan = inline(0, req.amountMinor, PLAN_PRODUCT_NAME);
+    } else {
+      throw new Error(`No Stripe price configured for ${req.planKey}`);
+    }
   }
-  const priceId = PRICE_IDS[req.planKey];
-  if (!priceId) throw new Error(`No Stripe price configured for ${req.planKey}`);
-  return { "line_items[0][price]": priceId };
+
+  // "From $55 a month": the chosen monthly ad budget is a second recurring
+  // line on the SAME subscription, quantity x the $1 unit price, so one
+  // invoice a month carries both, the included-month trial covers both, and
+  // stopping the plan (cancel_at_period_end) stops both. Test mode: one
+  // 50-cent unit.
+  const budget = req.budgetMinor ?? 0;
+  if (budget <= 0) return plan;
+  if (req.testMode) return { ...plan, ...inline(1, budget, "AdVault ad budget (test)") };
+  const qty = adBudgetQuantity(budget);
+  const budgetPrice = stripeAdBudgetPriceId();
+  return {
+    ...plan,
+    ...(budgetPrice
+      ? { "line_items[1][price]": budgetPrice, "line_items[1][quantity]": String(qty) }
+      : inline(1, MONTHLY_AD_BUDGET_UNIT_MINOR, BUDGET_PRODUCT_NAME, qty)),
+  };
 }
 
 export const stripeSubscriptions: SubscriptionProvider = {
@@ -80,7 +208,6 @@ export const stripeSubscriptions: SubscriptionProvider = {
     const form = new URLSearchParams({
       mode: "subscription",
       ...stripeSubscriptionLine(req),
-      "line_items[0][quantity]": "1",
       // A test customer's *.invalid address (0030) is left off; Stripe asks for one.
       ...(isUndeliverableEmail(req.userEmail) ? {} : { customer_email: req.userEmail }),
       success_url: `${req.returnUrl}?subscribed=1`,
@@ -160,8 +287,10 @@ export const stripeSubscriptions: SubscriptionProvider = {
         const currency = String(obj.currency ?? "").toUpperCase();
         const amountMinor = Number(obj.amount_paid ?? obj.amount_total);
         if (!invoiceId || !isCurrency(currency) || !Number.isFinite(amountMinor)) return null;
+        const budgetMinor = event.type === "invoice.paid" ? stripeInvoiceBudgetMinor(obj) : null;
         return {
           kind: "paid",
+          ...(budgetMinor != null ? { budgetMinor } : {}),
           invoiceId,
           externalRef: String(obj.id),
           amountMinor,
@@ -259,7 +388,7 @@ type StripeSubscriptionObject = {
   customer: string;
   cancel_at_period_end: boolean;
   default_payment_method: string | null;
-  items?: { data?: { price?: { id?: string; product?: string } }[] };
+  items?: { data?: { id?: string; quantity?: number; price?: { id?: string; product?: string; unit_amount?: number } }[] };
 };
 
 /** The sub_ and cus_ a completed subscription checkout created (older rows stored only the cs_). */
@@ -305,22 +434,37 @@ export function stripeRestartForm(args: {
   invoiceId: string;
   internal?: boolean;
   internalLabel?: string | null;
+  /** "$55 a month": the monthly ad budget line (0/absent = none). */
+  budgetMinor?: number;
+  budgetPriceId?: string | null;
+  /** Product for an inline budget price (test mode / no budget price id). */
+  budgetProductId?: string | null;
 }): Record<string, string> {
+  const inline = (i: number, amountMinor: number, product: string | null, quantity = 1): Record<string, string> => ({
+    [`items[${i}][price_data][currency]`]: args.currency.toLowerCase(),
+    [`items[${i}][price_data][unit_amount]`]: String(amountMinor),
+    [`items[${i}][price_data][recurring][interval]`]: "month",
+    [`items[${i}][price_data][product]`]: product ?? "",
+    [`items[${i}][quantity]`]: String(quantity),
+  });
   const line: Record<string, string> =
-    args.testMode || !args.priceId
-      ? {
-          "items[0][price_data][currency]": args.currency.toLowerCase(),
-          "items[0][price_data][unit_amount]": String(args.amountMinor),
-          "items[0][price_data][recurring][interval]": "month",
-          "items[0][price_data][product]": args.productId ?? "",
-        }
-      : { "items[0][price]": args.priceId };
+    args.testMode || !args.priceId ? inline(0, args.amountMinor, args.productId) : { "items[0][price]": args.priceId };
+  const budget = args.budgetMinor ?? 0;
+  const budgetLine: Record<string, string> =
+    budget <= 0
+      ? {}
+      : args.testMode
+        ? inline(1, budget, args.budgetProductId ?? args.productId)
+        : args.budgetPriceId
+          ? { "items[1][price]": args.budgetPriceId, "items[1][quantity]": String(adBudgetQuantity(budget)) }
+          : inline(1, MONTHLY_AD_BUDGET_UNIT_MINOR, args.budgetProductId ?? args.productId, adBudgetQuantity(budget));
   return {
     customer: args.customerRef,
     default_payment_method: args.paymentMethod,
     payment_behavior: "error_if_incomplete",
     off_session: "true",
     ...line,
+    ...budgetLine,
     "metadata[subscription_id]": args.subscriptionId,
     "metadata[invoice_id]": args.invoiceId,
     "metadata[app]": "advault",
@@ -347,6 +491,8 @@ export async function stripeRestartOffSession(args: {
   invoiceId: string;
   internal?: boolean;
   internalLabel?: string | null;
+  /** "$55 a month": the monthly ad budget line (0/absent = none). */
+  budgetMinor?: number;
 }): Promise<StripeRestart> {
   try {
     const prev = await stripeCall<StripeSubscriptionObject>("GET", `/subscriptions/${args.previousSubscriptionRef}`);
@@ -359,11 +505,16 @@ export async function stripeRestartOffSession(args: {
       paymentMethod = stripeIdOf(cus.invoice_settings?.default_payment_method);
     }
     if (!paymentMethod) return { ok: false, reason: "no_saved_card" };
-    const priceId = PRICE_IDS[args.planKey] ?? null;
-    const productId = stripeIdOf(prev.items?.data?.[0]?.price?.product);
+    const priceId = stripePlanPriceId(args.planKey, args.amountMinor);
+    const { plan: prevPlan, budget: prevBudget } = splitStripeItems(prev.items?.data ?? []);
+    const productId = stripeIdOf(prevPlan?.price?.product);
     if ((args.testMode || !priceId) && !productId) {
       return { ok: false, reason: "stripe_error", detail: "previous plan has no product to reuse" };
     }
+    // An inline budget price reuses the previous plan's budget product (its
+    // second line); without one it falls back to the plan's product.
+    const budgetPriceId = stripeAdBudgetPriceId();
+    const budgetProductId = stripeIdOf(prevBudget?.price?.product);
 
     const created = await stripeCall<{
       id: string;
@@ -373,7 +524,15 @@ export async function stripeRestartOffSession(args: {
     }>(
       "POST",
       "/subscriptions",
-      stripeRestartForm({ ...args, customerRef: stripeIdOf(prev.customer)!, paymentMethod, priceId, productId }),
+      stripeRestartForm({
+        ...args,
+        customerRef: stripeIdOf(prev.customer)!,
+        paymentMethod,
+        priceId,
+        productId,
+        budgetPriceId,
+        budgetProductId,
+      }),
     );
     if (created.status !== "active") {
       // error_if_incomplete makes this unreachable; never leave one half made.
@@ -386,7 +545,10 @@ export async function stripeRestartOffSession(args: {
       subscriptionRef: created.id,
       customerRef: stripeIdOf(created.customer) ?? stripeIdOf(prev.customer)!,
       invoiceRef: stripeIdOf(inv),
-      amountPaidMinor: typeof inv === "object" && inv && typeof inv.amount_paid === "number" ? inv.amount_paid : args.amountMinor,
+      amountPaidMinor:
+        typeof inv === "object" && inv && typeof inv.amount_paid === "number"
+          ? inv.amount_paid
+          : args.amountMinor + (args.budgetMinor ?? 0),
     };
   } catch (err) {
     if (err instanceof StripeApiError && err.status === 402) {

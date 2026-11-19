@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { isRunning, planAllowsRunning, planBillingAction, planGate, planGateBody, type PlanSub } from "./policy.js";
+import {
+  adWantsPlan,
+  isRunning,
+  planAllowsRunning,
+  planBillingAction,
+  planGate,
+  planGateBody,
+  planTerms,
+  type PlanSub,
+} from "./policy.js";
 
 const now = new Date("2026-11-19T12:00:00Z");
 const later = new Date("2026-12-19T12:00:00Z");
@@ -101,5 +110,69 @@ describe("planAllowsRunning (automatic restart after a top-up)", () => {
     expect(planAllowsRunning({ exempt: false, sub: sub({ cancelAtPeriodEnd: true, currentPeriodEnd: earlier }), now })).toBe(false);
     expect(planAllowsRunning({ exempt: false, sub: null, now })).toBe(false);
     expect(planAllowsRunning({ exempt: true, sub: null, now })).toBe(true);
+  });
+});
+
+describe("$55 a month: plan terms", () => {
+  const base = {
+    line: "evergreen",
+    listFeeMinor: 2_000,
+    rechargeMinor: 3_500,
+    billingMode: "platform" as string | null,
+    testMode: false,
+  };
+
+  it("every plan is $20 plus the monthly ad budget ($35 by default)", () => {
+    expect(planTerms(base)).toEqual({ feeMinor: 2_000, budgetRechargeMinor: 3_500 });
+    // No ad account yet (the default is platform-billed): same.
+    expect(planTerms({ ...base, billingMode: null })).toEqual({ feeMinor: 2_000, budgetRechargeMinor: 3_500 });
+  });
+
+  it("the recharge is the customer's chosen budget ($100 -> $120 a month); test mode stays 50 cents", () => {
+    expect(planTerms({ ...base, rechargeMinor: 10_000 })).toEqual({ feeMinor: 2_000, budgetRechargeMinor: 10_000 });
+    expect(planTerms({ ...base, rechargeMinor: 10_000, testMode: true })).toEqual({ feeMinor: 50, budgetRechargeMinor: 50 });
+  });
+
+  it("no recharge when Google bills the customer's own card", () => {
+    expect(planTerms({ ...base, billingMode: "customer" })).toEqual({ feeMinor: 2_000, budgetRechargeMinor: 0 });
+  });
+
+  it("test mode charges both lines at the 50-cent test price", () => {
+    expect(planTerms({ ...base, testMode: true })).toEqual({ feeMinor: 50, budgetRechargeMinor: 50 });
+  });
+
+  it("other lines get their list fee and no recharge", () => {
+    expect(planTerms({ ...base, line: "offer", listFeeMinor: 3_900 })).toEqual({ feeMinor: 3_900, budgetRechargeMinor: 0 });
+  });
+});
+
+describe("$55 a month: what keeps the plan billing", () => {
+  it("a running ad, or an ad waiting for budget on a recharging plan; never a customer pause", () => {
+    expect(adWantsPlan({ running: true, waitingForBudget: false, planRecharges: false })).toBe(true);
+    expect(adWantsPlan({ running: false, waitingForBudget: true, planRecharges: true })).toBe(true);
+    // Grandfathered (no recharge): an empty budget stops the plan as before.
+    expect(adWantsPlan({ running: false, waitingForBudget: true, planRecharges: false })).toBe(false);
+    expect(adWantsPlan({ running: false, waitingForBudget: false, planRecharges: true })).toBe(false);
+  });
+});
+
+describe("Just this once", () => {
+  const now = new Date("2026-11-19T12:00:00Z");
+  const later = new Date("2026-12-19T12:00:00Z");
+  const live = { line: "evergreen", status: "active", cancelAtPeriodEnd: false, currentPeriodEnd: later };
+
+  it("needs no plan to launch or keep running", () => {
+    const g = { exempt: false, sub: null, firstMonthUsed: true, buysMedia: () => true, now };
+    expect(planGate({ ...g, oneTime: true })).toEqual({ ok: true });
+    expect(planGate(g)).toMatchObject({ ok: false, error: "plan_required" });
+    expect(planAllowsRunning({ exempt: false, sub: null, now, oneTime: true })).toBe(true);
+  });
+
+  it("never starts, restarts or un-stops a plan; only lets a live one run out", () => {
+    expect(planBillingAction({ exempt: false, running: true, sub: null, now, oneTime: true })).toEqual({ kind: "none", reason: "one_time" });
+    expect(planBillingAction({ exempt: false, running: true, sub: live, now, oneTime: true })).toEqual({ kind: "stop_at_period_end" });
+    expect(
+      planBillingAction({ exempt: false, running: true, sub: { ...live, cancelAtPeriodEnd: true }, now, oneTime: true }),
+    ).toEqual({ kind: "none", reason: "one_time" });
   });
 });
