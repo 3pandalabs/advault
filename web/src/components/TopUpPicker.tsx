@@ -23,6 +23,7 @@ export function TopUpPicker({
   value,
   onChange,
   showEstimate = true,
+  optionEstimates = false,
 }: {
   currency: string;
   campaignId?: string;
@@ -31,6 +32,8 @@ export function TopUpPicker({
   onChange?: (cents: number) => void;
   /** False when the caller shows the times-shown estimate itself (CostSimulator). */
   showEstimate?: boolean;
+  /** Show each preset's times-shown estimate next to its price ("$35 · 6k–11.5k"). */
+  optionEstimates?: boolean;
 }) {
   const presets = topupPresets(currency);
   const min = minTopupCents(currency);
@@ -86,6 +89,9 @@ export function TopUpPicker({
 
   return (
     <div>
+      {optionEstimates && (
+        <p className="mb-2 text-xs text-zinc-400">Next to each amount: about how many times your ad is shown each month.</p>
+      )}
       <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="How much to add">
         {presets.map((p) => (
           <button
@@ -102,6 +108,9 @@ export function TopUpPicker({
             }`}
           >
             {formatMoney(p, currency)}
+            {optionEstimates && (
+              <span className="ml-2 font-normal text-amber-300/90">· {shortRange(p, currency)}</span>
+            )}
           </button>
         ))}
         <button
@@ -170,4 +179,11 @@ export function TopUpPicker({
       {notice && <p className="mt-2 text-sm text-amber-200">{notice}</p>}
     </div>
   );
+}
+
+/** "6k–11.5k": a preset's estimate, short enough to sit beside its price. */
+function shortRange(cents: number, currency: string): string {
+  const { low, high } = timesShownEstimate(cents, currency);
+  const k = (v: number) => (v >= 1000 ? `${Math.round(v / 100) / 10}k` : String(v));
+  return `${k(low)}–${k(high)}`;
 }

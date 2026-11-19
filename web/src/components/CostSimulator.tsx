@@ -128,7 +128,7 @@ export function CostSimulator({
 
       <div className={bare ? "" : "mt-5"}>
         <p className="mb-2 text-sm font-medium text-zinc-300">{monthly ? "Your monthly ad budget" : "Your ad budget"}</p>
-        <TopUpPicker mode="choose" currency={CURRENCY} value={budget} onChange={setBudget} showEstimate={false} />
+        <TopUpPicker mode="choose" currency={CURRENCY} value={budget} onChange={setBudget} showEstimate={false} optionEstimates />
       </div>
 
       <div className="mt-4 space-y-2">
