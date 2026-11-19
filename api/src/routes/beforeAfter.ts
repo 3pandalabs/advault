@@ -39,6 +39,32 @@ async function pairsWithKeys(userId: string, pairs: BeforeAfterPair[] | null) {
   });
 }
 
+/**
+ * The one before & after check, shared by this PUT and POST /campaigns (the
+ * wizard sends the pairs with the create so the first ad has them).
+ * `pairs` null = none.
+ */
+export async function checkBeforeAfter(
+  category: string,
+  body: BeforeAfterInput,
+  userId: string,
+): Promise<{ ok: true; pairs: BeforeAfterPair[] | null } | { ok: false; error: string; detail?: string }> {
+  const violation = beforeAfterViolation(category, body);
+  if (violation) return { ok: false, error: violation, detail: BEFORE_AFTER_DETAIL[violation] };
+
+  // Only the advertiser's own photos: without the userId filter, someone
+  // could put another advertiser's photo in their ad as "our work".
+  const ids = pairAssetIds(body.pairs);
+  if (ids.length > 0) {
+    const owned = await db
+      .select({ id: assets.id })
+      .from(assets)
+      .where(and(eq(assets.userId, userId), eq(assets.kind, "photo"), inArray(assets.id, ids)));
+    if (owned.length !== ids.length) return { ok: false, error: "unknown_assets" };
+  }
+  return { ok: true, pairs: body.pairs.length === 0 ? null : body.pairs };
+}
+
 export async function beforeAfterRoutes(app: FastifyInstance) {
   app.addHook("onRequest", requireAuth);
 
@@ -60,27 +86,14 @@ export async function beforeAfterRoutes(app: FastifyInstance) {
       const { campaignId } = req.params as { campaignId: string };
       const campaign = await loadOwnedCampaign(campaignId, req.userId!, reply);
       if (!campaign) return;
-      const body = req.body as BeforeAfterInput;
+      const checked = await checkBeforeAfter(campaign.businessCategory, req.body as BeforeAfterInput, req.userId!);
+      if (!checked.ok) return reply.code(400).send({ error: checked.error, ...(checked.detail ? { detail: checked.detail } : {}) });
 
-      const violation = beforeAfterViolation(campaign.businessCategory, body);
-      if (violation) return reply.code(400).send({ error: violation, detail: BEFORE_AFTER_DETAIL[violation] });
-
-      // Only the advertiser's own photos: without the userId filter, someone
-      // could put another advertiser's photo in their ad as "our work".
-      const ids = pairAssetIds(body.pairs);
-      if (ids.length > 0) {
-        const owned = await db
-          .select({ id: assets.id })
-          .from(assets)
-          .where(and(eq(assets.userId, req.userId!), eq(assets.kind, "photo"), inArray(assets.id, ids)));
-        if (owned.length !== ids.length) return reply.code(400).send({ error: "unknown_assets" });
-      }
-
-      const empty = body.pairs.length === 0;
+      const empty = checked.pairs === null;
       const [updated] = await db
         .update(campaigns)
         .set({
-          beforeAfter: empty ? null : body.pairs,
+          beforeAfter: checked.pairs,
           beforeAfterAttestedAt: empty ? null : new Date(),
           beforeAfterAttestedBy: empty ? null : req.userId!,
           updatedAt: new Date(),

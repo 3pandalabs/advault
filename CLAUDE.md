@@ -548,6 +548,27 @@ the API copy, then the web copy).
   presets (EV charger, panel, generator, solar hookup) and Cleaning's
   move-out / move-in are one-tap offers (`OFFER_PRESETS`,
   `components/OfferPresetButtons.tsx`) in the wizard and "Your offer" card.
+- **Asked BEFORE the first ad (2026-11-20).** Until then badges and extras
+  were only on the campaign page, after the ad was made, so the first ad
+  never used them. The wizard's last step ("Extras", photo path only) now
+  has an optional "Make your ad stronger" card: badges + attestation
+  (`components/BadgePicker.tsx`) for every category with badges, and the
+  category's extras (`components/CategoryExtrasFields.tsx`: dish from the
+  chosen photos + order link with "Send people from my ad to this link",
+  ticked when no website was given; makes; customer ZIPs with "Also show my
+  ad in these ZIP codes", ADDED to step 1's ZIPs, + neighbor price into the
+  offer). Before & after stays on the photo step; open house stays on
+  step 1; electrical/cleaning presets stay in the offer box. All of it goes
+  IN `POST /campaigns` (`badges`, `categoryExtras`, `beforeAfter`), checked
+  by the same `checkBadges` / `checkCategoryExtras` / `checkBeforeAfter` the
+  PUT routes use, so it is on the row before generate or the paid order
+  reads it (`routes/campaignCreateExtras.test.ts` proves the first script
+  gets badges, end-card line, dish photo first and before/after). Keep these
+  fields out of `campaignFields` (PATCH would skip the attestation). The
+  campaign page moved Offer / Badges / Extras / Before & after into one
+  `<details>` at the bottom, "For your next ad: offer, badges, photos",
+  open when there is no ad yet (no creative, or all failed). SeasonCard
+  stays near the top.
 
 ## Google Ads API access: developer tokens are gone, and the version pin is load-bearing
 
