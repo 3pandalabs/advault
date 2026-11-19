@@ -87,6 +87,12 @@ export function buildAdScriptUserPrompt(input: {
     const bb = bedsBaths(r);
     if (bb) lines.push(`Size: ${[r.beds != null ? `${r.beds} bedrooms` : null, r.baths != null ? `${r.baths} bathrooms` : null].filter(Boolean).join(", ")} (sticker headline: ${bb})`);
     if (r.openHouse) lines.push(`Open house: ${openHouseLong(r.openHouse)} (sticker tagline: ${openHouseTag(r.openHouse)})`);
+  } else if (r?.adType === "sold") {
+    lines.push("", "Ad type: JUST SOLD ad. The agent just sold this home; the ad wins the neighbors' listings (\"Just sold on Maple St. Thinking of selling? Call me.\"). Never invite viewers to buy or tour this home.");
+    if (place) lines.push(`Sold home: ${place}`);
+    if (r.price) lines.push(`Sold price: ${r.price} (sticker badge: SOLD)`);
+    const bb = bedsBaths(r);
+    if (bb) lines.push(`Size: ${bb}`);
   } else if (r?.adType === "agent") {
     lines.push("", "Ad type: AGENT ad promoting the agent, not one listing.");
     if (addr) lines.push(`Office or area served: ${addr.city}, ${addr.state}`);

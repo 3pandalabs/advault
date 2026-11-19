@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { bedsBaths, openHouseLong, openHouseTag, realtySchema, shortPrice } from "./index.js";
+import {
+  bedsBaths,
+  earlierEndDate,
+  openHouseEndDate,
+  openHouseIsOver,
+  openHouseLong,
+  openHouseTag,
+  realtySchema,
+  shortPrice,
+} from "./index.js";
 import { buildAdScriptUserPrompt } from "../script/prompt.js";
 import { buildFallbackScript } from "../script/fallback.js";
 import { adScriptSchema } from "../script/schema.js";
@@ -49,5 +58,56 @@ describe("real estate ad facts", () => {
     const p = buildAdScriptUserPrompt({ businessName: "Dana Reyes Realty", businessCategory: "Real estate", callToAction: "Call Dana", targetZipCodes: [], radiusMiles: 5, aspectRatio: "9:16", assetCount: 4, targetAddress: addr, realty: listing, peopleIndexes: [1, 3], portraitIndex: 3 });
     expect(p).toContain("Photos showing real people from the business: 1.");
     expect(p).toContain("Photo 3 is the agent's own photo");
+  });
+});
+
+describe("open house stops by itself; just sold (2026-11-20)", () => {
+  const oh = { adType: "listing" as const, openHouse: { date: "2026-11-22", start: "13:00", end: "16:00" } };
+
+  it("the open-house date is the end date, for listing ads only", () => {
+    expect(openHouseEndDate(oh)).toBe("2026-11-22");
+    expect(openHouseEndDate({ adType: "listing" })).toBeNull();
+    expect(openHouseEndDate({ adType: "agent" })).toBeNull();
+    expect(openHouseEndDate(null)).toBeNull();
+  });
+
+  it("over only after the open-house day (UTC)", () => {
+    expect(openHouseIsOver(oh, "2026-11-21")).toBe(false);
+    expect(openHouseIsOver(oh, "2026-11-22")).toBe(false);
+    expect(openHouseIsOver(oh, "2026-11-23")).toBe(true);
+    expect(openHouseIsOver({ adType: "agent" }, "2030-01-01")).toBe(false);
+  });
+
+  it("the earlier end date wins", () => {
+    expect(earlierEndDate("2026-11-30", "2026-11-22")).toBe("2026-11-22");
+    expect(earlierEndDate(null, "2026-11-22")).toBe("2026-11-22");
+    expect(earlierEndDate("2026-11-30", null)).toBe("2026-11-30");
+    expect(earlierEndDate(null, null)).toBeNull();
+  });
+
+  it("a just-sold ad takes the home's facts but no open house", () => {
+    expect(realtySchema.safeParse({ adType: "sold", price: "$510,000", beds: 3 }).success).toBe(true);
+    expect(realtySchema.safeParse({ adType: "sold", openHouse: oh.openHouse }).success).toBe(false);
+    expect(realtySchema.safeParse({ adType: "agent", openHouse: oh.openHouse }).success).toBe(false);
+  });
+
+  it("just sold: the prompt says never to sell this home; the fallback says SOLD", () => {
+    const addr = { street: "12 Maple St", city: "Austin", state: "TX", postalCode: "78701" };
+    const input = {
+      businessName: "Dana Reyes Realty",
+      businessCategory: "Real estate",
+      callToAction: "Call Dana",
+      targetZipCodes: [],
+      radiusMiles: 2,
+      aspectRatio: "16:9" as const,
+      assetCount: 2,
+      targetAddress: addr,
+      realty: { adType: "sold" as const, beds: 3, baths: 2 },
+    };
+    expect(buildAdScriptUserPrompt(input)).toContain("JUST SOLD");
+    const s = buildFallbackScript(input);
+    expect(adScriptSchema.safeParse(s).success).toBe(true);
+    expect(s.sticker?.badge).toBe("SOLD");
+    expect(s.hook).toBe("Just sold: 12 Maple St");
   });
 });

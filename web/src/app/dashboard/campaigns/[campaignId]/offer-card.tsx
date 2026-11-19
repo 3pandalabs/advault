@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input, Label, Textarea } from "@/components/ui/input";
 import { ClaimWarnings, hasBlockedClaim } from "@/components/ClaimWarnings";
 import { PlanOfferBuilder } from "@/components/PlanOfferBuilder";
+import { OfferPresetButtons } from "@/components/OfferPresetButtons";
 
 /**
  * "Your offer": the text the next ad is written from, editable in any status
@@ -71,6 +72,13 @@ export function OfferCard({ campaign, onSaved }: { campaign: Campaign; onSaved: 
           <div>
             <Label htmlFor="offer-text">Your offer and what makes you different</Label>
             <Textarea id="offer-text" maxLength={2000} value={offer} onChange={(e) => setOffer(e.target.value)} className="min-h-24" disabled={busy} />
+            <OfferPresetButtons
+              category={campaign.businessCategory}
+              onPick={(p) => {
+                setOffer(p.offer);
+                setCta(p.callToAction);
+              }}
+            />
             <ClaimWarnings category={campaign.businessCategory} text={offer} />
             <PlanOfferBuilder category={campaign.businessCategory} currencyCode={campaign.currencyCode} onUse={setOffer} />
           </div>

@@ -202,11 +202,12 @@ export async function creativeRoutes(app: FastifyInstance) {
       const stored = adScriptSchema.safeParse(owned.creative.script);
       // Same for the attested badges (lib/categories/badges): an edit must not
       // add a credential the owner never attested.
-      const { beforeAfter: _ignored, badges: _ignoredBadges, ...rest } = edited;
+      const { beforeAfter: _ignored, badges: _ignoredBadges, endCardLine: _ignoredLine, ...rest } = edited;
       const script = {
         ...rest,
         ...(stored.success && stored.data.beforeAfter ? { beforeAfter: stored.data.beforeAfter } : {}),
         ...(stored.success && stored.data.badges ? { badges: stored.data.badges } : {}),
+        ...(stored.success && stored.data.endCardLine ? { endCardLine: stored.data.endCardLine } : {}),
       };
       const maxIndex = Math.max(owned.creative.sourceAssetKeys.length - 1, 0);
       if (script.scenes.some((s) => s.assetIndex > maxIndex)) {

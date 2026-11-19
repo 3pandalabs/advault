@@ -68,6 +68,8 @@ export type OfferAdProps = {
    * small chips on the end card ("Licensed & insured", "LIC #12345").
    */
   badges?: string[];
+  /** One end-card line from the category extras ("Try our Margherita · $14"). */
+  endCardLine?: string;
   durationSeconds: number;
   width: number;
   height: number;
@@ -457,6 +459,11 @@ const EndCard: React.FC<OfferAdProps & { vertical: boolean }> = (p) => {
       <div style={{ fontFamily, fontWeight: 800, fontSize: 40 * u, color: p.accentColor, textAlign: "center" }}>
         {p.priceText} · {p.itemText.toLowerCase()} · {p.validText.toLowerCase()}
       </div>
+      {p.endCardLine && (
+        <div style={{ fontFamily, fontWeight: 800, fontSize: 40 * u * Math.min(1, 34 / p.endCardLine.length), color: "#fff", textAlign: "center" }}>
+          {p.endCardLine}
+        </div>
+      )}
       {(p.badges ?? []).length > 0 && (
         <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "center", gap: 16 * u, maxWidth: "92%" }}>
           {(p.badges ?? []).slice(0, 4).map((b) => (

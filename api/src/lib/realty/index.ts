@@ -4,6 +4,12 @@ import { z } from "zod";
 //   listing — one home for sale, usually with an open house: the ad names the
 //             street, the price, beds/baths and the open-house day and time.
 //   agent   — the agent themselves ("thinking of selling?"), no listing.
+//   sold    — "just sold" (2026-11-20): a home the agent just sold, to win
+//             the neighbors' listings. Same facts as a listing, no open house.
+//
+// A listing ad with an open house STOPS BY ITSELF after the event: launch
+// sends Google the open-house date as the campaign end date
+// (openHouseEndDate), and refuses a launch once the date has passed.
 // Stored on campaigns.realty (migration 0016) and fed to the script writer
 // (script/prompt.ts). Everything here is what the advertiser typed, so it may
 // appear in the ad: it is their claim, not ours.
@@ -13,7 +19,7 @@ const hhmm = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "HH:MM");
 
 export const realtySchema = z
   .object({
-    adType: z.enum(["listing", "agent"]),
+    adType: z.enum(["listing", "agent", "sold"]),
     price: z.string().trim().max(20).nullish(),
     beds: z.number().min(0).max(20).nullish(),
     baths: z.number().min(0).max(20).multipleOf(0.5).nullish(),
@@ -23,9 +29,33 @@ export const realtySchema = z
       .refine((o) => o.end > o.start, { message: "end must be after start" })
       .nullish(),
   })
-  .strict();
+  .strict()
+  .refine((r) => r.adType === "listing" || !r.openHouse, { message: "only a listing ad has an open house", path: ["openHouse"] });
 
 export type Realty = z.infer<typeof realtySchema>;
+
+/** The open-house date (YYYY-MM-DD) the ad stops on, or null (no open house). */
+export function openHouseEndDate(r: Realty | null | undefined): string | null {
+  return r?.adType === "listing" && r.openHouse ? r.openHouse.date : null;
+}
+
+/**
+ * True once the open-house day is over in UTC (`todayUtc` is YYYY-MM-DD).
+ * UTC is ahead of US time, so this only says "over" from the evening of the
+ * event day (US time) on, when a daytime open house has finished and an end
+ * date of that day would already be in the past for Google.
+ */
+export function openHouseIsOver(r: Realty | null | undefined, todayUtc: string): boolean {
+  const end = openHouseEndDate(r);
+  return Boolean(end) && todayUtc > end!;
+}
+
+/** The earlier of two optional YYYY-MM-DD end dates. */
+export function earlierEndDate(a: string | null | undefined, b: string | null | undefined): string | null {
+  if (!a) return b ?? null;
+  if (!b) return a;
+  return a < b ? a : b;
+}
 
 const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];

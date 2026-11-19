@@ -42,6 +42,7 @@ import {
 } from "../lib/audience/policy.js";
 import { audienceDimensions, languageConstants } from "../lib/audience/google.js";
 import { adScheduleCriteria } from "../lib/schedule/policy.js";
+import { earlierEndDate, openHouseEndDate, openHouseIsOver } from "../lib/realty/index.js";
 import { launchReviewGate } from "../lib/uploads/review.js";
 import { getObjectBytes } from "../plugins/r2.js";
 import { loadOwnedAdAccount, loadOwnedCampaign } from "../lib/ownership.js";
@@ -151,6 +152,11 @@ export async function launchRoutes(app: FastifyInstance) {
       // needs a final URL, so launching is where a website becomes required.
       if (!campaign.landingUrl) {
         return reply.code(409).send({ error: "landing_url_required" });
+      }
+      // An open-house ad stops by itself after the event (lib/realty); once
+      // the day is over there is nothing left to advertise.
+      if (openHouseIsOver(campaign.realty, new Date().toISOString().slice(0, 10))) {
+        return reply.code(409).send({ error: "open_house_over" });
       }
       const finalUrl = campaign.landingUrl;
 
@@ -464,7 +470,12 @@ export async function launchRoutes(app: FastifyInstance) {
             : { name: logoAssetName(logo.id), base64: logoBytes.toString("base64") },
           // 1 or 2 weeks: Google stops the campaign by itself on this day.
           // Today's UTC date as the start (runEndDate explains the time zone).
-          endDate: runEndDate(new Date().toISOString().slice(0, 10), (campaign.runDays ?? null) as RunDays),
+          // An open-house listing ad also ends on the open-house day
+          // (lib/realty), whichever comes first.
+          endDate: earlierEndDate(
+            runEndDate(new Date().toISOString().slice(0, 10), (campaign.runDays ?? null) as RunDays),
+            openHouseEndDate(campaign.realty),
+          ),
         };
 
         const zipCodes = {

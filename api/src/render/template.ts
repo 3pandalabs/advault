@@ -178,6 +178,8 @@ export async function renderTemplate(input: TemplateInputs, log: (msg: string, e
     beforeAfterSeconds: BEFORE_AFTER_PAIR_SECONDS,
     // Attested trust badges (lib/categories/badges), set by generate.ts.
     badges: (script.badges ?? []).slice(0, 4),
+    // Category extras (lib/categories/extras): one end-card line.
+    endCardLine: script.endCardLine,
     durationSeconds,
     width,
     height,

@@ -3,6 +3,7 @@
 import type { AudienceFilters, TargetAddress } from "@/lib/audience";
 import type { BadgeId } from "@/lib/categories/badges";
 import type { ClaimFlag } from "@/lib/categories/claims";
+import type { CategoryExtras } from "@/lib/categories/extras";
 import type { AdSchedule } from "@/lib/schedule";
 
 // Browser-side calls go to the public, Cloudflare-proxied hostname. The
@@ -152,9 +153,9 @@ export type Asset = {
 
 export type CampaignStatus = "draft" | "rendering" | "ready" | "live" | "paused" | "failed";
 
-/** Real estate only: listing/open-house ad or agent ad (api lib/realty). */
+/** Real estate only: listing/open-house ad, agent ad or "just sold" ad (api lib/realty). */
 export type Realty = {
-  adType: "listing" | "agent";
+  adType: "listing" | "agent" | "sold";
   price?: string | null;
   beds?: number | null;
   baths?: number | null;
@@ -572,6 +573,8 @@ export function updateCampaign(
     dailyBudgetCents: number;
     /** 7 / 14 / null (always on). 409 `campaign_already_launched` after launch. */
     runDays: 7 | 14 | null;
+    /** Landscaping "show my ad where my customers are" (before launch only). */
+    targetZipCodes: string[];
   }>,
 ) {
   return api<Campaign>(`/campaigns/${campaignId}`, { method: "PATCH", body: JSON.stringify(input) });
@@ -623,6 +626,18 @@ export function setCampaignOffer(campaignId: string, body: { offerDetails: strin
     method: "PUT",
     body: JSON.stringify(body),
   });
+}
+
+/** Category extras (api lib/categories/extras, migration 0040). */
+export type ExtrasState = { available: (keyof CategoryExtras)[]; extras: CategoryExtras };
+
+export function getExtras(campaignId: string) {
+  return api<ExtrasState>(`/campaigns/${campaignId}/extras`);
+}
+
+/** Replaces the campaign's extras (an empty field means none). Never touches the running ad. */
+export function setExtras(campaignId: string, extras: CategoryExtras) {
+  return api<ExtrasState>(`/campaigns/${campaignId}/extras`, { method: "PUT", body: JSON.stringify(extras) });
 }
 
 /** Trust badges (api lib/categories/badges, migration 0039). */

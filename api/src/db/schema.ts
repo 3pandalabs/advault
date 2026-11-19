@@ -19,6 +19,7 @@ import type { AdSchedule } from "../lib/schedule/policy.js";
 import type { Realty } from "../lib/realty/index.js";
 import type { BeforeAfterPair } from "../lib/beforeAfter/policy.js";
 import type { BadgeSelection } from "../lib/categories/badges.js";
+import type { CategoryExtras } from "../lib/categories/extras.js";
 
 // Enum-ish columns are `text` + a CHECK constraint rather than pgEnum, matching
 // the RentVault and RsvpVault schemas. Adding a value to a pgEnum needs its own
@@ -515,6 +516,9 @@ export const campaigns = pgTable(
     badges: jsonb("badges").$type<BadgeSelection>(),
     badgesAttestedAt: timestamp("badges_attested_at", { withTimezone: true }),
     badgesAttestedBy: uuid("badges_attested_by"),
+    // Per-category extras (0040, lib/categories/extras.ts): featured dish +
+    // order link, makes serviced, existing-customer ZIPs. NULL = none.
+    categoryExtras: jsonb("category_extras").$type<CategoryExtras>(),
     // Free-text context fed to the script generator ("family-run since 1998,
     // same-day emergency callouts"). Not shown to viewers directly.
     offerDetails: text("offer_details"),

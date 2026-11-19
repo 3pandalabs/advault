@@ -435,9 +435,15 @@ Google reviews the ad again after launch: `adMetricsSync` also reads
 `ad_group_ad.policy_summary` (read-only) into `campaigns.google_ad_*`, shown on
 the campaign page as "Google: Approved / Under review / Disapproved".
 
-## Real estate: listing/open-house ads and agent ads
+## Real estate: listing/open-house ads, agent ads and "just sold" ads
 
-A real-estate campaign picks one (2026-11-13, `campaigns.realty`, `lib/realty`):
+A real-estate campaign picks one (2026-11-13, `campaigns.realty`, `lib/realty`;
+"just sold" added 2026-11-20: a home the agent sold, same facts, no open
+house, the ad wins neighbors' listings and never invites anyone to buy it).
+**An open-house listing ad stops by itself** (2026-11-20): launch sends
+Google the open-house day as the end date (the earlier of that and the run
+length) and refuses with 409 `open_house_over` once it has passed (UTC).
+The original two kinds:
 a **listing** ad (one home: the street, price, beds/baths and an optional open
 house day/time go to the script writer, and from there into the hook,
 voiceover and sticker) or an **agent** ad (the agent and their city, no home).
@@ -529,6 +535,19 @@ the API copy, then the web copy).
   Housing Act): POST/PATCH `/campaigns` and `PUT /campaigns/:id/offer` answer
   400 `claim_not_allowed`. Real estate's targeting limits are unchanged
   (`lib/audience/policy.ts`).
+- **Category extras** (`extras.ts`, migration 0040 `campaigns.category_extras`,
+  `routes/categoryExtras.ts`, campaign page `extras-card.tsx`):
+  Restaurant = a featured dish (name, price, one of their photos: it LEADS the
+  next ad, `withSpotlightPhoto`) + an order/reserve link (a button sets it as
+  the ad's link before launch); Auto repair = the makes they service;
+  Landscaping = existing-customer ZIPs ("Show my ad in these ZIP codes" PATCHes
+  `targetZipCodes`, before launch only: there is no post-launch ZIP edit at
+  Google yet) + "Neighbor price" offer copy. Dish and makes reach the writer
+  as `confirmedFacts` and the end card as `script.endCardLine` (set by
+  `generateForCampaign`, kept by the script edit route). Electrical upgrade
+  presets (EV charger, panel, generator, solar hookup) and Cleaning's
+  move-out / move-in are one-tap offers (`OFFER_PRESETS`,
+  `components/OfferPresetButtons.tsx`) in the wizard and "Your offer" card.
 
 ## Google Ads API access: developer tokens are gone, and the version pin is load-bearing
 
