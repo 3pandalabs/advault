@@ -7,6 +7,7 @@ import { recordRequest, startCpuSampler } from "./metrics/collector.js";
 import { adAccountRoutes } from "./routes/adAccounts.js";
 import { adMetricsRoutes } from "./routes/adMetrics.js";
 import { adminInsightsRoutes } from "./routes/adminInsights.js";
+import { adminCashflowRoutes } from "./routes/adminCashflow.js";
 import { assetRoutes } from "./routes/assets.js";
 import { authRoutes } from "./routes/auth.js";
 import { testCustomerRoutes } from "./routes/testCustomers.js";
@@ -147,6 +148,7 @@ await app.register(adAccountRoutes);
 // Read-only ad performance (from campaign_daily_metrics, never Google directly).
 await app.register(adMetricsRoutes);
 await app.register(adminInsightsRoutes);
+await app.register(adminCashflowRoutes);
 // Admin review queue for customer-uploaded videos.
 await app.register(videoReviewRoutes);
 await app.register(adminUserRoutes);
