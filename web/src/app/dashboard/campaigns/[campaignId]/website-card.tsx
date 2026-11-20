@@ -19,6 +19,7 @@ import { Input } from "@/components/ui/input";
 import { siteVaultSlug } from "@/lib/sitevault";
 import { SuggestionChips } from "@/components/SuggestionChips";
 import { openingHoursSuggestions, townFromAddress } from "@/lib/suggestions";
+import { EditOnSiteVault, SiteEditorFrame, useSiteEditor } from "@/components/SiteEditorFrame";
 
 // "Your website" on the campaign page. A website is OPTIONAL to make ads
 // (since 2026-11-15) but Google needs a link to launch (landing_url_required).
@@ -26,6 +27,12 @@ import { openingHoursSuggestions, townFromAddress } from "@/lib/suggestions";
 // AdVault builds a one-page SiteVault site from the campaign (name, category,
 // offer, the ad's polished photos) plus phone and town, and uses it as the
 // ad's link (POST /campaigns/:id/website). Editable until launch.
+//
+// Right after it's made (2026-11-19, "Option A") SiteVault's FULL editor opens
+// inline below, scrolled to "Website style", with a "Skip for now". A paid
+// site ($10 fee) opens it only once the payment has published it: checkout
+// returns to this page with ?website=paid, the card waits for the site to go
+// live, then opens the editor. "Edit my website" opens the same editor.
 
 // SiteVault's public address check (CORS open): availability + suggestions.
 const SITEVAULT_URL = "https://sitevault.3pandalabs.com";
@@ -142,6 +149,22 @@ export function WebsiteCard({
   // $10 website fee: the made-but-unpaid site, and the price ("$10"; null = free).
   const [pendingSite, setPendingSite] = useState<PendingSite | null>(null);
   const [websiteFee, setWebsiteFee] = useState<string | null | undefined>(undefined);
+  // The inline SiteVault editor: "welcome" right after the site is made (or
+  // paid for), "edit" from the Edit my website button, "closed" once dismissed.
+  const [editorOpen, setEditorOpen] = useState<"welcome" | "edit" | "closed" | null>(null);
+  // Back from the $10 checkout (?website=paid): open the editor once the site is live.
+  const [returnedFromPay] = useState(
+    () => typeof window !== "undefined" && new URLSearchParams(window.location.search).get("website") === "paid",
+  );
+  const paidWelcome = returnedFromPay && isSiteVault && Boolean(campaign.landingUrl) && !pendingSite;
+  const editorView = editorOpen === "closed" ? null : (editorOpen ?? (paidWelcome ? "welcome" : null));
+  useEffect(() => {
+    if (!paidWelcome) return;
+    // Once only: a later refresh shouldn't reopen the welcome.
+    const url = new URL(window.location.href);
+    url.searchParams.delete("website");
+    window.history.replaceState(window.history.state, "", url.pathname + url.search + url.hash);
+  }, [paidWelcome]);
   // Offer combo: did the latest website offer reach the site? Re-checked a
   // few times while SiteVault hasn't confirmed it yet (the push follows payment).
   useEffect(() => {
@@ -183,9 +206,11 @@ export function WebsiteCard({
       .catch(() => {});
   }, [campaign.id, campaign.sitevaultEditEnc, campaign.landingUrl, editUrl, onSaved]);
 
-  // Paid, waiting for SiteVault to publish (seconds): re-check until the link appears.
+  // Paid, waiting for SiteVault to publish (seconds): re-check until the link
+  // appears. Also straight after checkout, before the payment webhook landed.
+  const awaitingPublish = Boolean(pendingSite && (pendingSite.paid || returnedFromPay));
   useEffect(() => {
-    if (!pendingSite?.paid) return;
+    if (!awaitingPublish) return;
     let tries = 0;
     const timer = setInterval(() => {
       getWebsite(campaign.id)
@@ -194,14 +219,14 @@ export function WebsiteCard({
           else {
             setPendingSite(null);
             clearInterval(timer);
-            window.location.reload(); // pick up the new link on the campaign
+            window.location.reload(); // pick up the new link on the campaign (keeps ?website=paid)
           }
         })
         .catch(() => {});
       if (++tries > 12) clearInterval(timer);
     }, 5000);
     return () => clearInterval(timer);
-  }, [campaign.id, pendingSite?.paid]);
+  }, [campaign.id, awaitingPublish, pendingSite?.paid]);
 
   async function payForWebsite() {
     setBusy(true);
@@ -317,7 +342,10 @@ export function WebsiteCard({
       if (res.pendingSite) {
         setPendingSite(res.pendingSite);
         // Straight to the $10 checkout; the card offers "Pay and publish" if this fails.
+        // The editor opens after payment (?website=paid), never before.
         if (res.checkout?.redirectUrl) window.location.assign(res.checkout.redirectUrl);
+      } else {
+        setEditorOpen("welcome");
       }
     } catch (err) {
       setError(
@@ -369,14 +397,37 @@ export function WebsiteCard({
 
       {error && <p className="mt-3 text-sm text-red-300">{error}</p>}
 
-      {editUrl && campaign.landingUrl && siteReady && mode === "view" && (
-        <p className="mt-3 text-sm text-zinc-300">
-          Made with SiteVault.{" "}
-          <a href="/dashboard/website" className="text-amber-300 underline">
-            Edit your website
-          </a>{" "}
-          to add services, prices, hours or more photos.
-        </p>
+      {editUrl && campaign.landingUrl && siteReady && mode === "view" && !editorView && (
+        <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">
+          <Button size="sm" onClick={() => setEditorOpen("edit")}>
+            Edit my website
+          </Button>
+          <p className="text-sm text-zinc-400">Add services, prices, hours, photos or change the style.</p>
+        </div>
+      )}
+
+      {editorView && campaign.landingUrl && mode === "view" && (
+        <div className="mt-4 space-y-3">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+            <p className="text-sm text-zinc-200">
+              {editorView === "welcome"
+                ? "Your website is ready. Make it yours: pick a style, add your menu, hours, services and more."
+                : "Edit your website. Press Save changes when you’re done."}
+            </p>
+            <button
+              type="button"
+              onClick={() => setEditorOpen("closed")}
+              className="shrink-0 text-sm text-zinc-400 underline underline-offset-4 hover:text-zinc-200"
+            >
+              {editorView === "welcome" ? "Skip for now" : "Close editor"}
+            </button>
+          </div>
+          {siteReady ? (
+            <InlineSiteEditor focus={editorView === "welcome" ? "style" : undefined} />
+          ) : (
+            <p className="text-sm text-zinc-400">The editor opens here as soon as your website is live.</p>
+          )}
+        </div>
       )}
 
       {siteVaultSlug(campaign.landingUrl) && campaign.sitevaultEditEnc && mode === "view" && !ownVideoOnly && (campaign.siteVideoPushedAt || campaign.siteVideoWanted || !locked) && (
@@ -661,6 +712,35 @@ export function WebsiteCard({
       )}
     </Card>
   );
+}
+
+/** SiteVault's full editor under the card (the same frame as /dashboard/website). */
+function InlineSiteEditor({ focus }: { focus?: "style" }) {
+  const { site, editorUrl, state, reload } = useSiteEditor();
+  if (state === "loading") return <p className="text-sm text-zinc-500">Opening the editor…</p>;
+  if (state === "error" || !site) {
+    return (
+      <p className="text-sm text-zinc-400">
+        We couldn&apos;t open the editor just now.{" "}
+        <button type="button" onClick={reload} className="text-amber-300 underline underline-offset-4">
+          Try again
+        </button>{" "}
+        or open{" "}
+        <a href="/dashboard/website" className="text-amber-300 underline underline-offset-4">
+          Your website
+        </a>
+        .
+      </p>
+    );
+  }
+  if (!editorUrl) {
+    return (
+      <p className="text-sm text-zinc-400">
+        <EditOnSiteVault slug={site.slug} />
+      </p>
+    );
+  }
+  return <SiteEditorFrame editorUrl={editorUrl} onReload={reload} focus={focus} />;
 }
 
 /** Shown until the new website actually loads: an estimate, never 100% on its own. */
