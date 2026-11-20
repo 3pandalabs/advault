@@ -124,6 +124,16 @@ describe("GET /website/editor", () => {
     expect(body.editorUrl).not.toContain(SECRET);
   });
 
+  it("a test customer (*.invalid email): the handoff carries no email, so SiteVault links by user id only", async () => {
+    const tc = (await pg.query<{ id: string }>(`insert into users (email, password_hash) values ('test-abc123@test.advault.invalid', 'x') returning id`)).rows[0]!.id;
+    const body = (await get(tc)).json() as { editorUrl: string };
+    const checked = sitevaultVerify(tokenOf(body.editorUrl));
+    expect(checked.ok).toBe(true);
+    if (!checked.ok) return;
+    expect(checked.h).toMatchObject({ uid: tc, email: "", slug: "lawn-pros" });
+    expect(body.editorUrl).not.toContain("invalid");
+  });
+
   it("looks the site up for the signed-in user only", async () => {
     const seen: string[] = [];
     accountSite = (url) => {

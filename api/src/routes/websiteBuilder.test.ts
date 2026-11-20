@@ -194,9 +194,28 @@ describe("POST /campaigns/:id/website/builder", () => {
     expect(form.get("ownerAdmin")).toBe("1");
   });
 
-  it("test customers (no real email) and an unreachable/older SiteVault get website_builder_unavailable (quick form)", async () => {
-    const tc = await newUser("advertiser", `tc${n}@test.invalid`);
-    expect((await as(tc, `/campaigns/${await campaignFor(tc)}/website/builder`)).json()).toMatchObject({ error: "website_builder_unavailable" });
+  it("test customers (no real email) get the builder, linked by user id only: no email anywhere, test price kept", async () => {
+    const tc = await newUser("advertiser", `test-${n}abc@test.advault.invalid`);
+    const owner = await newUser("admin");
+    await pg.query(`update users set test_owner_id = $1 where id = $2`, [owner.id, tc.id]);
+    const id = await campaignFor(tc);
+    const res = await as(tc, `/campaigns/${id}/website/builder`);
+    expect(res.statusCode).toBe(200);
+    const body = res.json() as { builderUrl: string; websiteFee: string | null };
+    expect(body.builderUrl).toMatch(/^https:\/\/sitevault\.3pandalabs\.com\/embed\/new\?token=/);
+    expect(body.builderUrl).not.toContain("invalid");
+    const h = verifyCreateToken(body.builderUrl);
+    expect(h).toMatchObject({ purpose: "create", uid: tc.id, email: "", campaignId: id, draft: DRAFT });
+    const form = calls.find((c) => c.url.endsWith("/api/internal/drafts"))!.body as FormData;
+    expect(form.get("ownerAdvaultUserId")).toBe(tc.id);
+    expect(form.get("ownerEmail")).toBeNull();
+    expect(form.get("ownerAdmin")).toBeNull();
+    // Test customers keep test mode: the $0.50 website fee, made pending.
+    expect(body.websiteFee).toBe("$0.50");
+    expect(h.pay).toBe(true);
+  });
+
+  it("an unreachable/older SiteVault gets website_builder_unavailable (quick form)", async () => {
     const who = await newUser();
     stub.draft = () => new Response("<!doctype html>not found", { status: 404 });
     const res = await as(who, `/campaigns/${await campaignFor(who)}/website/builder`);

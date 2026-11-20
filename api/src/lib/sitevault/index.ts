@@ -164,7 +164,8 @@ export type DraftFields = Omit<WebsiteFields, "phone" | "city" | "slug"> & {
   phone?: string;
   city?: string;
   ownerAdvaultUserId: string;
-  ownerEmail: string;
+  /** Omitted for test customers (no real email): SiteVault links by id. */
+  ownerEmail?: string;
 };
 
 /** Store the campaign's pre-fill on SiteVault. Never throws. */
