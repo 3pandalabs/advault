@@ -153,6 +153,86 @@ export async function createSitevaultSite(
   };
 }
 
+// ---------------------------------------------------------------------------
+// "Make me a website" with SiteVault's FULL builder (2026-11-19). The
+// pre-fill is too big for a URL (photos), and our photos are in our private
+// R2, so it goes to SiteVault server to server as a "draft" (SiteVault
+// web/src/drafts.ts); the iframe's signed create link names only the draft id.
+
+export type DraftFields = Omit<WebsiteFields, "phone" | "city" | "slug"> & {
+  campaignId: string;
+  phone?: string;
+  city?: string;
+  ownerAdvaultUserId: string;
+  ownerEmail: string;
+};
+
+/** Store the campaign's pre-fill on SiteVault. Never throws. */
+export async function createSitevaultDraft(
+  fields: DraftFields,
+  photos: Photo[],
+  video: Video | null = null,
+  beforeAfter: readonly BeforeAfterPhotos[] = [],
+): Promise<{ ok: true; draftId: string } | { ok: false; error: string }> {
+  const token = process.env.SITEVAULT_INTERNAL_TOKEN;
+  if (!token) return { ok: false, error: "sitevault_not_configured" };
+  try {
+    const form = new FormData();
+    for (const [k, v] of Object.entries(fields)) if (v) form.append(k, v);
+    photos.forEach((p, i) => {
+      form.append("photos", new Blob([new Uint8Array(p.bytes)], { type: p.contentType }), `photo-${i + 1}.${photoExt(p.contentType)}`);
+    });
+    appendBeforeAfter(form, beforeAfter);
+    if (video) form.append("video", new Blob([new Uint8Array(video.bytes)], { type: "video/mp4" }), "ad.mp4");
+    const res = await fetch(`${SITEVAULT_URL}/api/internal/drafts`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, accept: "application/json" },
+      body: form,
+      signal: AbortSignal.timeout(120_000),
+    });
+    const body = (await res.json().catch(() => ({}))) as { ok?: boolean; draftId?: string; error?: string };
+    if (res.ok && body.ok && typeof body.draftId === "string") return { ok: true, draftId: body.draftId };
+    return { ok: false, error: body.error ?? `sitevault_${res.status}` };
+  } catch (err) {
+    return { ok: false, error: `sitevault_unreachable: ${String(err).slice(0, 200)}` };
+  }
+}
+
+export type SitevaultDraft = {
+  campaignId: string;
+  awaitingPayment: boolean;
+  /** What SiteVault made from the draft; null until the owner pressed Create. */
+  result: { slug: string; siteUrl: string; editUrl: string; pending: boolean } | null;
+};
+
+/**
+ * Read a draft back (after the frame said "created"). SiteVault answers 404
+ * unless the draft is this AdVault user's, so a user can only ever confirm a
+ * site made from their own draft. null = not theirs, unknown or unreachable.
+ */
+export async function fetchSitevaultDraft(draftId: string, advaultUserId: string): Promise<SitevaultDraft | null> {
+  const token = process.env.SITEVAULT_INTERNAL_TOKEN;
+  if (!token) return null;
+  try {
+    const q = new URLSearchParams({ advaultUserId });
+    const res = await fetch(`${SITEVAULT_URL}/api/internal/drafts/${encodeURIComponent(draftId)}?${q}`, {
+      headers: { authorization: `Bearer ${token}`, accept: "application/json" },
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!res.ok) return null;
+    const b = (await res.json().catch(() => null)) as { ok?: boolean; campaignId?: unknown; awaitingPayment?: unknown; result?: Record<string, unknown> | null } | null;
+    if (!b?.ok || typeof b.campaignId !== "string") return null;
+    const r = b.result;
+    const result =
+      r && typeof r.slug === "string" && typeof r.siteUrl === "string" && typeof r.editUrl === "string"
+        ? { slug: r.slug, siteUrl: r.siteUrl, editUrl: r.editUrl, pending: r.pending === true }
+        : null;
+    return { campaignId: b.campaignId, awaitingPayment: b.awaitingPayment === true, result };
+  } catch {
+    return null;
+  }
+}
+
 /** Put the ad video on the site (at launch). Replaces any earlier video. */
 export async function setSitevaultVideo(slug: string, video: Video): Promise<{ ok: true } | { ok: false; error: string }> {
   const token = process.env.SITEVAULT_INTERNAL_TOKEN;

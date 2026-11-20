@@ -50,3 +50,59 @@ export function editorHandoffUrl(user: { advaultUserId: string; email: string },
   });
   return `${SITEVAULT_URL}/embed/session?token=${encodeURIComponent(token)}`;
 }
+
+// "Make me a website" with SiteVault's FULL builder (2026-11-19): the same
+// format and 60 s life, but its own MAC prefix and an explicit purpose, so an
+// edit token can never open the create builder and vice versa. It names the
+// pre-fill draft (createSitevaultDraft) by id only; SiteVault checks the
+// draft is this user's, for this campaign, with the same pay flag.
+//
+//   payload = base64url(JSON { v: 1, purpose: "create", uid, email, campaignId, draft, pay, iat, exp, jti })
+//   sig     = base64url(HMAC-SHA256(SITEVAULT_INTERNAL_TOKEN, "sv-embed-create-v1." + payload))
+
+const CREATE_PREFIX = "sv-embed-create-v1.";
+
+export type CreateHandoff = {
+  v: 1;
+  purpose: "create";
+  uid: string;
+  email: string;
+  campaignId: string;
+  draft: string;
+  pay: boolean;
+  iat: number;
+  exp: number;
+  jti: string;
+};
+
+export function signCreateHandoff(secret: string, h: CreateHandoff): string {
+  const payload = Buffer.from(JSON.stringify(h)).toString("base64url");
+  const sig = createHmac("sha256", secret).update(CREATE_PREFIX + payload).digest("base64url");
+  return `${payload}.${sig}`;
+}
+
+/** The iframe URL of SiteVault's builder in AdVault create mode. null while SiteVault isn't configured. */
+export function createHandoffUrl(
+  user: { advaultUserId: string; email: string },
+  campaignId: string,
+  draftId: string,
+  pay: boolean,
+  nowMs = Date.now(),
+): string | null {
+  const secret = process.env.SITEVAULT_INTERNAL_TOKEN;
+  if (!secret) return null;
+  const iat = Math.floor(nowMs / 1000);
+  const token = signCreateHandoff(secret, {
+    v: 1,
+    purpose: "create",
+    uid: user.advaultUserId,
+    email: user.email,
+    campaignId,
+    draft: draftId,
+    pay,
+    iat,
+    exp: iat + HANDOFF_TTL_SECONDS,
+    jti: randomBytes(18).toString("base64url"),
+  });
+  return `${SITEVAULT_URL}/embed/new?token=${encodeURIComponent(token)}`;
+}
