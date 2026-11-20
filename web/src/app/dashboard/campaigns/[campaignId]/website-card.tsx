@@ -372,7 +372,7 @@ export function WebsiteCard({
       {editUrl && campaign.landingUrl && siteReady && mode === "view" && (
         <p className="mt-3 text-sm text-zinc-300">
           Made with SiteVault.{" "}
-          <a href={editUrl} target="_blank" rel="noreferrer" className="text-amber-300 underline">
+          <a href="/dashboard/website" className="text-amber-300 underline">
             Edit your website
           </a>{" "}
           to add services, prices, hours or more photos.
@@ -417,7 +417,7 @@ export function WebsiteCard({
           )}
           {editUrl && (
             <p className="text-sm text-zinc-400">
-              <a href={editUrl} target="_blank" rel="noreferrer" className="text-amber-300 underline">
+              <a href="/dashboard/website" className="text-amber-300 underline">
                 Preview and edit your website
               </a>
             </p>

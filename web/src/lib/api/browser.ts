@@ -1400,3 +1400,16 @@ export function orderCinematic(input: {
     };
   }>("/cinematic/orders", { method: "POST", body: JSON.stringify(input) });
 }
+
+/**
+ * "Your website": the account's SiteVault website and a one-time (60 s) URL
+ * that opens SiteVault's editor, signed in, inside /dashboard/website.
+ * editorUrl null = nothing to edit here (no site, or one built on SiteVault).
+ * Fetch a fresh one each time the frame loads: it works once.
+ */
+export function getWebsiteEditor() {
+  return api<{
+    site: { slug: string; siteUrl: string; live: boolean; madeHere: boolean } | null;
+    editorUrl: string | null;
+  }>("/website/editor");
+}

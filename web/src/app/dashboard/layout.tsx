@@ -90,6 +90,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             >
               Campaigns
             </Link>
+            <Link
+              href="/dashboard/website"
+              className="rounded-lg px-3 py-2 text-zinc-300 hover:bg-white/10"
+            >
+              Website
+            </Link>
             {/* "This month" (/dashboard/offer) is hidden: monthly offers belong to
                 the offer/managed plans, which aren't sold right now (only Keep it
                 running, which has no offers). The page still works by URL. */}
