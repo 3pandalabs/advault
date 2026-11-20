@@ -1,4 +1,4 @@
-import { YOUTUBE_UPLOAD_BASE } from "./env.js";
+import { YOUTUBE_API_BASE, YOUTUBE_UPLOAD_BASE } from "./env.js";
 
 export class YouTubeUploadError extends Error {
   constructor(
@@ -137,4 +137,37 @@ export async function uploadVideo(args: UploadVideoArgs): Promise<string> {
 // quota for nothing.
 function isRetryableStatus(status: number): boolean {
   return status >= 500 || status === 429 || status === 408;
+}
+
+// Takedown (lib/compliance/takedown.ts): make a published video private.
+//
+// videos.update replaces the WHOLE `status` part, so the current status is read
+// first (videos.list, youtube.readonly) and sent back with only privacyStatus
+// changed; otherwise the made-for-kids and synthetic-media declarations would
+// reset. NOTE: videos.update needs the `youtube` (or youtube.force-ssl) scope.
+// The org channel's refresh token was minted with youtube.upload + readonly
+// only (env.ts YOUTUBE_SCOPES), so until it is re-minted with `youtube` this
+// answers 403 and the takedown tells ops to set the video private by hand.
+export type SetPrivateResult = { ok: true } | { ok: false; status: number; reason: string };
+
+export async function setVideoPrivate(accessToken: string, videoId: string): Promise<SetPrivateResult> {
+  const auth = { authorization: `Bearer ${accessToken}` };
+  const read = await fetch(`${YOUTUBE_API_BASE}/videos?part=status&id=${encodeURIComponent(videoId)}`, { headers: auth });
+  const readBody = (await read.json().catch(() => null)) as {
+    items?: { status?: Record<string, unknown> }[];
+    error?: { message?: string };
+  } | null;
+  if (!read.ok) return { ok: false, status: read.status, reason: readBody?.error?.message ?? `videos.list ${read.status}` };
+  const status = readBody?.items?.[0]?.status;
+  if (!status) return { ok: false, status: 404, reason: "video_not_found_on_channel" };
+  if (status.privacyStatus === "private") return { ok: true };
+  const { uploadStatus: _u, failureReason: _f, rejectionReason: _r, publishAt: _p, ...writable } = status;
+  const res = await fetch(`${YOUTUBE_API_BASE}/videos?part=status`, {
+    method: "PUT",
+    headers: { ...auth, "content-type": "application/json" },
+    body: JSON.stringify({ id: videoId, status: { ...writable, privacyStatus: "private" } }),
+  });
+  if (res.ok) return { ok: true };
+  const body = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
+  return { ok: false, status: res.status, reason: body?.error?.message ?? `videos.update ${res.status}` };
 }

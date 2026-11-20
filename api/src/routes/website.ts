@@ -8,6 +8,8 @@ import { assets, campaigns, creatives, purchases, users } from "../db/schema.js"
 import { beforeAfterAllowed, pairAssetIds } from "../lib/beforeAfter/policy.js";
 import { decryptToken, encryptToken } from "../lib/crypto.js";
 import { loadOwnedCampaign } from "../lib/ownership.js";
+import { recordAttestation } from "../lib/compliance/index.js";
+import { WEBSITE_OWNERSHIP_TEXT, WEBSITE_OWNERSHIP_VERSION } from "../lib/compliance/texts.js";
 import {
   createSitevaultDraft,
   createSitevaultSite,
@@ -357,6 +359,15 @@ export async function websiteRoutes(app: FastifyInstance) {
       if (!campaign) return;
       const refused = await newWebsiteRefusal(req.userId!, campaign);
       if (refused) return reply.code(refused.code).send(refused.body);
+      // The ownership tick (`attest: true`) is kept in ad_attestations, with
+      // the exact sentence shown, IP and user agent (lib/compliance).
+      await recordAttestation({
+        req,
+        campaign,
+        action: "website",
+        version: WEBSITE_OWNERSHIP_VERSION,
+        text: WEBSITE_OWNERSHIP_TEXT,
+      });
       const admin = await isAdminUser(req.userId!);
       // $10 website fee (null for admins / at_cost: made and published at once, as before).
       const fee = await websiteFeeFor(req.userId!);

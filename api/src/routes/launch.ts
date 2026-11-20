@@ -44,6 +44,7 @@ import { audienceDimensions, languageConstants } from "../lib/audience/google.js
 import { adScheduleCriteria } from "../lib/schedule/policy.js";
 import { earlierEndDate, openHouseEndDate, openHouseIsOver } from "../lib/realty/index.js";
 import { launchReviewGate } from "../lib/uploads/review.js";
+import { passComplianceGate, recordAttestation } from "../lib/compliance/index.js";
 import { getObjectBytes } from "../plugins/r2.js";
 import { loadOwnedAdAccount, loadOwnedCampaign } from "../lib/ownership.js";
 import { canLaunch, getBalance, MIN_FUNDED_DAYS } from "../lib/wallet/index.js";
@@ -97,6 +98,8 @@ export async function launchRoutes(app: FastifyInstance) {
           validateOnly: z.boolean().optional(),
           // "Also show this ad on my website" (SiteVault sites only, default on).
           videoOnWebsite: z.boolean().optional(),
+          // The client's two ticks (lib/compliance), dry run included.
+          attestation: z.unknown().optional(),
         }),
       },
     },
@@ -121,6 +124,22 @@ export async function launchRoutes(app: FastifyInstance) {
 
       const campaign = await loadOwnedCampaign(campaignId, req.userId!, reply);
       if (!campaign) return;
+
+      // Compliance (lib/compliance), before anything reaches Google, dry run
+      // included: taken down (409 ad_taken_down), terms (409
+      // terms_not_accepted), wording waiting for an admin (409 needs_review)
+      // and the client's two ticks (400 attestation_required). Each press is
+      // recorded with what the ad says at that moment.
+      if (
+        !(await passComplianceGate(req, reply, campaign, {
+          attestation: (req.body as { attestation?: unknown }).attestation,
+          terms: true,
+          review: true,
+        }))
+      ) {
+        return;
+      }
+      await recordAttestation({ req, campaign, action: "launch" });
 
       // Targeting rules, again. POST/PATCH /campaigns already refuse these;
       // this is the step that reaches Google, so it re-checks rather than

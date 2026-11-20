@@ -8,6 +8,7 @@ import { requiresWalletCheck } from "../lib/billing/policy.js";
 import { syncCardLimit } from "../lib/billing/managedCard.js";
 import { enableCampaign, isMccConfigured, mccAccessToken, pauseCampaign } from "../lib/googleAds/mcc.js";
 import { loadOwnedCampaign } from "../lib/ownership.js";
+import { takenDownRefusal } from "../lib/compliance/policy.js";
 import { ensurePlanForRunning, syncPlanBillingForUser } from "../lib/planBilling/index.js";
 import { planGateBody } from "../lib/planBilling/policy.js";
 import { canLaunch, MIN_FUNDED_DAYS } from "../lib/wallet/index.js";
@@ -81,6 +82,9 @@ export async function campaignRunStateRoutes(app: FastifyInstance) {
       const { campaignId } = req.params as { campaignId: string };
       const campaign = await loadOwnedCampaign(campaignId, req.userId!, reply);
       if (!campaign) return;
+      // AdVault removed this ad: it can never be switched back on.
+      const removed = takenDownRefusal(campaign);
+      if (removed) return reply.code(removed.status).send(removed.body);
       if (campaign.status === "live") return { campaign, alreadyRunning: true };
       if (campaign.status !== "paused" || !campaign.googleCampaignResourceName) {
         return reply.code(409).send({ error: "not_paused" });

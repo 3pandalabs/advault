@@ -11,6 +11,8 @@ import { pushSiteOffer, quoteCampaignSiteOffer, recordSiteOffer } from "../lib/s
 import { providerFor } from "../lib/payments/index.js";
 import { createPurchase, markDelivered, markPurchasePaid } from "../lib/cinematic/index.js";
 import { generateForCampaign } from "../lib/creatives/generate.js";
+import { assetKeysFor, orderAttestation, passComplianceGate, recordAttestation } from "../lib/compliance/index.js";
+import { takenDownRefusal } from "../lib/compliance/policy.js";
 import {
   campaignHasPaidAd,
   claimNewAdOrder,
@@ -70,6 +72,8 @@ export async function newAdRoutes(app: FastifyInstance) {
             portraitAssetId: z.string().uuid().nullish(),
             aspectRatios: z.array(z.enum(["16:9", "9:16"])).min(1).max(2).default(["16:9", "9:16"]),
             siteOffer: z.boolean().optional(),
+            // The client's two ticks (lib/compliance), refused BEFORE Stripe.
+            attestation: z.unknown().optional(),
           })
           .optional(),
       },
@@ -88,6 +92,8 @@ export async function newAdRoutes(app: FastifyInstance) {
       const campaign = await loadOwnedCampaign(campaignId, req.userId!, reply);
       if (!campaign) return;
       if (campaign.status === "live") return reply.code(409).send({ error: "campaign_is_live" });
+      // Taken down, terms, the two ticks: all before any purchase row or Stripe call.
+      if (!(await passComplianceGate(req, reply, campaign, { attestation: (input as { attestation?: unknown } | undefined)?.attestation, terms: true }))) return;
       if (!(await paysPerAd(req.userId!))) return reply.code(409).send({ error: "ad_included_in_plan" });
       if (await campaignHasPaidAd(campaign.id)) return reply.code(409).send({ error: "already_paid" });
       if (!brief) {
@@ -140,6 +146,15 @@ export async function newAdRoutes(app: FastifyInstance) {
         .set({ brief: chosen, updatedAt: new Date() })
         .where(eq(purchases.id, purchase.id));
       if (site?.mode && site.slug) await recordSiteOffer(purchase.id, site.mode, site.offer, site.slug);
+      // The audit row, tied to this order: the paid generation later uses it
+      // instead of asking again. Written before checkout opens.
+      await recordAttestation({
+        req,
+        campaign,
+        action: "order",
+        purchaseId: purchase.id,
+        assetKeys: await assetKeysFor(req.userId!, chosen.assetIds),
+      });
 
       if (!provider) {
         await markPurchasePaid({ purchaseId: purchase.id, externalRef: `launch-offer:${purchase.id}` });
@@ -240,6 +255,9 @@ export async function newAdRoutes(app: FastifyInstance) {
 
       const campaign = await loadOwnedCampaign(order.campaignId, req.userId!, reply);
       if (!campaign) return;
+      // Paid, but AdVault removed the ad since: nothing more is made for it.
+      const removed = takenDownRefusal(campaign);
+      if (removed) return reply.code(removed.status).send(removed.body);
 
       const claimed = await claimNewAdOrder(order.id);
       if (!claimed) return reply.code(409).send({ error: "in_progress" });
@@ -272,6 +290,24 @@ export async function newAdRoutes(app: FastifyInstance) {
         await Promise.all(
           old.flatMap((o) => [o.videoKey, o.thumbnailKey]).filter((k): k is string => Boolean(k)).map((k) => deleteObject(k).catch(() => undefined)),
         );
+        // No new ticks here: the client attested when ordering. Recorded
+        // again with the generated script, under the ORDER's text and
+        // version. Orders placed before attestation existed have none.
+        const ordered = await orderAttestation(order.id);
+        if (ordered) {
+          await recordAttestation({
+            req,
+            campaign,
+            action: "generate",
+            purchaseId: order.id,
+            creativeId: result.creatives[0]?.id ?? null,
+            assetKeys: (ordered.contentSnapshot as { assetKeys?: string[] }).assetKeys,
+            version: ordered.attestationTextVersion,
+            text: ordered.exactTextSnapshot,
+          });
+        } else {
+          req.log.warn({ purchaseId: order.id }, "paid order has no order-time attestation (placed before 0043)");
+        }
         return reply.code(202).send({ creatives: result.creatives });
       } catch (err) {
         await releaseNewAdOrder(order.id, err);

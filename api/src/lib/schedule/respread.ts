@@ -6,7 +6,7 @@
 // touched. Never throws: a failed edit leaves the old days serving, which the
 // wallet's stop rule (render/spendSync.ts) still covers.
 
-import { and, eq, inArray, isNotNull } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, ne } from "drizzle-orm";
 import { db } from "../../db/index.js";
 import { adAccounts, campaigns } from "../../db/schema.js";
 import { categoryKey } from "../categories/key.js";
@@ -32,6 +32,7 @@ export async function respreadForUser(userId: string): Promise<number> {
           eq(campaigns.userId, userId),
           eq(campaigns.scheduleMode, "spread"),
           inArray(campaigns.status, ["live", "paused"]),
+          ne(campaigns.complianceStatus, "taken_down"),
           isNotNull(campaigns.googleCampaignResourceName),
           isNotNull(campaigns.googleAdGroupResourceName),
           eq(adAccounts.billingMode, "platform"),

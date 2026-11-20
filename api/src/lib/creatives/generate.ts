@@ -9,6 +9,8 @@ import { beforeAfterAllowed, pairAssetIds, withoutPairPhotos, type BeforeAfterKe
 import { BADGES, badgeChips } from "../categories/badges.js";
 import { extrasEndCardLine, extrasFacts, withSpotlightPhoto } from "../categories/extras.js";
 import { categoryKey } from "../categories/key.js";
+import { reevaluateCompliance } from "../compliance/index.js";
+import { AD_SCRIPT_PROMPT_VERSION } from "../script/prompt.js";
 
 // Writing the scripts and queueing the renders for a campaign. Shared by the
 // wizard's generate route and the paid new-ad order (Keep it running), so both
@@ -174,8 +176,10 @@ export async function generateForCampaign(args: {
     // Scripted per aspect ratio, not once and reused: a 9:16 Shorts
     // caption sits over a vertical crop with far less horizontal room than
     // the same words in a 16:9 pre-roll.
-    const { script, source } = await generateScript(
-      {
+    // The exact input the writer gets, stored on the creative (migration
+    // 0043) minus the presigned photo links (short-lived, and a signed URL is
+    // a credential). The photos are recorded by their R2 keys instead.
+    const writerInput = {
         businessName: campaign.businessName,
         businessCategory: campaign.businessCategory,
         callToAction: campaign.callToAction,
@@ -191,9 +195,17 @@ export async function generateForCampaign(args: {
         imageUrls: visibleUrls,
         beforeAfterPairs: beforeAfter.length,
         confirmedFacts,
-      },
-      args.warn,
-    );
+    };
+    const { script, source } = await generateScript(writerInput, args.warn);
+    const { imageUrls: _links, ...storedInput } = writerInput;
+    const generationInputs = {
+      ...storedInput,
+      photoKeys: orderedKeys,
+      photosShownToWriter: Boolean(visibleUrls),
+      beforeAfterKeys: beforeAfter,
+      promptVersion: AD_SCRIPT_PROMPT_VERSION,
+      scriptSource: source,
+    };
 
     const finalScript: AdScript = { ...(shared ? { ...script, ...shared } : script), ...marks };
     shared ??= {
@@ -213,6 +225,7 @@ export async function generateForCampaign(args: {
         scriptSource: source,
         sourceAssetKeys: orderedKeys,
         version,
+        generationInputs,
       })
       .returning();
 
@@ -224,6 +237,9 @@ export async function generateForCampaign(args: {
     .update(campaigns)
     .set({ status: "rendering", updatedAt: new Date() })
     .where(eq(campaigns.id, campaign.id));
+  // The written script is ad text too: a REVIEW phrase in it (lib/compliance)
+  // sets needs_review just like one the owner typed.
+  await reevaluateCompliance(campaign.id);
 
   return { ok: true, creatives: created };
 }

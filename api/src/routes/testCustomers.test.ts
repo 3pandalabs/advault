@@ -8,6 +8,9 @@ import Fastify, { type FastifyInstance } from "fastify";
 import { serializerCompiler, validatorCompiler } from "fastify-type-provider-zod";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import * as schema from "../db/schema.js";
+import { ATTESTATION_VERSION, TERMS_VERSION } from "../lib/compliance/texts.js";
+
+const ATTEST = { accuracy: true, media: true, version: ATTESTATION_VERSION };
 
 const holder = vi.hoisted(() => {
   // env.ts refuses to load without these; nothing here connects to them.
@@ -259,6 +262,7 @@ describe("test mode for a test customer", () => {
 
 describe("launch", () => {
   async function launchable(userId: string) {
+    await pg.query(`insert into terms_acceptances (user_id, version) values ($1, $2)`, [userId, TERMS_VERSION]);
     const c = await pg.query<{ id: string }>(
       `insert into campaigns (user_id, name, business_name, business_category, target_zip_codes, daily_budget_cents, landing_url)
        values ($1, 'Spring', 'Lawn Pros', 'landscaping', '{08817}', 1000, 'https://lawn.example') returning id`,
@@ -289,7 +293,7 @@ describe("launch", () => {
     const id = await createTestCustomer();
     const { accessToken } = await switchInto(id);
     const { campaignId, adAccountId } = await launchable(id);
-    const res = await call("POST", `/campaigns/${campaignId}/launch`, accessToken, { adAccountId, validateOnly: false });
+    const res = await call("POST", `/campaigns/${campaignId}/launch`, accessToken, { adAccountId, validateOnly: false, attestation: ATTEST });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toMatchObject({ validateOnly: true, ok: true, testCustomer: true });
     expect(holder.launches).toEqual([{ validateOnly: true }]);
@@ -300,7 +304,7 @@ describe("launch", () => {
   it("the same request from a real customer is a real launch (refused here: no plan)", async () => {
     const shop = await newUser(`shop-${Date.now()}@x.test`, "advertiser");
     const { campaignId, adAccountId } = await launchable(shop);
-    const res = await call("POST", `/campaigns/${campaignId}/launch`, sign({ sub: shop, role: "advertiser" }), { adAccountId, validateOnly: false });
+    const res = await call("POST", `/campaigns/${campaignId}/launch`, sign({ sub: shop, role: "advertiser" }), { adAccountId, validateOnly: false, attestation: ATTEST });
     expect(res.statusCode).toBe(402);
     expect(res.json().error).toBe("plan_required");
     expect(holder.launches).toEqual([]);
