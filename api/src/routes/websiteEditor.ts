@@ -14,6 +14,7 @@ import { db } from "../db/index.js";
 import { users } from "../db/schema.js";
 import { fetchAccountSitevaultSite, sitevaultConfigured, sitevaultStateIsLive } from "../lib/sitevault/index.js";
 import { editorHandoffUrl } from "../lib/sitevault/editorHandoff.js";
+import { isUndeliverableEmail } from "../lib/testMode/policy.js";
 
 export type WebsiteEditorReply = {
   /** The account's SiteVault website, or null when it has none. */
@@ -40,7 +41,8 @@ export async function websiteEditorRoutes(app: FastifyInstance) {
     const madeHere = found.source === "advault";
     return {
       site: { slug: found.slug, siteUrl: found.siteUrl, live: sitevaultStateIsLive(found.state), madeHere },
-      editorUrl: madeHere ? editorHandoffUrl({ advaultUserId: userId, email: u.email }, found.slug) : null,
+      // A test customer's *.invalid address is never sent: SiteVault finds the account by id.
+      editorUrl: madeHere ? editorHandoffUrl({ advaultUserId: userId, email: isUndeliverableEmail(u.email) ? "" : u.email }, found.slug) : null,
     };
   });
 }

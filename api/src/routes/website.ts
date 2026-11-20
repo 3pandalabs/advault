@@ -433,9 +433,10 @@ export async function websiteRoutes(app: FastifyInstance) {
       const refused = await newWebsiteRefusal(req.userId!, campaign);
       if (refused) return reply.code(refused.code).send(refused.body);
       const [owner] = await db.select({ email: users.email, phone: users.phone }).from(users).where(eq(users.id, req.userId!)).limit(1);
-      // The builder signs the owner in to their SiteVault account, which needs
-      // a real email: test customers (*.invalid, 0030) use the quick form.
-      if (!owner?.email || isUndeliverableEmail(owner.email)) return reply.code(409).send({ error: "website_builder_unavailable" });
+      // The builder signs the owner in to their SiteVault account. A test
+      // customer (*.invalid, 0030) sends NO email: SiteVault then links the
+      // account by our user id alone (acctadv:<id>), never by email.
+      const linkEmail = owner?.email && !isUndeliverableEmail(owner.email) ? owner.email : "";
       const admin = await isAdminUser(req.userId!);
       const fee = await websiteFeeFor(req.userId!);
       const housing = isHousingCategory(campaign.businessCategory);
@@ -447,7 +448,7 @@ export async function websiteRoutes(app: FastifyInstance) {
           campaignId: campaign.id,
           businessName: campaign.businessName,
           category: sitevaultCategory(campaign.businessCategory),
-          phone: owner.phone ?? undefined,
+          phone: owner?.phone ?? undefined,
           city: city || undefined,
           offer: offerBanner(campaign.offerDetails),
           serviceArea: housing || !city ? undefined : `Within ${campaign.radiusMiles} miles of ${city}`,
@@ -455,7 +456,7 @@ export async function websiteRoutes(app: FastifyInstance) {
           tagline: taglineFromSticker(sticker),
           awaitingPayment: fee ? "1" : undefined,
           ownerAdvaultUserId: req.userId!,
-          ownerEmail: owner.email,
+          ownerEmail: linkEmail || undefined,
           ownerAdmin: admin ? "1" : undefined,
         },
         photos,
@@ -468,7 +469,7 @@ export async function websiteRoutes(app: FastifyInstance) {
         req.log.warn({ campaignId, error: draft.error }, "sitevault draft failed");
         return reply.code(502).send({ error: "website_builder_unavailable", detail: draft.error });
       }
-      const builderUrl = createHandoffUrl({ advaultUserId: req.userId!, email: owner.email }, campaign.id, draft.draftId, Boolean(fee));
+      const builderUrl = createHandoffUrl({ advaultUserId: req.userId!, email: linkEmail }, campaign.id, draft.draftId, Boolean(fee));
       if (!builderUrl) return reply.code(503).send({ error: "website_builder_not_configured" });
       return { builderUrl, draftId: draft.draftId, websiteFee: fee ? feeDisplay(fee) : null };
     },
