@@ -428,6 +428,21 @@ happens to it** (`creatives.review_status`: NULL for generated creatives,
   the video sharp in the middle over a blurred, darkened copy of itself. No
   vendor, $0. Skipped when the campaign already has an upload in that shape.
   The campaign page labels it "Made from your video".
+- **Both shapes (2026-11-19):** the owner may also upload their OWN video in
+  the other shape (web: admins and internal accounts only, "Upload your 16:9
+  version too (optional)", hidden once both shapes are theirs). One own upload
+  per shape: the same shape again is 409 `already_uploaded`. The owner's file
+  REPLACES the reformat copy in that shape (`shapeUploadPlan` in
+  `reformatPolicy.ts`; copy row deleted, its render job cascades, R2 files
+  removed via `lib/uploads/remove.ts`), under the campaign row lock that
+  `queueOtherFormat` also takes, so a copy and an own upload never coexist in
+  one shape. A copy deleted mid-render: `completeJob` returns false and the
+  worker deletes what it wrote and never enqueues YouTube. `queueOtherFormat`
+  never copies into a shape the owner uploaded (any review state). Same review
+  rules for the second upload (admin approved on insert, others pending).
+  Removing an own upload also removes the copies made from it, and removing
+  one of two own videos re-queues the copy for that shape. Launch puts every
+  ready approved upload in the one ad, so there is exactly one video per shape.
 - No automated scanning. Google Video Intelligence explicit-content detection
   (~5¢/video) is the noted future option; it would not replace the human check.
 

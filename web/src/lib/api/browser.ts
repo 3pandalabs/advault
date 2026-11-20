@@ -964,10 +964,17 @@ export async function uploadCreativeVideo(
   campaignId: string,
   file: File,
   limits: { minSeconds: number; maxSeconds: number },
+  /** Only this shape (the second upload: their other-shape version). */
+  onlyAspect?: "16:9" | "9:16",
 ): Promise<Creative> {
   if (file.type !== "video/mp4") throw new Error("not_mp4");
   if (file.size > 200 * 1024 * 1024) throw new Error("too_large");
   const meta = await readVideoMeta(file);
+  if (onlyAspect) {
+    // Same 2% tolerance as api/src/lib/uploads/policy.ts.
+    const target = onlyAspect === "16:9" ? 16 / 9 : 9 / 16;
+    if (Math.abs(meta.width / meta.height - target) / target > 0.02) throw new Error("wrong_shape");
+  }
   // Same limits the API enforces, checked first so a bad file isn't uploaded.
   if (meta.durationSeconds < limits.minSeconds) throw new Error("too_short");
   if (meta.durationSeconds > limits.maxSeconds) throw new Error("too_long");

@@ -840,10 +840,25 @@ export default function CampaignDetailPage({
       {/* "Use my own video" is the other way to get an ad: once they chose photos
           (an order or an AdVault-made video exists) it is only noise. */}
       {/* Also hidden once a video is uploaded: one is enough (AdVault makes the
-          other shape). To replace it, remove it first. */}
+          other shape; admins/internal may add their own, below). To replace
+          it, remove it first. */}
       {(isAdmin || isInternal) && !campaign.googleCampaignResourceName && !newAd?.order && campaign.creatives.length === 0 && (
         <VideoUpload campaignId={campaignId} isAdmin={isAdmin} onUploaded={refresh} />
       )}
+      {/* Both shapes (2026-11-19, admins and internal accounts): once their own
+          video is in ONE shape, they may add their own cut in the other. It
+          replaces AdVault's "Made from your video" copy there, and hides once
+          both shapes are their own. Remove one to replace it. */}
+      {(() => {
+        if (!(isAdmin || isInternal) || campaign.googleCampaignResourceName || newAd?.order) return null;
+        if (campaign.creatives.length === 0 || campaign.creatives.some((c) => c.kind !== "upload")) return null;
+        const ownShapes = new Set(
+          campaign.creatives.filter((c) => c.renderInfo?.engine !== "reformat").map((c) => c.aspectRatio),
+        );
+        if (ownShapes.size !== 1) return null;
+        const missing = ownShapes.has("9:16") ? "16:9" : "9:16";
+        return <VideoUpload key={missing} campaignId={campaignId} isAdmin={isAdmin} onUploaded={refresh} onlyAspect={missing} />;
+      })()}
 
       {newAd && !newAd.required && newAd.siteOffer && (
         <Card className="mb-4">
