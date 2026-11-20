@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ApiError,
   createWebsite,
@@ -8,6 +8,8 @@ import {
   getWebsite,
   updateCampaign,
   linkExistingWebsite,
+  startWebsiteBuilder,
+  websiteBuilderCreated,
   websiteCheckout,
   websiteReady,
   type Campaign,
@@ -19,7 +21,7 @@ import { Input } from "@/components/ui/input";
 import { siteVaultSlug } from "@/lib/sitevault";
 import { SuggestionChips } from "@/components/SuggestionChips";
 import { openingHoursSuggestions, townFromAddress } from "@/lib/suggestions";
-import { EditOnSiteVault, SiteEditorFrame, useSiteEditor } from "@/components/SiteEditorFrame";
+import { EditOnSiteVault, SiteEditorFrame, useSiteEditor, type CreatedSite } from "@/components/SiteEditorFrame";
 
 // "Your website" on the campaign page. A website is OPTIONAL to make ads
 // (since 2026-11-15) but Google needs a link to launch (landing_url_required).
@@ -28,7 +30,16 @@ import { EditOnSiteVault, SiteEditorFrame, useSiteEditor } from "@/components/Si
 // offer, the ad's polished photos) plus phone and town, and uses it as the
 // ad's link (POST /campaigns/:id/website). Editable until launch.
 //
-// Right after it's made (2026-11-19, "Option A") SiteVault's FULL editor opens
+// "Make me a website" (2026-11-19) shows SiteVault's FULL builder inline
+// (every option: style, services, menu, hours, FAQ, team, photos…), pre-filled
+// from the campaign, BEFORE the site exists: POST /campaigns/:id/website/builder
+// stores the pre-fill on SiteVault and returns a one-time frame link. When
+// SiteVault says sitevault:created, the API verifies it with SiteVault and
+// records it (link, or the $10 checkout). The short form stays only as a
+// fallback ("Use the quick form instead", and automatically when the builder
+// can't open: an older SiteVault, or a test customer with no real email).
+//
+// Right after a quick-form site is made (2026-11-19, "Option A") SiteVault's FULL editor opens
 // inline below, scrolled to "Website style", with a "Skip for now". A paid
 // site ($10 fee) opens it only once the payment has published it: checkout
 // returns to this page with ?website=paid, the card waits for the site to go
@@ -122,7 +133,8 @@ export function WebsiteCard({
       cancelled = true;
     };
   }, [campaign.id, campaign.landingUrl, isSiteVault]);
-  const [mode, setMode] = useState<"view" | "link" | "make">("view");
+  // "make" = SiteVault's full builder inline; "quick" = the short fallback form.
+  const [mode, setMode] = useState<"view" | "link" | "make" | "quick">("view");
   const [draft, setDraft] = useState(campaign.landingUrl ?? "");
   const [phone, setPhone] = useState("");
   const [city, setCity] = useState(campaign.targetAddress?.city ?? "");
@@ -243,7 +255,7 @@ export function WebsiteCard({
   // Address: suggested from the business name (and town) until they type
   // their own, then checked as they type.
   useEffect(() => {
-    if (mode !== "make") return;
+    if (mode !== "quick") return;
     const t = setTimeout(() => {
       checkAddress({ slug: slugTouched ? slug : "", name: campaign.businessName, city }).then((res) => {
         if (!res) return;
@@ -588,6 +600,32 @@ export function WebsiteCard({
               Deleted {deletedSite}. Now make the new website.
             </p>
           )}
+          <EmbeddedBuilder
+            campaignId={campaign.id}
+            websiteFee={websiteFee}
+            onRecorded={(res) => {
+              setEditUrl(res.editUrl);
+              onSaved(res.campaign);
+              setMode("view");
+              if (res.pendingSite) {
+                setPendingSite(res.pendingSite);
+                // Straight to the $10 checkout; the card offers "Pay and publish" if this fails.
+                if (res.checkout?.redirectUrl) window.location.assign(res.checkout.redirectUrl);
+              }
+            }}
+            onQuickForm={() => setMode("quick")}
+            onCancel={() => setMode("view")}
+          />
+        </div>
+      )}
+
+      {mode === "quick" && (
+        <div className="mt-4 space-y-3">
+          {deletedSite && (
+            <p className="text-sm text-emerald-300" role="status">
+              Deleted {deletedSite}. Now make the new website.
+            </p>
+          )}
           <p className="text-sm text-zinc-300">
             We&apos;ll build a one-page website from this campaign: your business name, your offer
             and your ad photos, with call and text buttons.
@@ -762,5 +800,136 @@ function WebsiteBuilding({ startedAt }: { startedAt: number }) {
       </span>
       <span className="mt-1 block text-xs text-zinc-500">Usually under a minute. The link appears here when it's live.</span>
     </span>
+  );
+}
+
+type BuilderResult = Awaited<ReturnType<typeof websiteBuilderCreated>>;
+
+/**
+ * SiteVault's full builder for "Make me a website", pre-filled from the
+ * campaign. Asks the API for a one-time frame link (which stores the pre-fill
+ * on SiteVault), shows it, and on `sitevault:created` has the API verify and
+ * record the site. Falls back to the quick form when the builder can't open.
+ */
+function EmbeddedBuilder({
+  campaignId,
+  websiteFee,
+  onRecorded,
+  onQuickForm,
+  onCancel,
+}: {
+  campaignId: string;
+  websiteFee: string | null | undefined;
+  onRecorded: (res: BuilderResult) => void;
+  onQuickForm: () => void;
+  onCancel: () => void;
+}) {
+  const [frame, setFrame] = useState<{ url: string; draftId: string } | null>(null);
+  const [state, setState] = useState<"loading" | "ready" | "recording" | "error">("loading");
+  const [error, setError] = useState<string | null>(null);
+  const [created, setCreated] = useState<CreatedSite | null>(null);
+  const [fee, setFee] = useState<string | null | undefined>(websiteFee);
+  const onQuickFormRef = useRef(onQuickForm);
+  useEffect(() => {
+    onQuickFormRef.current = onQuickForm;
+  });
+
+  // Each attempt mints a fresh one-time link (and draft); "Try again" / "Reload it" bump it.
+  const [attempt, setAttempt] = useState(0);
+  const open = useCallback(() => {
+    setState("loading");
+    setError(null);
+    setAttempt((a) => a + 1);
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    startWebsiteBuilder(campaignId)
+      .then((r) => {
+        if (cancelled) return;
+        setFrame({ url: r.builderUrl, draftId: r.draftId });
+        setFee(r.websiteFee);
+        setState("ready");
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        // The builder can't open here (older SiteVault, a test customer, SiteVault down): the quick form.
+        if (!(err instanceof ApiError) || err.code === "website_builder_unavailable") {
+          onQuickFormRef.current();
+          return;
+        }
+        setError(MAKE_ERRORS[err.code] ?? "Could not open the website builder. Please try again.");
+        setState("error");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [campaignId, attempt]);
+
+  const record = useCallback(
+    (site: CreatedSite) => {
+      if (!frame) return;
+      // Only the draft this frame was opened with; the API re-checks it with SiteVault.
+      if (site.draft && site.draft !== frame.draftId) return;
+      setCreated(site);
+      setState("recording");
+      setError(null);
+      websiteBuilderCreated(campaignId, { draftId: frame.draftId, slug: site.slug })
+        .then(onRecorded)
+        .catch((err) => {
+          setError(
+            err instanceof ApiError && MAKE_ERRORS[err.code]
+              ? MAKE_ERRORS[err.code]!
+              : "Your website is made, but we couldn't finish setting it up here. Please try again.",
+          );
+          setState("error");
+        });
+    },
+    [campaignId, frame, onRecorded],
+  );
+
+  return (
+    <div className="space-y-3">
+      <p className="text-sm text-zinc-300">
+        Your website, filled in from this campaign. Pick a style, add your services, hours and anything else, then press
+        Create my website.
+        {fee ? ` ${fee} once; Pro stays included while your AdVault plan runs.` : ""}
+      </p>
+      {error && (
+        <p className="text-sm text-red-300" role="alert">
+          {error}{" "}
+          {created ? (
+            <button type="button" onClick={() => record(created)} className="text-amber-300 underline underline-offset-4">
+              Try again
+            </button>
+          ) : (
+            <button type="button" onClick={open} className="text-amber-300 underline underline-offset-4">
+              Try again
+            </button>
+          )}
+        </p>
+      )}
+      {state === "loading" && <p className="text-sm text-zinc-500">Opening the website builder…</p>}
+      {state === "recording" && (
+        <p className="text-sm text-zinc-300" role="status">
+          {created?.pending ? "Website made. Opening payment…" : "Website made. Setting it as your ad's link…"}
+        </p>
+      )}
+      {frame && state !== "loading" && !created && (
+        <SiteEditorFrame editorUrl={frame.url} onReload={open} onCreated={record} title="Build your website" />
+      )}
+      <div className="flex flex-wrap gap-x-4 gap-y-2 text-sm">
+        {!created && (
+          <button type="button" onClick={onQuickForm} className="text-zinc-400 underline underline-offset-4 hover:text-zinc-200">
+            Use the quick form instead
+          </button>
+        )}
+        {!created && (
+          <button type="button" onClick={onCancel} className="text-zinc-400 underline underline-offset-4 hover:text-zinc-200">
+            Cancel
+          </button>
+        )}
+      </div>
+    </div>
   );
 }

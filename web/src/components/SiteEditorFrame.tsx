@@ -15,6 +15,12 @@ import { getWebsiteEditor } from "@/lib/api/browser";
 //   sitevault:saved    a save landed (siteUrl/slug change after a rename)
 //   sitevault:sections where sections start inside the page ({ style: px }),
 //                      so `focus="style"` can scroll to the "Website style" picker
+//   sitevault:created  the embedded BUILDER (AdVault create mode) made the site
+//                      ({ slug, siteUrl, pending, draft }); the caller verifies
+//                      it server side before acting on it
+//
+// The same frame shows SiteVault's builder for "Make me a website" (pass the
+// builder link as `editorUrl`, a `title` and `onCreated`).
 
 export const SITEVAULT_ORIGIN = "https://sitevault.3pandalabs.com";
 const MIN_HEIGHT = 900;
@@ -50,18 +56,26 @@ export function useSiteEditor(enabled = true) {
   return { site, setSite, editorUrl, state, reload };
 }
 
+export type CreatedSite = { slug: string; siteUrl: string; pending: boolean; draft: string | null };
+
 export function SiteEditorFrame({
   editorUrl,
   onReload,
   onSaved,
+  onCreated,
   focus,
+  title = "Edit your website",
 }: {
   editorUrl: string;
   onReload: () => void;
   /** After a save: the site's current address (it changes on a rename). */
   onSaved?: (s: { siteUrl: string; slug: string | null }) => void;
+  /** The embedded builder made the site (verify server side before trusting it). */
+  onCreated?: (s: CreatedSite) => void;
   /** Scroll the page to this editor section once it has loaded. */
   focus?: "style";
+  /** The iframe's accessible title. */
+  title?: string;
 }) {
   // Height per link: a new link is a fresh page, so it starts at the minimum
   // again (and is focused again).
@@ -70,8 +84,10 @@ export function SiteEditorFrame({
   const frame = useRef<HTMLIFrameElement>(null);
   const focusedFor = useRef<string | null>(null);
   const onSavedRef = useRef(onSaved);
+  const onCreatedRef = useRef(onCreated);
   useEffect(() => {
     onSavedRef.current = onSaved;
+    onCreatedRef.current = onCreated;
   });
 
   useEffect(() => {
@@ -82,11 +98,23 @@ export function SiteEditorFrame({
     }
     function onMessage(e: MessageEvent) {
       if (e.origin !== SITEVAULT_ORIGIN || e.source !== frame.current?.contentWindow) return;
-      const d = e.data as { type?: unknown; height?: unknown; slug?: unknown; siteUrl?: unknown; style?: unknown } | null;
+      const d = e.data as { type?: unknown; height?: unknown; slug?: unknown; siteUrl?: unknown; style?: unknown; pending?: unknown; draft?: unknown } | null;
       if (d?.type === "sitevault:height" && typeof d.height === "number" && Number.isFinite(d.height)) {
         setFit({ url: editorUrl, height: Math.min(MAX_HEIGHT, Math.max(MIN_HEIGHT, Math.ceil(d.height))) });
       } else if (d?.type === "sitevault:saved" && typeof d.siteUrl === "string" && d.siteUrl.startsWith("https://")) {
         onSavedRef.current?.({ siteUrl: d.siteUrl, slug: typeof d.slug === "string" ? d.slug : null });
+      } else if (
+        d?.type === "sitevault:created" &&
+        typeof d.slug === "string" &&
+        typeof d.siteUrl === "string" &&
+        d.siteUrl.startsWith("https://")
+      ) {
+        onCreatedRef.current?.({
+          slug: d.slug,
+          siteUrl: d.siteUrl,
+          pending: d.pending === true,
+          draft: typeof d.draft === "string" ? d.draft : null,
+        });
       } else if (
         d?.type === "sitevault:sections" &&
         focus === "style" &&
@@ -119,7 +147,7 @@ export function SiteEditorFrame({
         ref={frame}
         key={editorUrl}
         src={editorUrl}
-        title="Edit your website"
+        title={title}
         className="block w-full rounded-xl border border-white/10 bg-zinc-950"
         style={{ height }}
         referrerPolicy="no-referrer"

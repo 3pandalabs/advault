@@ -324,12 +324,15 @@ export default function PrivacyPage() {
           <tr>
             <td>SiteVault (our own website builder, also by 3PandaLabs, hosted on Cloudflare)</td>
             <td>
-              Your business name, category, offer, the phone, town and hours you give us, your
-              ad photos, and your before &amp; after photos if you added any
+              Your business name, category, offer, the phone, town and hours you give us (the
+              website builder starts from the phone on your profile and your campaign&rsquo;s
+              town), your ad photos, and your before &amp; after photos if you added any
             </td>
             <td>
-              Only if you press &ldquo;Make me a website&rdquo;: to build and publish your public
-              website. You can change or remove it with its edit link. If you tick &ldquo;Also
+              Only if you press &ldquo;Make me a website&rdquo;: to fill in the website builder
+              shown here (SiteVault keeps that draft for up to an hour, deletes its photos once
+              your website is made and the rest within a day), then to build and publish your
+              public website. You can change or remove it with its edit link. If you tick &ldquo;Also
               put this offer on my website&rdquo; when buying an ad, we send only your offer
               text to that website, after payment. Your shared account: when you sign in to
               SiteVault, it sends us the email and password you typed so we can check them, and

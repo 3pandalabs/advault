@@ -685,6 +685,26 @@ export function createWebsite(
   });
 }
 
+/**
+ * "Make me a website" with SiteVault's full builder: stores the campaign's
+ * pre-fill on SiteVault and returns the iframe's one-time (60 s) link.
+ * 409/502 `website_builder_unavailable` = use the quick form instead.
+ */
+export function startWebsiteBuilder(campaignId: string) {
+  return api<{ builderUrl: string; draftId: string; websiteFee: string | null }>(`/campaigns/${campaignId}/website/builder`, { method: "POST" });
+}
+
+/** The embedded builder made the site: the API checks it with SiteVault, then records it (and opens the $10 checkout). */
+export function websiteBuilderCreated(campaignId: string, input: { draftId: string; slug?: string }) {
+  return api<{
+    campaign: Campaign;
+    siteUrl: string | null;
+    editUrl: string;
+    pendingSite?: PendingSite;
+    checkout?: { redirectUrl: string | null } | null;
+  }>(`/campaigns/${campaignId}/website/builder/created`, { method: "POST", body: JSON.stringify(input) });
+}
+
 /** A made but unpaid SiteVault site ($10 website fee). paid = waiting for SiteVault to publish it. */
 export type PendingSite = { siteUrl: string; paid: boolean; display: string | null };
 

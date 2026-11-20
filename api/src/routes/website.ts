@@ -1,6 +1,6 @@
 import { ownVideoForNewSite } from "../lib/siteVideo/index.js";
 import { and, desc, eq, inArray, isNotNull, isNull, ne } from "drizzle-orm";
-import type { FastifyInstance } from "fastify";
+import type { FastifyBaseLogger, FastifyInstance } from "fastify";
 import { z } from "zod";
 import { requireAdmin, requireAuth } from "../auth/plugin.js";
 import { db } from "../db/index.js";
@@ -9,8 +9,10 @@ import { beforeAfterAllowed, pairAssetIds } from "../lib/beforeAfter/policy.js";
 import { decryptToken, encryptToken } from "../lib/crypto.js";
 import { loadOwnedCampaign } from "../lib/ownership.js";
 import {
+  createSitevaultDraft,
   createSitevaultSite,
   deleteSitevaultSite,
+  fetchSitevaultDraft,
   fetchAccountSitevaultSite,
   offerBanner,
   sitevaultSignInEditUrl,
@@ -27,6 +29,7 @@ import {
   type StickerLike,
 } from "../lib/sitevault/index.js";
 import { stickerSchema } from "../lib/script/schema.js";
+import { createHandoffUrl } from "../lib/sitevault/editorHandoff.js";
 import { markAppUsed } from "../lib/sharedAccount/index.js";
 import { getObjectBytes, headObject } from "../plugins/r2.js";
 import { proPhotoKey } from "../render/enhance.js";
@@ -244,6 +247,76 @@ const deleteAccountSiteInput = z
   })
   .optional();
 
+/**
+ * Why this campaign can't get a NEW website, or null. Shared by the quick
+ * create and the embedded builder, so both refuse exactly the same cases.
+ */
+async function newWebsiteRefusal(
+  userId: string,
+  campaign: typeof campaigns.$inferSelect,
+): Promise<{ code: number; body: { error: string; detail?: string } } | null> {
+  if (campaign.status === "live" || campaign.googleCampaignResourceName) return { code: 409, body: { error: "campaign_is_live" } };
+  if (campaign.landingUrl) return { code: 409, body: { error: "website_exists" } };
+  if (campaign.sitevaultPendingUrl) return { code: 409, body: { error: "website_payment_pending" } };
+  if (!sitevaultConfigured()) return { code: 503, body: { error: "website_builder_not_configured" } };
+  if (!(await isAdminUser(userId))) {
+    const existing = await accountSite(userId, campaign.id);
+    if (existing) return { code: 409, body: { error: "website_exists_for_account", detail: existing.siteUrl } };
+    const pendingElsewhere = await accountPendingSite(userId, campaign.id);
+    if (pendingElsewhere) return { code: 409, body: { error: "website_exists_for_account", detail: pendingElsewhere } };
+  }
+  return null;
+}
+
+/**
+ * After SiteVault made the site (quick create or the embedded builder): stamp
+ * the shared account, then either keep it as the campaign's made-but-unpaid
+ * site and open the $10 checkout, or set it as the campaign's link.
+ */
+async function recordNewSite(
+  userId: string,
+  campaignId: string,
+  result: { slug: string; siteUrl: string; editUrl: string },
+  fee: Awaited<ReturnType<typeof websiteFeeFor>>,
+  log: FastifyBaseLogger,
+  pending = Boolean(fee),
+) {
+  // Shared account: this account now has a SiteVault website (lib/sharedAccount).
+  await markAppUsed(db, userId, "sitevault").catch((err) => log.warn({ err }, "sitevault first-use stamp failed"));
+  if (pending) {
+    // Made, unpublished: it becomes the link once the $10 is paid (lib/websiteFee).
+    const [updated] = await db
+      .update(campaigns)
+      .set({ sitevaultPendingUrl: result.siteUrl, sitevaultEditEnc: encryptToken(result.editUrl), updatedAt: new Date() })
+      .where(eq(campaigns.id, campaignId))
+      .returning();
+    log.info({ campaignId, slug: result.slug }, "sitevault site created, awaiting the website fee");
+    let checkout = null;
+    if (fee) {
+      try {
+        checkout = (await startWebsiteCheckout({ userId, campaignId, slug: result.slug, fee })).checkout;
+      } catch (err) {
+        // The site is kept; the card's "Pay and publish" retries the checkout.
+        log.error({ err, campaignId }, "website checkout failed");
+      }
+    }
+    return {
+      campaign: updated,
+      siteUrl: null,
+      editUrl: result.editUrl,
+      pendingSite: { siteUrl: result.siteUrl, paid: false, display: fee ? feeDisplay(fee) : null },
+      checkout,
+    };
+  }
+  const [updated] = await db
+    .update(campaigns)
+    .set({ landingUrl: result.siteUrl, sitevaultEditEnc: encryptToken(result.editUrl), updatedAt: new Date() })
+    .where(eq(campaigns.id, campaignId))
+    .returning();
+  log.info({ campaignId, slug: result.slug }, "sitevault site created");
+  return { campaign: updated, siteUrl: result.siteUrl, editUrl: result.editUrl };
+}
+
 export async function websiteRoutes(app: FastifyInstance) {
   app.addHook("onRequest", requireAuth);
 
@@ -282,21 +355,9 @@ export async function websiteRoutes(app: FastifyInstance) {
       const body = req.body as z.infer<typeof websiteInput>;
       const campaign = await loadOwnedCampaign(campaignId, req.userId!, reply);
       if (!campaign) return;
-      if (campaign.status === "live" || campaign.googleCampaignResourceName) {
-        return reply.code(409).send({ error: "campaign_is_live" });
-      }
-      if (campaign.landingUrl) return reply.code(409).send({ error: "website_exists" });
-      if (campaign.sitevaultPendingUrl) return reply.code(409).send({ error: "website_payment_pending" });
-      if (!sitevaultConfigured()) return reply.code(503).send({ error: "website_builder_not_configured" });
+      const refused = await newWebsiteRefusal(req.userId!, campaign);
+      if (refused) return reply.code(refused.code).send(refused.body);
       const admin = await isAdminUser(req.userId!);
-      if (!admin) {
-        const existing = await accountSite(req.userId!, campaign.id);
-        if (existing) {
-          return reply.code(409).send({ error: "website_exists_for_account", detail: existing.siteUrl });
-        }
-        const pendingElsewhere = await accountPendingSite(req.userId!, campaign.id);
-        if (pendingElsewhere) return reply.code(409).send({ error: "website_exists_for_account", detail: pendingElsewhere });
-      }
       // $10 website fee (null for admins / at_cost: made and published at once, as before).
       const fee = await websiteFeeFor(req.userId!);
 
@@ -347,39 +408,115 @@ export async function websiteRoutes(app: FastifyInstance) {
             errors: result.errors,
           });
       }
-      // Shared account: this account now has a SiteVault website (lib/sharedAccount).
-      await markAppUsed(db, req.userId!, "sitevault").catch((err) => req.log.warn({ err }, "sitevault first-use stamp failed"));
+      const done = await recordNewSite(req.userId!, campaign.id, result, fee, req.log);
+      return reply.code(201).send(done);
+    },
+  );
 
-      if (fee) {
-        // Made, unpublished: it becomes the link once the $10 is paid (lib/websiteFee).
-        const [updated] = await db
-          .update(campaigns)
-          .set({ sitevaultPendingUrl: result.siteUrl, sitevaultEditEnc: encryptToken(result.editUrl), updatedAt: new Date() })
-          .where(eq(campaigns.id, campaign.id))
-          .returning();
-        req.log.info({ campaignId, slug: result.slug }, "sitevault site created, awaiting the website fee");
-        let checkout = null;
-        try {
-          checkout = (await startWebsiteCheckout({ userId: req.userId!, campaignId: campaign.id, slug: result.slug, fee })).checkout;
-        } catch (err) {
-          // The site is kept; the card's "Pay and publish" retries the checkout.
-          req.log.error({ err, campaignId }, "website checkout failed");
-        }
-        return reply.code(201).send({
-          campaign: updated,
-          siteUrl: null,
-          editUrl: result.editUrl,
-          pendingSite: { siteUrl: result.siteUrl, paid: false, display: feeDisplay(fee) },
-          checkout,
-        });
+  // "Make me a website" with SiteVault's FULL builder (2026-11-19). AdVault
+  // stores the campaign's pre-fill on SiteVault server to server (a draft:
+  // name, category, phone, town, offer, services, one-liner, the ad's photos,
+  // before & after pairs, an own video) and returns a 60 s, single-use create
+  // link for the iframe that names only the draft (lib/sitevault/editorHandoff.ts).
+  // Same refusals as the quick create above (live campaign, has a website,
+  // one per account, admin/test handling). The site itself is made by
+  // SiteVault when the owner presses Create; /builder/created then runs the
+  // same post-create steps as the quick create.
+  app.post(
+    "/campaigns/:campaignId/website/builder",
+    { schema: { params: z.object({ campaignId: z.string().uuid() }) } },
+    async (req, reply) => {
+      reply.header("cache-control", "no-store");
+      const { campaignId } = req.params as { campaignId: string };
+      const campaign = await loadOwnedCampaign(campaignId, req.userId!, reply);
+      if (!campaign) return;
+      const refused = await newWebsiteRefusal(req.userId!, campaign);
+      if (refused) return reply.code(refused.code).send(refused.body);
+      const [owner] = await db.select({ email: users.email, phone: users.phone }).from(users).where(eq(users.id, req.userId!)).limit(1);
+      // The builder signs the owner in to their SiteVault account, which needs
+      // a real email: test customers (*.invalid, 0030) use the quick form.
+      if (!owner?.email || isUndeliverableEmail(owner.email)) return reply.code(409).send({ error: "website_builder_unavailable" });
+      const admin = await isAdminUser(req.userId!);
+      const fee = await websiteFeeFor(req.userId!);
+      const housing = isHousingCategory(campaign.businessCategory);
+      const { sticker } = await campaignAd(campaign.id);
+      const photos = await campaignPhotos(campaign.id);
+      const city = campaign.targetAddress ? `${campaign.targetAddress.city}, ${campaign.targetAddress.state}` : "";
+      const draft = await createSitevaultDraft(
+        {
+          campaignId: campaign.id,
+          businessName: campaign.businessName,
+          category: sitevaultCategory(campaign.businessCategory),
+          phone: owner.phone ?? undefined,
+          city: city || undefined,
+          offer: offerBanner(campaign.offerDetails),
+          serviceArea: housing || !city ? undefined : `Within ${campaign.radiusMiles} miles of ${city}`,
+          services: servicesFromSticker(sticker),
+          tagline: taglineFromSticker(sticker),
+          awaitingPayment: fee ? "1" : undefined,
+          ownerAdvaultUserId: req.userId!,
+          ownerEmail: owner.email,
+          ownerAdmin: admin ? "1" : undefined,
+        },
+        photos,
+        photos.length === 0 ? await ownVideoForNewSite(campaign.id) : null,
+        await campaignBeforeAfter(campaign),
+      );
+      if (!draft.ok) {
+        // An older SiteVault (no create mode), down, or refusing the media:
+        // the card falls back to the quick form.
+        req.log.warn({ campaignId, error: draft.error }, "sitevault draft failed");
+        return reply.code(502).send({ error: "website_builder_unavailable", detail: draft.error });
       }
-      const [updated] = await db
-        .update(campaigns)
-        .set({ landingUrl: result.siteUrl, sitevaultEditEnc: encryptToken(result.editUrl), updatedAt: new Date() })
-        .where(eq(campaigns.id, campaign.id))
-        .returning();
-      req.log.info({ campaignId, slug: result.slug }, "sitevault site created");
-      return reply.code(201).send({ campaign: updated, siteUrl: result.siteUrl, editUrl: result.editUrl });
+      const builderUrl = createHandoffUrl({ advaultUserId: req.userId!, email: owner.email }, campaign.id, draft.draftId, Boolean(fee));
+      if (!builderUrl) return reply.code(503).send({ error: "website_builder_not_configured" });
+      return { builderUrl, draftId: draft.draftId, websiteFee: fee ? feeDisplay(fee) : null };
+    },
+  );
+
+  // The embedded builder said "created" (sitevault:created, origin- and
+  // source-checked in the browser). NEVER trusted as such: the site is the one
+  // SiteVault recorded on the draft, read back server to server and bound to
+  // this user and this campaign (SiteVault answers 404 for another user's
+  // draft). Then exactly the quick create's post-create steps.
+  app.post(
+    "/campaigns/:campaignId/website/builder/created",
+    {
+      schema: {
+        params: z.object({ campaignId: z.string().uuid() }),
+        body: z.object({ draftId: z.string().regex(/^[A-Za-z0-9_-]{16,64}$/), slug: z.string().trim().max(80).optional() }),
+      },
+    },
+    async (req, reply) => {
+      const { campaignId } = req.params as { campaignId: string };
+      const body = req.body as { draftId: string; slug?: string };
+      const campaign = await loadOwnedCampaign(campaignId, req.userId!, reply);
+      if (!campaign) return;
+      const draft = await fetchSitevaultDraft(body.draftId, req.userId!);
+      if (!draft || draft.campaignId !== campaign.id) return reply.code(404).send({ error: "no_such_website_draft" });
+      if (!draft.result) return reply.code(409).send({ error: "website_not_created_yet" });
+      const result = draft.result;
+      if (body.slug && body.slug !== result.slug) return reply.code(409).send({ error: "website_mismatch" });
+      // Already recorded (a repeated message, a reload): answer with the state.
+      if (slugFromSiteUrl(campaign.landingUrl) === result.slug) {
+        return { campaign, siteUrl: campaign.landingUrl, editUrl: result.editUrl };
+      }
+      if (slugFromSiteUrl(campaign.sitevaultPendingUrl) === result.slug) {
+        const fee = await websiteFeeFor(req.userId!);
+        return { campaign, siteUrl: null, editUrl: result.editUrl, pendingSite: { siteUrl: campaign.sitevaultPendingUrl, paid: false, display: fee ? feeDisplay(fee) : null }, checkout: null };
+      }
+      if (campaign.status === "live" || campaign.googleCampaignResourceName) return reply.code(409).send({ error: "campaign_is_live" });
+      if (campaign.landingUrl) return reply.code(409).send({ error: "website_exists" });
+      if (campaign.sitevaultPendingUrl) return reply.code(409).send({ error: "website_payment_pending" });
+      // Charged iff the draft said so (that's what SiteVault made it as).
+      const fee = draft.awaitingPayment ? await websiteFeeFor(req.userId!) : null;
+      if (draft.awaitingPayment && !fee) {
+        // Made pending, but this account no longer pays (e.g. turned admin):
+        // keep it as pending; "Pay and publish" can't help, so say so.
+        req.log.warn({ campaignId, slug: result.slug }, "builder site pending but no website fee applies");
+      }
+      const done = await recordNewSite(req.userId!, campaign.id, result, draft.awaitingPayment ? fee : null, req.log, draft.awaitingPayment);
+      return reply.code(201).send(done);
     },
   );
 
