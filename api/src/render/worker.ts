@@ -9,6 +9,7 @@
 // and the loser crash-loops.
 import { isReformatCopy } from "../lib/uploads/reformatPolicy.js";
 import { reformatVideo } from "./reformat.js";
+import { deleteUploadObjects } from "../lib/uploads/remove.js";
 import { hostname } from "node:os";
 import { createHash } from "node:crypto";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
@@ -539,13 +540,21 @@ async function processReformat(
     const videoBytes = await readFile(out.videoPath);
     await putObject(videoKey, videoBytes, "video/mp4");
     await putObject(thumbnailKey, await readFile(out.thumbnailPath), "image/jpeg");
-    await completeJob(job, {
+    const kept = await completeJob(job, {
       videoKey,
       thumbnailKey,
       durationSeconds: creative.durationSeconds ?? 0,
       sizeBytes: videoBytes.byteLength,
       renderInfo: { ...(creative.renderInfo ?? {}), at: new Date().toISOString() },
     });
+    if (!kept) {
+      // The copy was deleted while it rendered: the owner uploaded this shape
+      // themselves (routes/uploads.ts) or removed the video. Never recreate it
+      // or publish it; drop the files just written.
+      await deleteUploadObjects([{ id: creative.id, videoKey, thumbnailKey }]);
+      log("reformat discarded, copy was removed meanwhile", { creativeId: creative.id });
+      return;
+    }
     log("reformat complete", { creativeId: creative.id, aspect: creative.aspectRatio, sizeBytes: videoBytes.byteLength });
     await enqueueYoutubeUpload(creative.id).catch((err) =>
       log("failed to enqueue the youtube upload", { creativeId: creative.id, error: String(err) }),

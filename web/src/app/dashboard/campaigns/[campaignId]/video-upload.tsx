@@ -18,7 +18,9 @@ const ADMIN_LIMITS = { minSeconds: 5, maxSeconds: 180 };
 const ATTESTATION =
   "I own or have the rights to everything in this video, including the music. No copyrighted music.";
 
-function errorText(code: string, limits: { minSeconds: number; maxSeconds: number }): string {
+const SHAPE_LABEL = { "16:9": "widescreen 16:9", "9:16": "vertical 9:16" } as const;
+
+function errorText(code: string, limits: { minSeconds: number; maxSeconds: number }, onlyAspect?: "16:9" | "9:16"): string {
   const known: Record<string, string> = {
     not_mp4: "Choose an .mp4 file.",
     unreadable: "This file could not be read as a video.",
@@ -30,6 +32,10 @@ function errorText(code: string, limits: { minSeconds: number; maxSeconds: numbe
     upload_failed: "The upload did not finish. Try again.",
     upload_missing: "The upload did not finish. Try again.",
     campaign_is_live: "This campaign is already live, so no videos can be added.",
+    wrong_shape: onlyAspect ? `This one needs to be your ${SHAPE_LABEL[onlyAspect]} video.` : "Wrong shape.",
+    already_uploaded: "You already uploaded a video in this shape. Remove it first to replace it.",
+    upload_in_progress: "AdVault's copy in this shape is being published to YouTube. Try again in a minute.",
+    creative_is_live: "The video in this shape is already in your live ad.",
   };
   return known[code] ?? `Upload failed (${code}).`;
 }
@@ -38,10 +44,17 @@ export function VideoUpload({
   campaignId,
   isAdmin,
   onUploaded,
+  onlyAspect,
 }: {
   campaignId: string;
   isAdmin: boolean;
   onUploaded: () => void;
+  /**
+   * The second upload (admins and internal accounts, 2026-11-19): their own
+   * video in the shape they haven't uploaded. It replaces AdVault's blurred
+   * copy in that shape, if one was made.
+   */
+  onlyAspect?: "16:9" | "9:16";
 }) {
   const [open, setOpen] = useState(false);
   const [attested, setAttested] = useState(false);
@@ -55,7 +68,7 @@ export function VideoUpload({
     setBusy(true);
     setMessage(null);
     try {
-      const creative = await uploadCreativeVideo(campaignId, file, limits);
+      const creative = await uploadCreativeVideo(campaignId, file, limits, onlyAspect);
       setMessage({
         ok: true,
         text:
@@ -67,7 +80,7 @@ export function VideoUpload({
       onUploaded();
     } catch (err) {
       const code = err instanceof ApiError ? err.code : err instanceof Error ? err.message : "error";
-      setMessage({ ok: false, text: errorText(code, limits) });
+      setMessage({ ok: false, text: errorText(code, limits, onlyAspect) });
     } finally {
       setBusy(false);
     }
@@ -77,7 +90,7 @@ export function VideoUpload({
     return (
       <div className="mt-6">
         <Button variant="outline" size="sm" onClick={() => setOpen(true)}>
-          Use my own video
+          {onlyAspect ? `Upload your ${onlyAspect} version too (optional)` : "Use my own video"}
         </Button>
       </div>
     );
@@ -85,9 +98,12 @@ export function VideoUpload({
 
   return (
     <Card className="mt-6 border-dashed">
-      <CardTitle>Use my own video</CardTitle>
+      <CardTitle>{onlyAspect ? `Your ${SHAPE_LABEL[onlyAspect]} video` : "Use my own video"}</CardTitle>
       <CardDescription>
-        One finished MP4, vertical (9:16) or wide (16:9): we make the other shape for you. At least 720p,{" "}
+        {onlyAspect
+          ? `Optional. Have your own ${SHAPE_LABEL[onlyAspect]} cut? It is used instead of the copy AdVault makes from your other video. Skip it and we keep making that copy. `
+          : "One finished MP4, vertical (9:16) or wide (16:9): we make the other shape for you. "}
+        At least 720p,{" "}
         {limits.minSeconds}–{limits.maxSeconds} seconds, up to 200 MB.
         {isAdmin
           ? " As an admin, your upload is approved straight away."

@@ -85,13 +85,15 @@ export async function completeJob(
     sizeBytes: number;
     renderInfo?: Record<string, unknown>;
   },
-): Promise<void> {
+): Promise<boolean> {
   await db
     .update(renderJobs)
     .set({ status: "done", updatedAt: new Date() })
     .where(eq(renderJobs.id, job.id));
 
-  await db
+  // false = the creative was deleted while it rendered (an owner's upload
+  // replaced AdVault's copy, or "Remove video"): the caller discards its output.
+  const updated = await db
     .update(creatives)
     .set({
       renderStatus: "ready",
@@ -103,7 +105,9 @@ export async function completeJob(
       renderedAt: new Date(),
       ...(result.renderInfo ? { renderInfo: result.renderInfo } : {}),
     })
-    .where(eq(creatives.id, job.creativeId));
+    .where(eq(creatives.id, job.creativeId))
+    .returning({ id: creatives.id });
+  return updated.length > 0;
 }
 
 // Exponential backoff, capped. A transient failure (R2 blip, a source photo
