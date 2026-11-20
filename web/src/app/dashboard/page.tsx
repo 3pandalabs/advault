@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { SITEVAULT_ACCOUNT_URL, siteVaultSlug } from "@/lib/sitevault";
+import { siteVaultSlug } from "@/lib/sitevault";
 import { getMe, getSubscription, getWallet, listCampaigns, type Campaign, type CampaignStatus, type Wallet } from "@/lib/api/browser";
 import { BudgetBanner } from "@/components/BudgetBanner";
 import { CostSimulator } from "@/components/CostSimulator";
@@ -106,10 +106,10 @@ export default function CampaignsPage() {
           </div>
           {usesSitevault ? (
             <p className="mt-5 text-sm text-zinc-400">
-              Your website lives on SiteVault, with the same login.{" "}
-              <a href={SITEVAULT_ACCOUNT_URL} className="text-sky-300 underline underline-offset-4">
+              You already have a website.{" "}
+              <Link href="/dashboard/website" className="text-sky-300 underline underline-offset-4">
                 Go to your website
-              </a>
+              </Link>
             </p>
           ) : null}
         </Card>
