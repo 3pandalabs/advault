@@ -7,6 +7,7 @@ import { backToAdmin, clearTokens, getMe, getTokens, setTestAsCustomer, type Me 
 import { TEST_PRICE_DISPLAY } from "@/lib/testMode";
 import { WordmarkName, WordmarkTag } from "@/components/Wordmark";
 import { Button } from "@/components/ui/button";
+import { acceptTerms, type TermsState } from "@/lib/api/compliance";
 
 // The dashboard is client-rendered and talks to the API directly from the
 // browser rather than through Server Components. Two reasons:
@@ -68,6 +69,21 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   if (!checked) {
     return <div className="px-6 py-16 text-center text-sm text-zinc-500">Loading…</div>;
+  }
+
+  // Terms of Service gate (api lib/compliance): a user who has not accepted
+  // the current version sees only this until they do; the API refuses order,
+  // generate and launch with 409 terms_not_accepted anyway. Admins too. An
+  // older API without `terms` never blocks.
+  const terms = (me as (Me & { terms?: TermsState }) | null)?.terms;
+  if (me && terms && !terms.ok) {
+    return (
+      <TermsGate
+        terms={terms}
+        onAccepted={(t) => setMe({ ...me, terms: t } as Me)}
+        onSignOut={signOut}
+      />
+    );
   }
 
   return (
@@ -169,5 +185,82 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       )}
       <main className="mx-auto w-full max-w-5xl px-6 py-8">{children}</main>
     </div>
+  );
+}
+
+function TermsGate({
+  terms,
+  onAccepted,
+  onSignOut,
+}: {
+  terms: TermsState;
+  onAccepted: (t: TermsState) => void;
+  onSignOut: () => void;
+}) {
+  const [agreed, setAgreed] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function accept() {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await acceptTerms(terms.current);
+      onAccepted(res.terms);
+    } catch {
+      setError("Could not save that. Please reload the page and try again.");
+      setBusy(false);
+    }
+  }
+
+  return (
+    <main className="mx-auto w-full max-w-lg px-4 py-16 sm:px-6">
+      <div className="mb-8 text-center text-lg font-semibold tracking-tight">
+        <WordmarkName />
+        <WordmarkTag />
+      </div>
+      <div className="rounded-2xl border border-white/10 bg-white/5 p-6">
+        <h1 className="text-xl font-semibold">
+          {terms.accepted ? "We've updated our Terms" : "Please accept our Terms"}
+        </h1>
+        <p className="mt-3 text-sm leading-relaxed text-zinc-400">
+          Before you make, pay for or launch an ad, please read and accept our Terms of Service and
+          Content Policy. They say that the claims in your ads must be true, that you need the rights
+          to your photos and videos, and that we may remove ads that break the rules.
+        </p>
+        <p className="mt-3 text-sm">
+          <Link href="/terms" target="_blank" className="text-amber-300 underline">
+            Terms of Service
+          </Link>
+          {" · "}
+          <Link href="/content-policy" target="_blank" className="text-amber-300 underline">
+            Content Policy
+          </Link>
+          {" · "}
+          <Link href="/privacy" target="_blank" className="text-amber-300 underline">
+            Privacy Policy
+          </Link>
+        </p>
+        <label className="mt-5 flex items-start gap-2 text-sm text-zinc-300">
+          <input
+            type="checkbox"
+            className="mt-1 h-4 w-4 shrink-0 accent-amber-400"
+            checked={agreed}
+            onChange={(e) => setAgreed(e.target.checked)}
+            disabled={busy}
+          />
+          <span>I agree to the Terms of Service and the Content Policy.</span>
+        </label>
+        {error && <p className="mt-3 text-sm text-red-300">{error}</p>}
+        <div className="mt-5 flex flex-wrap items-center gap-3">
+          <Button onClick={accept} disabled={!agreed || busy}>
+            {busy ? "Saving…" : "Accept and continue"}
+          </Button>
+          <Button variant="ghost" onClick={onSignOut} disabled={busy}>
+            Sign out
+          </Button>
+        </div>
+      </div>
+    </main>
   );
 }

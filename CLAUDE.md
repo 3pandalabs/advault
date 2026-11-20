@@ -429,8 +429,13 @@ happens to it** (`creatives.review_status`: NULL for generated creatives,
   vendor, $0. Skipped when the campaign already has an upload in that shape.
   The campaign page labels it "Made from your video".
 - **Both shapes (2026-11-19):** the owner may also upload their OWN video in
-  the other shape (web: admins and internal accounts only, "Upload your 16:9
-  version too (optional)", hidden once both shapes are theirs). One own upload
+  the other shape (web: admins and internal accounts only; since 2026-11-20
+  both slots show up front, side by side, "Vertical 9:16 (Shorts)" and
+  "Widescreen 16:9 (YouTube)" (optional: we make it from the other), one per
+  shape not yet uploaded by the owner, and the wizard takes an optional second
+  file in the other shape). Under each uploaded video the campaign page shows
+  the review state (approved / waiting / rejected with the reason); a
+  "Made from your video" copy shows its source's state. One own upload
   per shape: the same shape again is 409 `already_uploaded`. The owner's file
   REPLACES the reformat copy in that shape (`shapeUploadPlan` in
   `reformatPolicy.ts`; copy row deleted, its render job cascades, R2 files
@@ -543,7 +548,8 @@ the API copy, then the web copy).
   first-visit deal (% off, amount off, free) -> "Weekly mowing from $35 a
   visit. First visit 50% off." It only fills the offer box (wizard and the
   campaign page's "Your offer" card, `offer-card.tsx`); nothing is stored.
-- **Claim checks** (`claims.ts`, `components/ClaimWarnings.tsx`): warnings
+- **Claim checks** (rules now in `lib/compliance/claimRules.ts`, re-exported
+  by `claims.ts`; `components/ClaimWarnings.tsx`): warnings
   with the reason as the owner types (dentistry: painless / best dentist /
   guarantees; lawn: 100% pet-safe / non-toxic / guaranteed green; any
   category: 0% or no-interest financing without terms, #1 / the best,
@@ -586,6 +592,79 @@ the API copy, then the web copy).
   `<details>` at the bottom, "For your next ad: offer, badges, photos",
   open when there is no ad yet (no creative, or all failed). SeasonCard
   stays near the top.
+
+## Client attestation & compliance (2026-11-20, migration 0043, `lib/compliance`)
+
+The client is responsible for what their ad says; this is how we can show
+they said it. Routes and codes: `api/ROUTES.md` "Client attestation &
+compliance". Owner to-do: the /terms note and /content-policy are marked
+pending legal review; a lawyer must review them.
+
+- **Two ticks, every time** (`components/AttestationChecks.tsx`, sentences from
+  `lib/compliance/texts.ts`, mirrored word for word in `web/src/lib/compliance/`,
+  `lib/compliance/mirror.test.ts`): "I confirm all information and claims in
+  this ad are true, accurate, and lawful, and I accept responsibility for
+  them." + "I own or have rights to all photos/media uploaded, and have
+  consent from any person shown." In the wizard before create, and on the
+  campaign page before a new-ad order, generate-again/redo, an upload and
+  launch. The API (`passComplianceGate`) refuses without them, admins
+  included. **Changing a sentence means a new `ATTESTATION_VERSION`**, never an
+  edit in place: every row stores version AND exact text.
+- **`ad_attestations` and `terms_acceptances` are append-only**: app code only
+  inserts; a trigger (`advault_append_only`) refuses UPDATE, DELETE and
+  TRUNCATE except an UPDATE that only blanks `ip_address`/`user_agent`, which
+  account deletion does. No foreign keys on purpose: rows outlive the campaign
+  (owners can delete campaigns) and users are anonymised, never deleted. Don't
+  add an FK with an ON DELETE action: the trigger would refuse it. IP is
+  `cf-connecting-ip`, else Fastify's `req.ip` (trustProxy).
+- **Terms**: `TERMS_VERSION` (api + web mirror) must match the effective date
+  on /terms. Bump it when the terms change and every user meets the blocking
+  "We've updated our Terms" screen in the dashboard layout; order / generate /
+  launch answer 409 `terms_not_accepted` meanwhile. Signup has an explicit
+  checkbox (no more browsewrap).
+- **One claim table, three severities** (`claimRules.ts`): `block` (housing
+  exclusion, 400 `claim_not_allowed`, unchanged), `warn` (unchanged list), and
+  `review` (health cures/miracle/weight-loss numbers, finance/crypto/returns/
+  payday/no credit check, "guaranteed results"). Review phrases found in the
+  campaign text OR the generated script set `compliance_status = needs_review`
+  (`reevaluateCompliance`, on create, PATCH, PUT offer, generation, script
+  edit). The ad can still be made; launch answers 409 `needs_review`; an admin
+  approves at `/dashboard/admin/reports` ("Wording waiting for review"). An
+  approval is per (rule, phrase): unchanged text stays approved, a NEW phrase
+  re-flags. The campaign page shows a banner with the phrase and why.
+- **Takedown** (`lib/compliance/takedown.ts`, admin `/dashboard/admin/reports`):
+  `compliance_status = taken_down` (+ who/when/why, funds-paused marker
+  cleared), Google pause through the existing status flip (managed accounts;
+  otherwise an URGENT ops alert to pause by hand), YouTube videos set private
+  via `videos.update` (`setVideoPrivate`). **The org channel token was minted
+  with `youtube.upload` + `youtube.readonly` only, so until it is re-minted
+  with the `youtube` scope that step fails and ops are told to do it by hand.**
+  Every path that makes, launches or switches an ad back on refuses or skips a
+  taken-down ad: launch, resume, generate, redo, order, paid-order generate,
+  script edit, retry, upload, the top-up / plan resume (`resumeFundedCampaigns`,
+  `resumeAfterTopUp`, `hasAdWaitingForBudget`), the budget respread, the render
+  worker (fails the job, no retry, so `reclaimStalled` can't revive it) and the
+  YouTube worker. **Not done: removing the launch video from the customer's
+  SiteVault website** (follow-up; the ops alert says to do it by hand).
+- **Report this ad**: every campaign has an unguessable `public_id`; newly
+  published YouTube videos end their description with "Report this ad:
+  https://advault.3pandalabs.com/report?ad=<public id>". The public page posts
+  to `POST /reports` (5 per IP per hour, ntfy ping). A taken-down ad's page says
+  "This ad has been removed."; an unknown id says it couldn't be found.
+- **The script writer only repeats the client** (`script/prompt.ts`): no
+  invented statistics, numbers, testimonials, quotes, reviews, awards,
+  rankings or superlatives. `creatives.generation_inputs` stores the writer's
+  exact input (business fields, offer, confirmed facts, photo R2 keys, prompt
+  version `AD_SCRIPT_PROMPT_VERSION`; never presigned URLs), fallback path
+  included. Bump the prompt version when the prompt changes.
+- `requireAuth` / `requireAdmin` now `return reply` after a 401/403 (Fastify
+  already stopped the handler on `reply.sent`; a test proves it either way).
+- Privacy page lists the IP / user agent capture and retention; /terms keeps
+  its text with a "Pending legal review" note; `/content-policy` is a DRAFT.
+- Tests: `routes/compliance.test.ts` (PGlite: ticks on every action and the
+  audit row, append-only trigger, account deletion, terms gate, review ->
+  launch 409 -> approve -> re-flag, takedown and every refusal, reports + rate
+  limit, requireAdmin, India), `lib/compliance/policy.test.ts`.
 
 ## Google Ads API access: developer tokens are gone, and the version pin is load-bearing
 

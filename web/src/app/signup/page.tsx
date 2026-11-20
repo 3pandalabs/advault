@@ -9,6 +9,7 @@ import { FieldHint, Input, Label } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { WordmarkName, WordmarkTag } from "@/components/Wordmark";
 import { CATEGORIES } from "@/lib/audience";
+import { TERMS_VERSION } from "@/lib/compliance/texts";
 
 // Business name and category are collected here rather than later because both
 // feed the ad script directly — asking for them up front means the first
@@ -26,16 +27,22 @@ export default function SignupPage() {
   });
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // Explicit Terms acceptance (2026-11-20): recorded in terms_acceptances with
+  // the version, IP and user agent (api lib/compliance).
+  const [agreed, setAgreed] = useState(false);
 
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
     setForm((f) => ({ ...f, [k]: e.target.value }));
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (!agreed) return;
     setBusy(true);
     setError(null);
     try {
-      const tokens = await register(form);
+      // termsVersion: the version this checkbox showed (POST /auth/register).
+      const input = { ...form, termsVersion: TERMS_VERSION };
+      const tokens = await register(input);
       setTokens(tokens.accessToken, tokens.refreshToken);
       // Ad account setup first. Sending a new advertiser straight to the
       // campaign wizard lets them build a whole campaign and only discover at
@@ -122,28 +129,36 @@ export default function SignupPage() {
             </FieldHint>
           </div>
 
+          <label className="flex items-start gap-2 text-sm text-zinc-300">
+            <input
+              type="checkbox"
+              required
+              className="mt-1 h-4 w-4 shrink-0 accent-amber-400"
+              checked={agreed}
+              onChange={(e) => setAgreed(e.target.checked)}
+            />
+            <span>
+              I agree to the{" "}
+              <Link href="/terms" target="_blank" className="text-amber-300 underline">
+                Terms of Service
+              </Link>{" "}
+              and the{" "}
+              <Link href="/content-policy" target="_blank" className="text-amber-300 underline">
+                Content Policy
+              </Link>
+              . See how we use your data in the{" "}
+              <Link href="/privacy" target="_blank" className="text-amber-300 underline">
+                Privacy Policy
+              </Link>
+              .
+            </span>
+          </label>
+
           {error && <p className="text-sm text-red-300">{error}</p>}
 
-          <Button type="submit" className="w-full" disabled={busy}>
+          <Button type="submit" className="w-full" disabled={busy || !agreed}>
             {busy ? "Creating account…" : "Create account"}
           </Button>
-
-          {/* Stated at the point of agreement rather than only in the footer.
-              A tick-box would be the belt-and-braces version, but it adds a
-              validation path to the one form that must never fail for a shop
-              owner on a phone — and consent-on-submit is the standard the
-              terms themselves are written to. */}
-          <p className="text-center text-xs leading-relaxed text-zinc-500">
-            By creating an account you agree to our{" "}
-            <Link href="/terms" className="text-zinc-400 underline hover:text-zinc-200">
-              Terms of Service
-            </Link>{" "}
-            and{" "}
-            <Link href="/privacy" className="text-zinc-400 underline hover:text-zinc-200">
-              Privacy Policy
-            </Link>
-            .
-          </p>
         </form>
       </Card>
 

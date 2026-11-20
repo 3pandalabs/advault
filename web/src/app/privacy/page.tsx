@@ -20,6 +20,10 @@ import { LegalPage } from "@/components/legal/LegalPage";
 //     upload.ts, and the org-channel default is lib/youtube/channels.ts
 //   - the synthetic-content declaration is `containsSyntheticMedia`, derived
 //     from the creative's motion/voice source in render/youtubeUploads.ts
+//   - "confirmations" (IP + user agent + ad snapshot) are ad_attestations and
+//     terms_acceptances (api/src/lib/compliance, migration 0043): append-only,
+//     kept after account deletion with ip_address / user_agent blanked by
+//     lib/accountDeletion.ts; reports are ad_reports (routes/reports.ts)
 //
 // The Limited Use paragraph under "Google account data" is required near-verbatim
 // by the Google API Services User Data Policy. Do not paraphrase it.
@@ -36,7 +40,7 @@ export default function PrivacyPage() {
   return (
     <LegalPage
       title="Privacy Policy"
-      effective="16 November 2026"
+      effective="20 November 2026"
       summary="We collect what we need to make your ad and run your campaign, and nothing else. We do not sell your data, we do not track you around the internet, and this site sets no cookies at all."
     >
       <h2>Who we are</h2>
@@ -119,6 +123,22 @@ export default function PrivacyPage() {
         <li>
           <strong>Technical records</strong> — server logs containing IP addresses and
           request paths, and a session token in your browser that keeps you logged in.
+        </li>
+        <li>
+          <strong>Your confirmations</strong> — each time you tick that your ad is truthful
+          and that you have the rights to your photos and videos (when you order, make,
+          re-make, upload or launch an ad), accept our Terms of Service, or confirm that you
+          run the business when we make your website, we record the exact words you agreed
+          to, the date and time, your IP address and your browser&rsquo;s user agent, and a
+          copy of what your ad said at that moment (business details, offer, script, badges,
+          and the storage names of the photos and videos used). This is the record of what
+          you confirmed, kept in case a claim in an ad is ever challenged.
+        </li>
+        <li>
+          <strong>Reports about ads</strong> — anyone can report an AdVault ad at our
+          report page. We keep the reason and details given, the email address if the
+          person chose to leave one, and their IP address and user agent (used to stop
+          the form being abused).
         </li>
       </ul>
 
@@ -415,6 +435,16 @@ export default function PrivacyPage() {
           paid for</strong> — up to eight years, because tax law requires us to keep books
           of account. These we cannot delete on request; once you delete your account they
           are no longer linked to your email.
+        </li>
+        <li>
+          <strong>Your confirmations</strong> (ad confirmations and Terms acceptances) —
+          kept as the legal record of what you confirmed, and never edited. They stay
+          after you delete your account, but the IP address and user agent on them are
+          erased when you do.
+        </li>
+        <li>
+          <strong>Reports about ads</strong> — for as long as we need them to handle the
+          report and any dispute about the ad.
         </li>
         <li>
           <strong>Server logs</strong> — fourteen days.

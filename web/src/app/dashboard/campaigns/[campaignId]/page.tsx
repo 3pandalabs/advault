@@ -37,6 +37,7 @@ import { AdBudgetCard } from "./ad-budget-card";
 import { BudgetBanner } from "@/components/BudgetBanner";
 import { SquareLogo } from "./square-logo";
 import { VideoUpload } from "./video-upload";
+import { AttestationChecks, useAttestation } from "@/components/AttestationChecks";
 import { ResultsCard } from "./results-card";
 import { AudienceCard } from "./audience-card";
 import { ScheduleCard } from "./schedule-card";
@@ -86,6 +87,11 @@ type Loaded = Campaign & { creatives: Creative[] };
 // unmapped falls through to the raw code rather than a generic message —
 // a code is at least searchable, where "something went wrong" is not.
 const LAUNCH_ERRORS: Record<string, string> = {
+  // Client attestation & compliance (api lib/compliance).
+  attestation_required: "Tick both boxes to confirm your ad is truthful and that you have the rights to your photos and videos.",
+  terms_not_accepted: "Please accept the updated Terms of Service first (reload the page).",
+  needs_review: "Some wording in this ad is checked by AdVault before it can run. We usually review within a day.",
+  ad_taken_down: "AdVault removed this ad. Email 3pandas@3pandalabs.com if you think this is a mistake.",
   plan_required: "Start your AdVault plan to run your ad.",
   plan_pending: "We're confirming your plan. Try again in a few seconds.",
   not_running: "This ad isn't running, so there's nothing to pause.",
@@ -246,6 +252,10 @@ export default function CampaignDetailPage({
   const [siteOfferTicked, setSiteOfferTicked] = useState(false);
   const [siteOfferDeepLink, setSiteOfferDeepLink] = useState(false);
   const [siteOfferRev, setSiteOfferRev] = useState(0);
+  // The two required ticks (api lib/compliance), one set per action.
+  const [orderTicks, setOrderTicks, orderAttestation] = useAttestation();
+  const [redoTicks, setRedoTicks, redoAttestation] = useAttestation();
+  const [launchTicks, setLaunchTicks, launchAttestation] = useAttestation();
   const orderSiteOffer = Boolean(siteOfferTicked && newAd?.siteOffer);
   const orderFailed = (err: unknown, fallback: string) => {
     if (err instanceof ApiError && err.code === "site_offer_unavailable") {
@@ -375,11 +385,12 @@ export default function CampaignDetailPage({
   }, [campaign, previews]);
 
   async function onLaunch(adAccountId: string) {
+    if (!launchAttestation) return setError(LAUNCH_ERRORS.attestation_required!);
     setBusy(true);
     setError(null);
     setLaunchNote(null);
     try {
-      const result = await launchCampaign(campaignId, adAccountId, onSite ? videoOnSite : undefined);
+      const result = await launchCampaign(campaignId, adAccountId, launchAttestation, onSite ? videoOnSite : undefined);
       const lead = result.validateOnly
         ? "Dry run passed. Google checked everything. Nothing went live and $0 was spent."
         : result.note;
@@ -529,6 +540,39 @@ export default function CampaignDetailPage({
       )}
       {usesWallet && <BudgetBanner wallet={wallet} campaignId={campaign.id} href="#ad-budget" />}
 
+      {/* Client attestation & compliance (api lib/compliance). */}
+      {campaign.complianceStatus === "taken_down" && (
+        <div className="mb-4 rounded-lg border border-red-400/30 bg-red-400/10 px-3 py-2 text-sm text-red-200">
+          <p className="font-medium">AdVault removed this ad.</p>
+          <p className="mt-1">
+            It has been stopped and can&apos;t be launched, resumed or made again.
+            {campaign.takenDownReason ? ` Reason: ${campaign.takenDownReason}` : ""} Email{" "}
+            <a href="mailto:3pandas@3pandalabs.com" className="underline">
+              3pandas@3pandalabs.com
+            </a>{" "}
+            if you think this is a mistake.
+          </p>
+        </div>
+      )}
+      {campaign.complianceStatus === "needs_review" && (
+        <div className="mb-4 rounded-lg border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-sm text-amber-100">
+          <p className="font-medium">AdVault checks some of this ad&apos;s wording before it can run</p>
+          <p className="mt-1">
+            You can still make your ad. Launch unlocks once an AdVault admin has looked at it, usually within a
+            day. Or change the wording and save it.
+          </p>
+          <ul className="mt-2 list-disc space-y-1 pl-5">
+            {(campaign.complianceReasons ?? [])
+              .filter((r) => !r.approved)
+              .map((r) => (
+                <li key={`${r.id}:${r.phrase}:${r.field}`}>
+                  &ldquo;{r.phrase}&rdquo; ({fieldLabel(r.field)}): {r.reason}
+                </li>
+              ))}
+          </ul>
+        </div>
+      )}
+
       {launchNote && (
         <p className="mb-4 rounded-lg border border-emerald-400/30 bg-emerald-400/10 px-3 py-2 text-sm text-emerald-200">
           {launchNote}
@@ -558,13 +602,17 @@ export default function CampaignDetailPage({
                   : `This campaign has no ad yet. Making it costs ${newAd.display}, including up to two redos.`}
               </CardDescription>
               {newAd.order && (
+                <AttestationChecks className="w-full" value={orderTicks} onChange={setOrderTicks} disabled={busy} />
+              )}
+              {newAd.order && (
                 <Button
                   size="sm"
-                  disabled={busy}
+                  disabled={busy || !orderAttestation}
                   onClick={() => {
+                    if (!orderAttestation) return;
                     setBusy(true);
                     setError(null);
-                    orderNewAd(campaign.id, orderSiteOffer ? { siteOffer: true } : undefined)
+                    orderNewAd(campaign.id, { ...(orderSiteOffer ? { siteOffer: true } : {}), attestation: orderAttestation })
                       .then(({ checkout }) => {
                         if (checkout.redirectUrl) window.location.href = checkout.redirectUrl;
                         else {
@@ -623,14 +671,15 @@ export default function CampaignDetailPage({
                   </Button>
                   <Button
                     size="sm"
-                    disabled={busy}
+                    disabled={busy || !redoAttestation}
                     onClick={() => {
+                      if (!redoAttestation) return;
                       setBusy(true);
                       setError(null);
                       if (canRedo) setWritingSince(nowMs());
                       const go = canRedo
-                        ? redoAd(campaign.id).then(() => Promise.all([refresh(), getNewAdStatus(campaignId).then(setNewAd)]))
-                        : orderNewAd(campaign.id, orderSiteOffer ? { siteOffer: true } : undefined).then(({ checkout }) => {
+                        ? redoAd(campaign.id, redoAttestation).then(() => Promise.all([refresh(), getNewAdStatus(campaignId).then(setNewAd)]))
+                        : orderNewAd(campaign.id, { ...(orderSiteOffer ? { siteOffer: true } : {}), attestation: redoAttestation }).then(({ checkout }) => {
                             if (checkout.redirectUrl) window.location.href = checkout.redirectUrl;
                           });
                       go.catch((err) => orderFailed(err, "Could not start a new version. Please try again."))
@@ -650,6 +699,7 @@ export default function CampaignDetailPage({
                 </Button>
               )}
             </div>
+            {redoConfirm && <AttestationChecks className="mt-3" value={redoTicks} onChange={setRedoTicks} disabled={busy} />}
             {metered && !canRedo && (
               <SiteOfferOption status={newAd} checked={siteOfferTicked} onChange={setSiteOfferTicked} disabled={busy} />
             )}
@@ -744,20 +794,7 @@ export default function CampaignDetailPage({
               />
             )}
 
-            {creative.reviewStatus === "pending_review" && (
-              <p className="mt-3 text-sm text-amber-200">
-                AdVault is reviewing this video, usually within a day. Launch unlocks once it&apos;s approved.
-              </p>
-            )}
-            {creative.reviewStatus === "rejected" && (
-              <p className="mt-3 text-sm text-red-300">
-                Not approved{creative.reviewReason ? `: ${creative.reviewReason}` : "."} Remove it and
-                upload a new video, or launch with the video AdVault made.
-              </p>
-            )}
-            {creative.kind === "upload" && creative.reviewStatus === "approved" && !creative.youtubeVideoId && creative.renderInfo?.engine !== "reformat" && (
-              <p className="mt-3 text-xs text-emerald-300">Approved by AdVault.</p>
-            )}
+            {creative.kind === "upload" && <UploadReviewNote creative={creative} all={campaign.creatives} />}
 
             {creative.renderStatus === "failed" && (
               <div className="mt-4 flex flex-wrap items-center gap-3">
@@ -842,22 +879,33 @@ export default function CampaignDetailPage({
       {/* Also hidden once a video is uploaded: one is enough (AdVault makes the
           other shape; admins/internal may add their own, below). To replace
           it, remove it first. */}
-      {(isAdmin || isInternal) && !campaign.googleCampaignResourceName && !newAd?.order && campaign.creatives.length === 0 && (
-        <VideoUpload campaignId={campaignId} isAdmin={isAdmin} onUploaded={refresh} />
-      )}
-      {/* Both shapes (2026-11-19, admins and internal accounts): once their own
-          video is in ONE shape, they may add their own cut in the other. It
-          replaces AdVault's "Made from your video" copy there, and hides once
-          both shapes are their own. Remove one to replace it. */}
+      {/* Both shapes up front (admins and internal accounts, 2026-11-20): one
+          upload slot per shape the owner hasn't uploaded THEMSELVES (AdVault's
+          "Made from your video" copies don't count; an own upload replaces
+          the copy in that shape). Hidden once launched, once a paid ad order
+          exists, or once AdVault made a video. Remove one to replace it. */}
       {(() => {
         if (!(isAdmin || isInternal) || campaign.googleCampaignResourceName || newAd?.order) return null;
-        if (campaign.creatives.length === 0 || campaign.creatives.some((c) => c.kind !== "upload")) return null;
-        const ownShapes = new Set(
+        if (campaign.creatives.some((c) => c.kind !== "upload")) return null;
+        const own = new Set(
           campaign.creatives.filter((c) => c.renderInfo?.engine !== "reformat").map((c) => c.aspectRatio),
         );
-        if (ownShapes.size !== 1) return null;
-        const missing = ownShapes.has("9:16") ? "16:9" : "9:16";
-        return <VideoUpload key={missing} campaignId={campaignId} isAdmin={isAdmin} onUploaded={refresh} onlyAspect={missing} />;
+        const missing = (["9:16", "16:9"] as const).filter((a) => !own.has(a));
+        if (missing.length === 0) return null;
+        return (
+          <div className="mb-4 grid gap-4 md:grid-cols-2">
+            {missing.map((aspect) => (
+              <VideoUpload
+                key={aspect}
+                campaignId={campaignId}
+                isAdmin={isAdmin}
+                onUploaded={refresh}
+                onlyAspect={aspect}
+                optional={aspect === "16:9" || own.size > 0}
+              />
+            ))}
+          </div>
+        );
       })()}
 
       {newAd && !newAd.required && newAd.siteOffer && (
@@ -1021,7 +1069,7 @@ export default function CampaignDetailPage({
               </p>
             ) : null}
             {/* "Pause anytime: no fee while paused." Managed (platform) accounts only. */}
-            {launchedForCustomer && (campaign.status === "live" || campaign.status === "paused") && (
+            {launchedForCustomer && campaign.complianceStatus !== "taken_down" && (campaign.status === "live" || campaign.status === "paused") && (
               <div className="mt-3 flex flex-wrap items-center gap-3">
                 {campaign.status === "live" ? (
                   <Button size="sm" variant="outline" disabled={busy} onClick={() => onPauseResume("pause")}>
@@ -1137,11 +1185,18 @@ export default function CampaignDetailPage({
                 <span>Also show this ad on my website</span>
               </label>
             )}
+            <AttestationChecks className="mt-4" value={launchTicks} onChange={setLaunchTicks} disabled={busy} />
             <div className="mt-4 flex flex-wrap gap-2">
               {launchableAccounts.map((account) => (
                 <Button
                   key={account.id}
-                  disabled={busy || !logo}
+                  disabled={
+                    busy ||
+                    !logo ||
+                    !launchAttestation ||
+                    campaign.complianceStatus === "needs_review" ||
+                    campaign.complianceStatus === "taken_down"
+                  }
                   onClick={() => onLaunch(account.id)}
                 >
                   {busy
@@ -1224,4 +1279,54 @@ export default function CampaignDetailPage({
       </details>
     </div>
   );
+}
+
+/** Where a flagged phrase was found, in words (api lib/compliance complianceTexts). */
+function fieldLabel(field: string): string {
+  const labels: Record<string, string> = {
+    offer: "your offer",
+    businessName: "business name",
+    name: "campaign name",
+    callToAction: "call to action",
+    "script.hook": "the ad's opening line",
+    "script.body": "the ad's captions",
+    "script.voiceover": "the voiceover",
+    "script.endCard": "the end card",
+    "script.sticker": "the offer sticker",
+  };
+  return labels[field] ?? field;
+}
+
+/**
+ * The AdVault review state under an uploaded video. A "Made from your video"
+ * copy shows its source's state (it was approved with it).
+ */
+function UploadReviewNote({ creative, all }: { creative: Creative; all: Creative[] }) {
+  const from = creative.renderInfo?.engine === "reformat" ? creative.renderInfo.from : undefined;
+  const source = (from && all.find((c) => c.id === from)) || creative;
+  const status = source.reviewStatus;
+  if (status === "approved") {
+    return (
+      <p className="mt-3 text-sm text-emerald-300">
+        Approved by AdVault admins — you can go ahead.
+        {!creative.youtubeVideoId && " We're publishing it to YouTube now."}
+      </p>
+    );
+  }
+  if (status === "pending_review") {
+    return (
+      <p className="mt-3 text-sm text-amber-200">
+        Waiting for review by AdVault admins. We&apos;ll approve it before it can run.
+      </p>
+    );
+  }
+  if (status === "rejected") {
+    return (
+      <p className="mt-3 text-sm text-red-300">
+        Not approved by AdVault admins{source.reviewReason ? `: ${source.reviewReason}` : "."} Please remove it and
+        upload a new video.
+      </p>
+    );
+  }
+  return null;
 }

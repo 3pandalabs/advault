@@ -77,6 +77,9 @@ export default function AdminVideoReviewsPage() {
             Customer-uploaded videos. Nothing is published or launched until it is approved here.{" "}
             <Link href="/dashboard/admin" className="text-amber-300 hover:underline">
               Ad performance →
+            </Link>{" "}
+            <Link href="/dashboard/admin/reports" className="text-amber-300 hover:underline">
+              Wording reviews & reports →
             </Link>
           </p>
         </div>

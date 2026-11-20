@@ -140,6 +140,11 @@ export type Me = {
    */
   isInternal?: boolean;
   internalLabel?: string | null;
+  /**
+   * Terms of Service (api lib/compliance): the dashboard shows a blocking
+   * re-accept screen while `ok` is false. Absent on an older API.
+   */
+  terms?: { accepted: string | null; current: string; ok: boolean };
 };
 
 export type Asset = {
@@ -211,7 +216,21 @@ export type Campaign = {
   googleAdReviewStatus?: string | null;
   googleAdPolicyTopics?: string[];
   googleAdPolicyCheckedAt?: string | null;
+  // Client attestation & compliance (api migration 0043, lib/compliance).
+  /** The unguessable id in the public "Report this ad" link. */
+  publicId?: string;
+  /** needs_review: launch waits for an AdVault admin. taken_down: AdVault removed it. */
+  complianceStatus?: "ok" | "needs_review" | "taken_down";
+  complianceReasons?: ComplianceReason[] | null;
+  takenDownAt?: string | null;
+  takenDownReason?: string | null;
 };
+
+/** One flagged phrase on a campaign (api lib/compliance/claimRules). */
+export type ComplianceReason = { id: string; phrase: string; reason: string; field: string; approved?: boolean };
+
+/** The client's two ticks, sent with order / generate / redo / upload / launch. */
+export type Attestation = { accuracy: true; media: true; version: string };
 
 export type VideoReviewStatus = "pending_review" | "approved" | "rejected";
 
@@ -241,7 +260,7 @@ export type Creative = {
   // script and cannot be edited or re-rendered.
   kind: "standard" | "cinematic" | "upload";
   /** engine "reformat" = AdVault made this shape from the owner's other-shape video. */
-  renderInfo?: { engine?: string } | null;
+  renderInfo?: { engine?: string; from?: string } | null;
   googleAdResourceName: string | null;
   // AdVault's review of an uploaded video; null for everything AdVault made.
   reviewStatus: VideoReviewStatus | null;
@@ -524,6 +543,8 @@ export function register(input: {
   displayName?: string;
   businessName?: string;
   businessCategory?: string;
+  /** The signup checkbox: the Terms version shown (api lib/compliance). */
+  termsVersion?: string;
 }) {
   return api<{ accessToken: string; refreshToken: string }>("/auth/register", {
     method: "POST",
@@ -758,6 +779,7 @@ export function generateCreatives(
     aspectRatios: ("16:9" | "9:16")[];
     peopleAssetIds?: string[];
     portraitAssetId?: string | null;
+    attestation: Attestation;
   },
 ) {
   return api<{ creatives: Creative[] }>(`/campaigns/${campaignId}/creatives/generate`, {
@@ -791,32 +813,37 @@ export type NewAdStatus = {
 export const pushFreeSiteOffer = (campaignId: string) =>
   api<{ purchaseId: string; pushed: boolean }>(`/campaigns/${campaignId}/site-offer`, { method: "POST" });
 /** "Make it again": a new version from the same photos, replacing the current one. */
-export const redoAd = (campaignId: string) =>
-  api<{ creatives: Creative[] }>(`/campaigns/${campaignId}/creatives/redo`, { method: "POST" });
+export const redoAd = (campaignId: string, attestation: Attestation) =>
+  api<{ creatives: Creative[] }>(`/campaigns/${campaignId}/creatives/redo`, {
+    method: "POST",
+    body: JSON.stringify({ attestation }),
+  });
 export const getNewAdQuote = () =>
   api<{ required: boolean; display?: string; freeLaunchOffer?: boolean }>("/new-ad/quote");
 export const getNewAdStatus = (campaignId: string) => api<NewAdStatus>(`/campaigns/${campaignId}/new-ad`);
 export const orderNewAd = (
   campaignId: string,
-  input?: {
+  input: {
     assetIds?: string[];
     aspectRatios?: ("16:9" | "9:16")[];
     peopleAssetIds?: string[];
     portraitAssetId?: string | null;
     /** Offer combo: also put the campaign's offer on its SiteVault site. */
     siteOffer?: boolean;
+    /** Refused (400 attestation_required) before any checkout without it. */
+    attestation: Attestation;
   },
 ) =>
   api<{ purchaseId: string; checkout: { provider: string; redirectUrl: string | null } }>(
     `/campaigns/${campaignId}/new-ad/order`,
-    { method: "POST", body: JSON.stringify(input ?? {}) },
+    { method: "POST", body: JSON.stringify(input) },
   );
 export const generatePaidNewAd = (purchaseId: string) =>
   api<{ creatives?: Creative[]; alreadyGenerated?: boolean }>(`/new-ad/orders/${purchaseId}/generate`, {
     method: "POST",
   });
 
-export function launchCampaign(campaignId: string, adAccountId: string, videoOnWebsite?: boolean) {
+export function launchCampaign(campaignId: string, adAccountId: string, attestation: Attestation, videoOnWebsite?: boolean) {
   return api<{
     campaign: Campaign;
     zipCodesRequested: number;
@@ -830,7 +857,7 @@ export function launchCampaign(campaignId: string, adAccountId: string, videoOnW
     testCustomer?: boolean;
   }>(`/campaigns/${campaignId}/launch`, {
     method: "POST",
-    body: JSON.stringify({ adAccountId, videoOnWebsite }),
+    body: JSON.stringify({ adAccountId, videoOnWebsite, attestation }),
   });
 }
 
@@ -964,6 +991,8 @@ export async function uploadCreativeVideo(
   campaignId: string,
   file: File,
   limits: { minSeconds: number; maxSeconds: number },
+  /** The two ticks (api lib/compliance); the confirm step refuses without them. */
+  attestation: Attestation,
   /** Only this shape (the second upload: their other-shape version). */
   onlyAspect?: "16:9" | "9:16",
 ): Promise<Creative> {
@@ -986,7 +1015,7 @@ export async function uploadCreativeVideo(
   if (!put.ok) throw new ApiError(put.status, "upload_failed");
   return api<Creative>(`/campaigns/${campaignId}/creatives/upload`, {
     method: "POST",
-    body: JSON.stringify({ ...meta, creativeId, rightsAttested: true }),
+    body: JSON.stringify({ ...meta, creativeId, rightsAttested: true, attestation }),
   });
 }
 
