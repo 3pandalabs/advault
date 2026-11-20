@@ -1,4 +1,4 @@
-import { and, eq, isNotNull } from "drizzle-orm";
+import { and, eq, isNotNull, ne } from "drizzle-orm";
 import { db } from "../../db/index.js";
 import { campaigns } from "../../db/schema.js";
 import { unfreezeCardsForUser } from "../billing/managedCard.js";
@@ -17,7 +17,14 @@ export async function resumeAfterTopUp(userId: string): Promise<number> {
     const [waiting] = await db
       .select({ id: campaigns.id })
       .from(campaigns)
-      .where(and(eq(campaigns.userId, userId), eq(campaigns.status, "paused"), isNotNull(campaigns.pausedForFundsAt)))
+      .where(
+        and(
+          eq(campaigns.userId, userId),
+          eq(campaigns.status, "paused"),
+          isNotNull(campaigns.pausedForFundsAt),
+          ne(campaigns.complianceStatus, "taken_down"),
+        ),
+      )
       .limit(1);
     if (!waiting) return 0;
     await ensurePlanForRunning(userId);

@@ -24,6 +24,7 @@ import { categoryExtrasRoutes } from "./routes/categoryExtras.js";
 import { creativeRoutes } from "./routes/creatives.js";
 import { uploadRoutes } from "./routes/uploads.js";
 import { videoReviewRoutes } from "./routes/videoReviews.js";
+import { reportRoutes } from "./routes/reports.js";
 import { adminUserRoutes } from "./routes/adminUsers.js";
 import { newAdRoutes } from "./routes/newAds.js";
 import { startSiteOfferSweep } from "./lib/siteOffer/index.js";
@@ -152,6 +153,8 @@ await app.register(adminCashflowRoutes);
 // Admin review queue for customer-uploaded videos.
 await app.register(videoReviewRoutes);
 await app.register(adminUserRoutes);
+// "Report this ad" (public) + admin reports, takedown and wording review.
+await app.register(reportRoutes);
 // SiteVault checks AdVault logins here (same email + password on both).
 await app.register(sitevaultAuthRoutes, { db });
 // Registered last and on its own, because it is the only route in this app

@@ -211,6 +211,9 @@ export async function loadCreativeForUpload(creativeId: string) {
       campaignName: campaigns.name,
       offerDetails: campaigns.offerDetails,
       landingUrl: campaigns.landingUrl,
+      // The public "Report this ad" link and the takedown backstop (0043).
+      publicId: campaigns.publicId,
+      complianceStatus: campaigns.complianceStatus,
     })
     .from(creatives)
     .innerJoin(campaigns, eq(creatives.campaignId, campaigns.id))

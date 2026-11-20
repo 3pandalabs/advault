@@ -3,7 +3,19 @@ import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { markUserDeleted } from "../auth/deleted.js";
 import { hashSecret } from "../auth/password.js";
 import { db } from "../db/index.js";
-import { adAccounts, assets, campaigns, passwordResetTokens, sessions, subscriptions, users, wallets, youtubeChannels } from "../db/schema.js";
+import {
+  adAccounts,
+  adAttestations,
+  assets,
+  campaigns,
+  passwordResetTokens,
+  sessions,
+  subscriptions,
+  termsAcceptances,
+  users,
+  wallets,
+  youtubeChannels,
+} from "../db/schema.js";
 import { deleteObject } from "../plugins/r2.js";
 import { isMccConfigured, mccAccessToken, pauseCampaign } from "./googleAds/mcc.js";
 import { endStripePlansNow } from "./planBilling/index.js";
@@ -22,7 +34,12 @@ import { notifyOps } from "./ops/notify.js";
 //   - Google grants: YouTube channel rows and brought-your-own Google Ads rows
 //     (with their encrypted refresh tokens). AdVault-managed accounts stay:
 //     they are our MCC's children and carry our Mercury card;
-//   - uploaded photos and logos: rows and R2 objects.
+//   - uploaded photos and logos: rows and R2 objects;
+//   - the IP address and user agent on their ad_attestations and
+//     terms_acceptances rows (lib/compliance). The rows themselves STAY: they
+//     are the record of what the client confirmed about their ads, and both
+//     tables are append-only (a trigger allows exactly this one UPDATE:
+//     blanking ip_address / user_agent, nothing else).
 // Live campaigns are paused at Google first, the plan is cancelled
 // immediately, and ops get one alert listing the manual clean-up (Mercury
 // card, any wallet refund, any campaign Google refused to pause).
@@ -124,6 +141,8 @@ export async function deleteAccount(userId: string): Promise<DeleteResult> {
       .select({ customerId: adAccounts.customerId })
       .from(adAccounts)
       .where(and(eq(adAccounts.userId, userId), eq(adAccounts.isManaged, true)));
+    await tx.update(adAttestations).set({ ipAddress: null, userAgent: null }).where(eq(adAttestations.userId, userId));
+    await tx.update(termsAcceptances).set({ ipAddress: null, userAgent: null }).where(eq(termsAcceptances.userId, userId));
     const gone = await tx.delete(assets).where(eq(assets.userId, userId)).returning({ key: assets.r2Key });
     const [wallet] = await tx
       .select({ balanceMinor: wallets.balanceMinor, currencyCode: wallets.currencyCode })

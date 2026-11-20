@@ -4,6 +4,7 @@ import { GoogleOAuthError } from "../lib/googleAds/oauth.js";
 import { NoUploadChannel, uploadCredentialFor } from "../lib/youtube/channels.js";
 import { isYouTubeConfigured } from "../lib/youtube/env.js";
 import { mayPublishToYoutube } from "../lib/uploads/review.js";
+import { reportUrl } from "../lib/compliance/report.js";
 import { uploadVideo, YouTubeUploadError } from "../lib/youtube/upload.js";
 import {
   claimNextUploadJob,
@@ -59,6 +60,12 @@ async function processJob(job: YouTubeUploadJob): Promise<void> {
     return;
   }
 
+  // An ad AdVault took down (lib/compliance) is never published.
+  if (creative.complianceStatus === "taken_down") {
+    await failUploadJob(job, new Error("AdVault removed this ad"), { retryable: false });
+    return;
+  }
+
   // Already on YouTube. Uploading again would mint a second video id, overwrite
   // the stored one, and orphan the video that a live ad is already pointing at
   // — the ad at Google references the OLD asset, so the record and the reality
@@ -89,6 +96,8 @@ async function processJob(job: YouTubeUploadJob): Promise<void> {
     "",
     ...(creative.landingUrl ? [creative.landingUrl, ""] : []),
     "Produced with AdVault by 3PandaLabs.",
+    // Anyone can flag an ad to AdVault (web /report, routes/reports.ts).
+    `Report this ad: ${reportUrl(creative.publicId)}`,
   ]
     .join("\n")
     .trim();

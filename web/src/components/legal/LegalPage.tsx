@@ -30,11 +30,14 @@ export function LegalPage({
   title,
   effective,
   summary,
+  notice,
   children,
 }: {
   title: string;
   effective: string;
   summary: string;
+  /** A boxed note above the title, e.g. "Pending legal review". */
+  notice?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
@@ -54,6 +57,11 @@ export function LegalPage({
       </header>
 
       <article className="mx-auto w-full max-w-3xl px-6 pt-6 pb-20">
+        {notice && (
+          <div className="mb-6 rounded-lg border border-amber-400/40 bg-amber-400/10 px-4 py-3 text-sm leading-relaxed text-amber-100 [&_a]:text-amber-300 [&_a]:underline">
+            {notice}
+          </div>
+        )}
         <h1 className="text-3xl font-semibold tracking-tight text-balance sm:text-4xl">
           {title}
         </h1>

@@ -39,6 +39,7 @@ import { BeforeAfterEditor, completePairs, hasHalfPair, type DraftPair } from "@
 import { BEFORE_AFTER_ERRORS, beforeAfterAllowed } from "@/lib/beforeAfter";
 import { CHOSEN_PARAM, TestCustomerPicker } from "./test-customer-picker";
 import { BadgePicker, EMPTY_BADGES, type BadgeDraft } from "@/components/BadgePicker";
+import { AttestationChecks, useAttestation } from "@/components/AttestationChecks";
 import { CategoryExtrasFields, NeighborPriceField } from "@/components/CategoryExtrasFields";
 import { categoryKey } from "@/lib/categories/key";
 import { BADGE_DETAIL, badgeOptions, badgeViolation } from "@/lib/categories/badges";
@@ -182,6 +183,11 @@ export default function NewCampaignPage() {
   // approved on upload.
   const [source, setSource] = useState<"photos" | "video">("photos");
   const [videoFile, setVideoFile] = useState<File | null>(null);
+  // Admins / internal: their own cut in the OTHER shape too (optional),
+  // uploaded after the first; skipped = AdVault makes it from the first.
+  const [secondVideoFile, setSecondVideoFile] = useState<File | null>(null);
+  // The two required ticks (claims true + media rights, api lib/compliance).
+  const [ticks, setTicks, attestation] = useAttestation();
   const [rightsAttested, setRightsAttested] = useState(false);
   const useVideo = source === "video";
   // Must match api/src/lib/uploads/policy.ts.
@@ -373,6 +379,10 @@ export default function NewCampaignPage() {
   }
 
   async function onFinish() {
+    if (!attestation) {
+      setError("Tick both boxes to confirm your ad is truthful and that you have the rights to your photos and videos.");
+      return;
+    }
     setBusy(true);
     setError(null);
 
@@ -440,7 +450,11 @@ export default function NewCampaignPage() {
         // The upload replaces generation entirely: generating as well would put
         // AdVault-made videos into the same ad as the uploaded one.
         try {
-          await uploadCreativeVideo(campaign.id, videoFile, videoLimits);
+          const first = await uploadCreativeVideo(campaign.id, videoFile, videoLimits, attestation!);
+          if (secondVideoFile) {
+            const other = first.aspectRatio === "9:16" ? "16:9" : "9:16";
+            await uploadCreativeVideo(campaign.id, secondVideoFile, videoLimits, attestation!, other);
+          }
         } catch (err) {
           const code = err instanceof ApiError ? err.code : err instanceof Error ? err.message : "error";
           // The campaign exists; send them to it, where the upload card retries.
@@ -450,14 +464,14 @@ export default function NewCampaignPage() {
         }
       } else if (newAdPrice) {
         // Pay first; the campaign page makes the ad once the payment lands.
-        const { checkout } = await orderNewAd(campaign.id, adChoices());
+        const { checkout } = await orderNewAd(campaign.id, { ...adChoices(), attestation: attestation! });
         if (checkout.redirectUrl) {
           window.location.assign(checkout.redirectUrl);
           return;
         }
       } else {
         setWritingSince(startedNow());
-        await generateCreatives(campaign.id, adChoices());
+        await generateCreatives(campaign.id, { ...adChoices(), attestation: attestation! });
       }
       router.push(`/dashboard/campaigns/${campaign.id}`);
     } catch (err) {
@@ -702,11 +716,38 @@ export default function NewCampaignPage() {
               </p>
             )}
           </div>
+          {videoFile && (
+            <div className="mt-5 rounded-md border border-white/10 p-3">
+              <p className="text-sm text-zinc-200">Your video in the other shape (optional)</p>
+              <p className="mt-1 text-xs text-zinc-400">
+                Vertical 9:16 for Shorts and widescreen 16:9 for YouTube. If you skip it, we make the other shape
+                from your video.
+              </p>
+              <label className="mt-3 inline-flex cursor-pointer items-center rounded-lg border border-white/15 bg-white/5 px-4 py-2 text-sm hover:bg-white/10">
+                <input
+                  type="file"
+                  accept="video/mp4"
+                  className="hidden"
+                  onChange={(e) => setSecondVideoFile(e.target.files?.[0] ?? null)}
+                />
+                {secondVideoFile ? "Choose a different video" : "Add the other shape"}
+              </label>
+              {secondVideoFile && (
+                <p className="mt-2 text-sm text-zinc-300">
+                  {secondVideoFile.name} · {(secondVideoFile.size / (1024 * 1024)).toFixed(1)} MB{" "}
+                  <button type="button" className="ml-2 text-xs underline" onClick={() => setSecondVideoFile(null)}>
+                    Remove
+                  </button>
+                </p>
+              )}
+            </div>
+          )}
+          <AttestationChecks className="mt-5" value={ticks} onChange={setTicks} disabled={busy} />
           <div className="mt-6 flex justify-between">
             <Button variant="ghost" onClick={() => setStep(1)}>
               Back
             </Button>
-            <Button onClick={onFinish} disabled={busy || !canAdvanceFrom1 || !canAdvanceFrom2}>
+            <Button onClick={onFinish} disabled={busy || !canAdvanceFrom1 || !canAdvanceFrom2 || !attestation}>
               {busy ? "Creating and uploading…" : "Create campaign and upload video"}
             </Button>
           </div>
@@ -1428,11 +1469,13 @@ export default function NewCampaignPage() {
             </div>
           )}
 
+          <AttestationChecks className="mt-6" value={ticks} onChange={setTicks} disabled={busy} />
+
           <div className="mt-6 flex justify-between">
             <Button variant="ghost" onClick={() => setStep(2)}>
               Back
             </Button>
-            <Button onClick={onFinish} disabled={busy || !extrasReady}>
+            <Button onClick={onFinish} disabled={busy || !extrasReady || !attestation}>
               {busy ? "Creating…" : freeAd ? "Make my free ad" : newAdPrice ? `Pay ${newAdPrice} and make my ad` : "Generate my ads"}
             </Button>
           </div>

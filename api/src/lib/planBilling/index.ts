@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, isNotNull, isNull, or } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, isNull, ne, or } from "drizzle-orm";
 import { db } from "../../db/index.js";
 import { campaigns, subscriptions, users } from "../../db/schema.js";
 import { notifyOps } from "../ops/notify.js";
@@ -90,6 +90,8 @@ export async function hasAdWaitingForBudget(userId: string, now = new Date()): P
         eq(campaigns.status, "paused"),
         isNotNull(campaigns.pausedForFundsAt),
         isNotNull(campaigns.googleCampaignResourceName),
+        // A taken-down ad (lib/compliance) is never coming back.
+        ne(campaigns.complianceStatus, "taken_down"),
       ),
     );
   return rows.some((c) => !c.endsOn || c.endsOn >= todayIso(now));

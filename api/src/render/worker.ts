@@ -333,6 +333,11 @@ async function synthesizeVoiceover(args: {
 async function processJob(job: RenderJob): Promise<void> {
   const creative = await loadCreativeForRender(job.creativeId);
   if (!creative) throw new Error(`Creative ${job.creativeId} no longer exists`);
+  if (creative.complianceStatus === "taken_down") {
+    // AdVault removed this ad: fail it for good, no retry.
+    await failJob({ ...job, attempts: job.maxAttempts }, new Error("AdVault removed this ad"));
+    return;
+  }
   if (creative.kind === "upload" && isReformatCopy(creative.renderInfo)) return processReformat(job, creative);
 
   const script = adScriptSchema.parse(creative.script);

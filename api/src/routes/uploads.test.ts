@@ -11,6 +11,9 @@ import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest }
 import { serializerCompiler, validatorCompiler } from "fastify-type-provider-zod";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import * as schema from "../db/schema.js";
+import { ATTESTATION_VERSION } from "../lib/compliance/texts.js";
+
+const ATTEST = { accuracy: true, media: true, version: ATTESTATION_VERSION };
 
 const holder = vi.hoisted(() => {
   const dummy: Record<string, string> = {
@@ -111,7 +114,7 @@ const confirm = (user: string, campaignId: string, meta: object, creativeId = ra
     method: "POST",
     url: `/campaigns/${campaignId}/creatives/upload`,
     headers: headers(user),
-    payload: { ...meta, creativeId, rightsAttested: true },
+    payload: { ...meta, creativeId, rightsAttested: true, attestation: ATTEST },
   });
 
 type Row = { id: string; aspect_ratio: string; render_status: string; engine: string | null; review_status: string | null };

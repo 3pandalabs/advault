@@ -1,4 +1,4 @@
-import { and, eq, isNotNull } from "drizzle-orm";
+import { and, eq, isNotNull, ne } from "drizzle-orm";
 import { db } from "../../db/index.js";
 import { adAccounts, campaigns } from "../../db/schema.js";
 import { enableCampaign, isMccConfigured, mccAccessToken } from "../googleAds/mcc.js";
@@ -42,6 +42,8 @@ export async function resumeFundedCampaigns(userId: string): Promise<number> {
           eq(campaigns.userId, userId),
           eq(campaigns.status, "paused"),
           isNotNull(campaigns.pausedForFundsAt),
+          // Never switch back on an ad AdVault took down (lib/compliance).
+          ne(campaigns.complianceStatus, "taken_down"),
           eq(adAccounts.billingMode, "platform"),
           isNotNull(campaigns.googleCampaignResourceName),
           isNotNull(adAccounts.customerId),

@@ -6,6 +6,8 @@ import { db } from "../db/index.js";
 import { assets, campaigns, creatives } from "../db/schema.js";
 import { loadOwnedCampaign, loadOwnedCreative } from "../lib/ownership.js";
 import { generateForCampaign } from "../lib/creatives/generate.js";
+import { assetKeysFor, passComplianceGate, recordAttestation, reevaluateCompliance } from "../lib/compliance/index.js";
+import { takenDownRefusal } from "../lib/compliance/policy.js";
 import { newAdGate, returnRender } from "../lib/newAd/index.js";
 import { adScriptSchema } from "../lib/script/schema.js";
 import { enqueueRender } from "../render/jobs.js";
@@ -32,6 +34,9 @@ export async function creativeRoutes(app: FastifyInstance) {
           peopleAssetIds: z.array(z.string().uuid()).max(5).optional(),
           portraitAssetId: z.string().uuid().nullish(),
           aspectRatios: z.array(z.enum(ASPECT_RATIOS)).min(1).max(2).default(["16:9", "9:16"]),
+          // The client's two ticks (lib/compliance); checked by the gate so a
+          // missing one is 400 attestation_required, not invalid_request.
+          attestation: z.unknown().optional(),
         }),
       },
     },
@@ -49,6 +54,9 @@ export async function creativeRoutes(app: FastifyInstance) {
       if (campaign.status === "live") {
         return reply.code(409).send({ error: "campaign_is_live" });
       }
+      // Taken down, terms, then the two ticks (lib/compliance). Before the
+      // redo is spent.
+      if (!(await passComplianceGate(req, reply, campaign, { attestation: (req.body as { attestation?: unknown }).attestation, terms: true }))) return;
 
       // Every ad is a paid one-off (lib/newAd). Generating again spends one of
       // the paid ad's redos; with none left this is a 402 for another $10 ad.
@@ -68,6 +76,13 @@ export async function creativeRoutes(app: FastifyInstance) {
         if (gate.renderFrom) await returnRender(gate.renderFrom);
         return reply.code(result.status).send(result.body);
       }
+      await recordAttestation({
+        req,
+        campaign,
+        action: "generate",
+        creativeId: result.creatives[0]?.id ?? null,
+        assetKeys: await assetKeysFor(req.userId!, body.assetIds),
+      });
       return reply.code(202).send({ creatives: result.creatives });
     },
   );
@@ -78,12 +93,18 @@ export async function creativeRoutes(app: FastifyInstance) {
   // ad's redos (newAdGate); 402 new_ad_payment_required when none are left.
   app.post(
     "/campaigns/:campaignId/creatives/redo",
-    { schema: { params: z.object({ campaignId: z.string().uuid() }) } },
+    {
+      schema: {
+        params: z.object({ campaignId: z.string().uuid() }),
+        body: z.object({ attestation: z.unknown().optional() }).optional(),
+      },
+    },
     async (req, reply) => {
       const { campaignId } = req.params as { campaignId: string };
       const campaign = await loadOwnedCampaign(campaignId, req.userId!, reply);
       if (!campaign) return;
       if (campaign.status === "live") return reply.code(409).send({ error: "campaign_is_live" });
+      if (!(await passComplianceGate(req, reply, campaign, { attestation: (req.body as { attestation?: unknown } | undefined)?.attestation, terms: true }))) return;
 
       const current = await db
         .select()
@@ -140,6 +161,8 @@ export async function creativeRoutes(app: FastifyInstance) {
       await Promise.all(
         old.flatMap((o) => [o.videoKey, o.thumbnailKey]).filter((k): k is string => Boolean(k)).map((k) => deleteObject(k).catch(() => undefined)),
       );
+      // After the old versions are gone, so the snapshot is the new ad.
+      await recordAttestation({ req, campaign, action: "redo", creativeId: result.creatives[0]?.id ?? null, assetKeys: keys });
       return reply.code(202).send({ creatives: result.creatives });
     },
   );
@@ -195,6 +218,9 @@ export async function creativeRoutes(app: FastifyInstance) {
         });
       }
 
+      const removed = takenDownRefusal(owned.campaign);
+      if (removed) return reply.code(removed.status).send(removed.body);
+
       const { script: edited } = req.body as { script: z.infer<typeof adScriptSchema> };
       // The before & after keys are AdVault's, never the editor's: an edited
       // script could otherwise point the renderer at any R2 key (someone
@@ -238,6 +264,8 @@ export async function creativeRoutes(app: FastifyInstance) {
         .returning();
 
       await enqueueRender(creativeId);
+      // Edited copy is ad text: a new REVIEW phrase sets needs_review again.
+      await reevaluateCompliance(owned.creative.campaignId);
       return reply.code(202).send(updated);
     },
   );
@@ -270,6 +298,8 @@ export async function creativeRoutes(app: FastifyInstance) {
       if (owned.creative.renderStatus !== "failed") {
         return reply.code(409).send({ error: "not_failed" });
       }
+      const takenDown = takenDownRefusal(owned.campaign);
+      if (takenDown) return reply.code(takenDown.status).send(takenDown.body);
 
       // Same reasoning as the edit route: a live ad points at a specific
       // YouTube video, and re-rendering would leave it pointing at the old one.

@@ -20,6 +20,7 @@ import type { Realty } from "../lib/realty/index.js";
 import type { BeforeAfterPair } from "../lib/beforeAfter/policy.js";
 import type { BadgeSelection } from "../lib/categories/badges.js";
 import type { CategoryExtras } from "../lib/categories/extras.js";
+import type { ComplianceReason } from "../lib/compliance/claimRules.js";
 
 // Enum-ish columns are `text` + a CHECK constraint rather than pgEnum, matching
 // the RentVault and RsvpVault schemas. Adding a value to a pgEnum needs its own
@@ -622,11 +623,35 @@ export const campaigns = pgTable(
     offerExpiresAt: timestamp("offer_expires_at", { withTimezone: true }),
     offerExpiredAt: timestamp("offer_expired_at", { withTimezone: true }),
 
+    // Client attestation & compliance (migration 0043, lib/compliance).
+    // public_id: the unguessable id in the public "Report this ad" link
+    // (/report?ad=<publicId>); never the internal uuid.
+    publicId: text("public_id")
+      .notNull()
+      .default(sql`replace(gen_random_uuid()::text, '-', '')`),
+    // ok | needs_review (a REVIEW phrase from lib/compliance/claimRules: the
+    // ad can be made, launch refuses) | taken_down (an admin removed it:
+    // nothing may make, launch or resume it). NOT campaigns.status, which
+    // billing and the syncs depend on.
+    complianceStatus: text("compliance_status")
+      .$type<"ok" | "needs_review" | "taken_down">()
+      .notNull()
+      .default("ok"),
+    // The flagged phrases [{id, phrase, reason, field, approved}].
+    complianceReasons: jsonb("compliance_reasons").$type<ComplianceReason[]>(),
+    complianceReviewedBy: uuid("compliance_reviewed_by"),
+    complianceReviewedAt: timestamp("compliance_reviewed_at", { withTimezone: true }),
+    takenDownAt: timestamp("taken_down_at", { withTimezone: true }),
+    takenDownBy: uuid("taken_down_by"),
+    takenDownReason: text("taken_down_reason"),
+
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
     index("idx_campaigns_user").on(t.userId),
+    uniqueIndex("uq_campaigns_public_id").on(t.publicId),
+    check("campaigns_compliance_status_check", sql`${t.complianceStatus} in ('ok','needs_review','taken_down')`),
     index("idx_campaigns_status").on(t.status),
     check(
       "campaigns_status_check",
@@ -690,6 +715,9 @@ export const creatives = pgTable(
     // What the last render used (migration 0017): { engine, motionClips,
     // motionReused, motionProvider, voice, at }. Written by render/worker.ts.
     renderInfo: jsonb("render_info").$type<Record<string, unknown>>(),
+    // The exact input the script writer got (migration 0043): business fields,
+    // offer, confirmedFacts, photo keys, prompt version. Never presigned URLs.
+    generationInputs: jsonb("generation_inputs").$type<Record<string, unknown>>(),
 
     videoKey: text("video_key"),
     thumbnailKey: text("thumbnail_key"),
@@ -1393,4 +1421,63 @@ export const vendorBalanceSnapshots = pgTable(
     takenAt: timestamp("taken_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("idx_vendor_balance_snapshots_vendor_taken").on(t.vendor, t.takenAt)],
+);
+
+// ---------------------------------------------------------------------------
+// Client attestation & compliance (migration 0043, lib/compliance).
+//
+// ad_attestations and terms_acceptances are APPEND-ONLY: a trigger refuses
+// UPDATE/DELETE/TRUNCATE, except an UPDATE that only blanks ip_address /
+// user_agent (account deletion). App code only inserts. No foreign keys on
+// purpose: the rows outlive the campaign, creative or purchase they describe.
+// ---------------------------------------------------------------------------
+
+export const adAttestations = pgTable(
+  "ad_attestations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    campaignId: uuid("campaign_id"),
+    creativeId: uuid("creative_id"),
+    purchaseId: uuid("purchase_id"),
+    userId: uuid("user_id").notNull(),
+    action: text("action").$type<"order" | "generate" | "redo" | "upload" | "launch" | "website">().notNull(),
+    attestationTextVersion: text("attestation_text_version").notNull(),
+    exactTextSnapshot: text("exact_text_snapshot").notNull(),
+    ipAddress: text("ip_address"),
+    userAgent: text("user_agent"),
+    contentSnapshot: jsonb("content_snapshot").$type<Record<string, unknown>>().notNull().default({}),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("idx_ad_attestations_campaign").on(t.campaignId, t.createdAt), index("idx_ad_attestations_user").on(t.userId)],
+);
+
+export const termsAcceptances = pgTable(
+  "terms_acceptances",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id").notNull(),
+    version: text("version").notNull(),
+    ipAddress: text("ip_address"),
+    userAgent: text("user_agent"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("idx_terms_acceptances_user").on(t.userId, t.createdAt)],
+);
+
+export const adReports = pgTable(
+  "ad_reports",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    campaignId: uuid("campaign_id").references(() => campaigns.id, { onDelete: "set null" }),
+    reason: text("reason").notNull(),
+    details: text("details"),
+    reporterEmail: text("reporter_email"),
+    ipAddress: text("ip_address"),
+    userAgent: text("user_agent"),
+    status: text("status").$type<"open" | "dismissed" | "actioned">().notNull().default("open"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    handledBy: uuid("handled_by"),
+    handledAt: timestamp("handled_at", { withTimezone: true }),
+  },
+  (t) => [index("idx_ad_reports_status").on(t.status, t.createdAt), index("idx_ad_reports_ip").on(t.ipAddress, t.createdAt)],
 );

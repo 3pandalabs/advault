@@ -47,11 +47,12 @@ export const authPlugin = fp(async (fastify) => {
 });
 
 export async function requireAuth(req: FastifyRequest, reply: FastifyReply) {
+  // `return reply`: in an async hook a send without it lets the handler run too.
   if (!req.userId) {
-    reply.code(401).send({ error: "not_authenticated" });
+    return reply.code(401).send({ error: "not_authenticated" });
   } else if (isUserDeleted(req.userId)) {
     // An access token issued before the account was deleted (15-minute TTL).
-    reply.code(401).send({ error: "account_deleted" });
+    return reply.code(401).send({ error: "account_deleted" });
   }
 }
 
@@ -60,6 +61,7 @@ export async function requireAdmin(req: FastifyRequest, reply: FastifyReply) {
     return reply.code(401).send({ error: "not_authenticated" });
   }
   if (req.userRole !== "admin") {
-    reply.code(403).send({ error: "admin_role_required" });
+    // `return reply`, or Fastify runs the admin handler after the 403.
+    return reply.code(403).send({ error: "admin_role_required" });
   }
 }

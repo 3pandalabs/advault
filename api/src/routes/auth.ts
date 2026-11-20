@@ -11,6 +11,8 @@ import { deleteAccount, deletionPreview } from "../lib/accountDeletion.js";
 import { confirmPasswordReset, requestPasswordReset } from "../lib/passwordReset/index.js";
 import { mayToggleTestMode } from "../lib/testMode/policy.js";
 import { env } from "../env.js";
+import { acceptedTermsVersion, recordTermsAcceptance } from "../lib/compliance/index.js";
+import { TERMS_VERSION } from "../lib/compliance/texts.js";
 
 // Password reset (2026-11-18): email a single-use, 30-minute link, then set a
 // new password. Reuses lib/passwordReset — the same core the SiteVault-proxied
@@ -37,6 +39,10 @@ export async function authRoutes(app: FastifyInstance) {
           displayName: z.string().min(1).max(120).optional(),
           businessName: z.string().min(1).max(160).optional(),
           businessCategory: z.string().min(1).max(80).optional(),
+          // The signup checkbox "I agree to the Terms of Service" sends the
+          // version it showed (lib/compliance). Recorded in terms_acceptances
+          // when it is the current one; otherwise the dashboard asks again.
+          termsVersion: z.string().max(40).optional(),
         }),
       },
     },
@@ -45,6 +51,7 @@ export async function authRoutes(app: FastifyInstance) {
         displayName?: string;
         businessName?: string;
         businessCategory?: string;
+        termsVersion?: string;
       };
 
       const [user] = await db
@@ -64,6 +71,7 @@ export async function authRoutes(app: FastifyInstance) {
       // enumeration oracle. An existing address gets the same generic answer a
       // caller would get for any rejected registration.
       if (!user) return reply.code(409).send({ error: "registration_failed" });
+      if (body.termsVersion === TERMS_VERSION) await recordTermsAcceptance(user.id, TERMS_VERSION, req);
 
       return reply.code(201).send({
         accessToken: signAccessToken({ sub: user.id, role: user.role as "advertiser" | "admin" }),
@@ -225,8 +233,34 @@ export async function authRoutes(app: FastifyInstance) {
       .limit(1);
     if (!user) return reply.code(404).send({ error: "not_found" });
     const { sitevaultFirstUsedAt, testOwnerId, ...rest } = user;
-    return { ...rest, usesSitevault: sitevaultFirstUsedAt !== null, isTestCustomer: testOwnerId !== null };
+    // Terms of Service (lib/compliance): the dashboard blocks on a re-accept
+    // screen while accepted !== current.
+    const accepted = await acceptedTermsVersion(req.userId!);
+    return {
+      ...rest,
+      usesSitevault: sitevaultFirstUsedAt !== null,
+      isTestCustomer: testOwnerId !== null,
+      terms: { accepted, current: TERMS_VERSION, ok: accepted === TERMS_VERSION },
+    };
   });
+
+  // Accept the current Terms of Service (signup checkbox for older accounts,
+  // or the dashboard's re-accept screen after TERMS_VERSION changes). Appends
+  // to terms_acceptances with IP and user agent; never updates a row.
+  app.post(
+    "/auth/me/terms",
+    { preHandler: requireAuth, schema: { body: z.object({ version: z.string().max(40) }) } },
+    async (req, reply) => {
+      const { version } = req.body as { version: string };
+      if (version !== TERMS_VERSION) {
+        return reply.code(409).send({ error: "terms_version_mismatch", current: TERMS_VERSION });
+      }
+      if ((await acceptedTermsVersion(req.userId!)) !== TERMS_VERSION) {
+        await recordTermsAcceptance(req.userId!, TERMS_VERSION, req);
+      }
+      return { terms: { accepted: TERMS_VERSION, current: TERMS_VERSION, ok: true } };
+    },
+  );
 
   app.patch(
     "/auth/me",

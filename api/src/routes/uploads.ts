@@ -11,6 +11,7 @@ import { creatives } from "../db/schema.js";
 import { env } from "../env.js";
 import { notifyOps } from "../lib/ops/notify.js";
 import { loadOwnedCampaign, loadOwnedCreative } from "../lib/ownership.js";
+import { passComplianceGate, recordAttestation } from "../lib/compliance/index.js";
 import {
   MAX_UPLOAD_VIDEO_BYTES,
   UPLOAD_VIDEO_CONTENT_TYPE,
@@ -61,6 +62,8 @@ const confirmSchema = metaSchema.extend({
   // "I own or have the rights to everything in this video, including the
   // music. No copyrighted music." Required; who and when is stored.
   rightsAttested: z.literal(true),
+  // The client's two ticks (lib/compliance): claims true + media rights.
+  attestation: z.unknown().optional(),
 });
 
 type Db = typeof db;
@@ -102,6 +105,8 @@ export async function uploadRoutes(app: FastifyInstance) {
       const campaign = await loadOwnedCampaign(campaignId, req.userId!, reply);
       if (!campaign) return;
       if (campaign.status === "live") return reply.code(409).send({ error: "campaign_is_live" });
+      // A removed ad takes no new videos (the ticks are checked on confirm).
+      if (!(await passComplianceGate(req, reply, campaign, { attestation: undefined, requireAttestation: false }))) return;
 
       // Checked here too so a bad file is refused before it is uploaded.
       const check = checkUploadedVideo(req.body as z.infer<typeof metaSchema>, uploadLimitsFor(await customerFlowRole(req)));
@@ -126,6 +131,7 @@ export async function uploadRoutes(app: FastifyInstance) {
       const campaign = await loadOwnedCampaign(campaignId, req.userId!, reply);
       if (!campaign) return;
       if (campaign.status === "live") return reply.code(409).send({ error: "campaign_is_live" });
+      if (!(await passComplianceGate(req, reply, campaign, { attestation: body.attestation }))) return;
 
       const check = checkUploadedVideo(body, uploadLimitsFor(await customerFlowRole(req)));
       if (!check.ok) return reply.code(400).send({ error: check.error });
@@ -179,6 +185,7 @@ export async function uploadRoutes(app: FastifyInstance) {
       });
       if ("error" in result) return reply.code(409).send({ error: result.error });
       const { row, replaced } = result;
+      await recordAttestation({ req, campaign, action: "upload", creativeId: row.id, assetKeys: [key] });
       if (replaced.length > 0) {
         await deleteUploadObjects(replaced);
         req.log.info({ campaignId, creativeId: row.id, replaced: replaced.map((r) => r.id) }, "owner video replaced the AdVault copy");

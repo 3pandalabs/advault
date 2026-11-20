@@ -10,6 +10,8 @@ import { realtySchema } from "../lib/realty/index.js";
 import { claimBlock } from "../lib/categories/claims.js";
 import { categoryKey } from "../lib/categories/key.js";
 import { markAppUsed } from "../lib/sharedAccount/index.js";
+import { reevaluateCompliance } from "../lib/compliance/index.js";
+import { takenDownRefusal } from "../lib/compliance/policy.js";
 import { beforeAfterInputSchema } from "../lib/beforeAfter/policy.js";
 import { badgesInputSchema, checkBadges } from "./badges.js";
 import { categoryExtrasSchema, checkCategoryExtras } from "./categoryExtras.js";
@@ -198,7 +200,9 @@ export async function campaignRoutes(app: FastifyInstance) {
     // Shared account: the first campaign is the account's first AdVault use
     // (lib/sharedAccount). Never fails the create.
     await markAppUsed(db, req.userId!, "advault").catch((err) => req.log.warn({ err }, "advault first-use stamp failed"));
-    return reply.code(201).send(campaign);
+    // REVIEW phrases (lib/compliance/claimRules) -> needs_review; launch waits.
+    const checked = await reevaluateCompliance(campaign!.id);
+    return reply.code(201).send(checked ?? campaign);
   });
 
   app.get("/campaigns", async (req) => {
@@ -299,7 +303,9 @@ export async function campaignRoutes(app: FastifyInstance) {
         })
         .where(eq(campaigns.id, campaignId))
         .returning();
-      return updated;
+      // An edit that brings in a new REVIEW phrase sets needs_review again,
+      // even after an admin approved the earlier wording (lib/compliance).
+      return (await reevaluateCompliance(campaignId)) ?? updated;
     },
   );
 
@@ -317,6 +323,9 @@ export async function campaignRoutes(app: FastifyInstance) {
       if (campaign.status === "live") {
         return reply.code(409).send({ error: "campaign_is_live" });
       }
+      // A removed ad stays on record (its reports point at it).
+      const removed = takenDownRefusal(campaign);
+      if (removed) return reply.code(removed.status).send(removed.body);
 
       await db.delete(campaigns).where(eq(campaigns.id, campaignId));
       return reply.code(204).send();

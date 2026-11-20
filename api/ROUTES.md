@@ -61,6 +61,11 @@ YouTube channel. Already-issued access tokens get 401 `account_deleted`
 (`auth/deleted.ts`) and expire within 15 minutes regardless; the address can
 sign up again as a new account.
 
+Compliance records (migration 0043): `ad_attestations` and `terms_acceptances`
+rows are KEPT (the record of what the client confirmed), but their
+`ip_address` and `user_agent` are blanked in the same transaction, the one
+UPDATE the append-only trigger allows.
+
 No password reset — the shared mailer has no verified sender for this app. See
 CLAUDE.md.
 
@@ -161,6 +166,58 @@ Server to server from the SiteVault Worker, bearer `SITEVAULT_INTERNAL_TOKEN`
 Launch answers **409 `video_pending_review`** while any of the campaign's uploads awaits review (dry run included), and **409 `video_rejected`** when rejected uploads were the only videos; rejected uploads are otherwise left out of the ad.
 
 Campaign rows also carry Google's own review of the launched ad — `googleAdApprovalStatus`, `googleAdReviewStatus` (raw `ad_group_ad.policy_summary` enums), `googleAdPolicyTopics`, `googleAdPolicyCheckedAt` — copied hourly by the renderer.
+
+## Client attestation & compliance (2026-11-20, migration 0043, `lib/compliance`)
+
+**The two ticks.** `POST /campaigns/:id/new-ad/order`, `POST
+/campaigns/:id/creatives/generate`, `.../creatives/redo`, `.../creatives/upload`
+(confirm) and `POST /campaigns/:id/launch` (dry run included) need
+`attestation: {accuracy: true, media: true, version}` (`ATTESTATION_VERSION`),
+else 400 `attestation_required` (the order refuses BEFORE any purchase row or
+Stripe call). Admins are not exempt. Each accepted press appends an
+`ad_attestations` row (action, exact text + version, IP = `cf-connecting-ip`
+else `req.ip`, user agent, content snapshot: business fields, offer, badges,
+extras, before/after, asset keys, creatives with scripts and video keys). The
+paid order's later `POST /new-ad/orders/:id/generate` asks for nothing new and
+records a `generate` row under the ORDER's text. `POST /campaigns/:id/website`
+records its ownership tick as action `website`.
+
+**Terms.** `GET /auth/me` returns `terms {accepted, current, ok}`; `POST
+/auth/me/terms {version}` (409 `terms_version_mismatch` unless current) appends
+to `terms_acceptances`; `POST /auth/register` records it when the body carries
+`termsVersion` = current. Order / generate / redo / launch answer 409
+`terms_not_accepted` until the current `TERMS_VERSION` is accepted.
+
+**Wording review.** POST/PATCH `/campaigns`, `PUT /campaigns/:id/offer`, script
+edits and every generation re-check the ad text against the REVIEW rules
+(`lib/compliance/claimRules.ts`) into `campaigns.compliance_status` /
+`compliance_reasons`. `needs_review`: the ad can be made, launch answers 409
+`needs_review {reasons}`.
+
+**Takedown.** `compliance_status = taken_down`: launch, resume, generate, redo,
+new-ad order, the paid-order generate, script edit, retry and upload answer 409
+`ad_taken_down`; DELETE of the campaign too (it stays on record).
+
+Public (no session):
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/reports/ad/:publicId` | `{status: "active", businessName}` / `{status: "removed"}` / 404 |
+| POST | `/reports` | `{ad, reason, details?, email?}`; 201; 404 unknown; 409 `ad_removed`; 429 after 5 per IP per hour; pings ops |
+
+Admin (session with admin JWT role AND `users.role = admin`):
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/admin/reports?status=open\|dismissed\|actioned` | report queue with campaign + owner |
+| POST | `/admin/reports/:id/dismiss` | 409 `not_open` |
+| POST | `/admin/campaigns/:id/takedown` | `{reason}`: Google pause (managed accounts), YouTube videos private (needs the `youtube` scope; else ops are told), open reports actioned, ops alert; 409 `already_taken_down` |
+| GET | `/admin/compliance` | `{needsReview, takenDown}` |
+| POST | `/admin/compliance/:id/approve` | every current phrase approved, status ok; 409 `not_needs_review` |
+
+**Follow-up (not built):** a takedown does NOT remove the launch video already
+pushed to the customer's SiteVault website (`lib/siteVideo`); the ops alert says
+to remove it by hand. SiteVault needs a delete-video internal route first.
 
 ## Google Ads
 

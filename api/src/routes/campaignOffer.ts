@@ -6,6 +6,7 @@ import { db } from "../db/index.js";
 import { campaigns } from "../db/schema.js";
 import { loadOwnedCampaign } from "../lib/ownership.js";
 import { claimBlock, claimFlags } from "../lib/categories/claims.js";
+import { reevaluateCompliance } from "../lib/compliance/index.js";
 import { categoryKey } from "../lib/categories/key.js";
 
 // The campaign's offer (the text the script writer turns into the ad) and its
@@ -51,7 +52,8 @@ export async function campaignOfferRoutes(app: FastifyInstance) {
       .where(eq(campaigns.id, campaign.id))
       .returning();
     return {
-      campaign: updated,
+      // REVIEW phrases set needs_review (lib/compliance).
+      campaign: (await reevaluateCompliance(campaign.id)) ?? updated,
       liveAdUnchanged: Boolean(campaign.googleCampaignResourceName),
       warnings: claimFlags(key, body.offerDetails),
     };

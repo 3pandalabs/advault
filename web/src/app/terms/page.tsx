@@ -33,6 +33,14 @@ export default function TermsPage() {
       title="Terms of Service"
       effective="19 November 2026"
       summary="You pay us to make your ads and, on the managed plan, to run them. You are responsible for the offers you advertise and for honouring them. We do not guarantee results, and nothing here is a promise that advertising will work."
+      notice={
+        <>
+          <strong>Pending legal review.</strong> These terms are in force, and are being
+          reviewed by a lawyer; we will ask you to accept them again if anything changes. What
+          you may advertise, and what you confirm about every ad, is in our{" "}
+          <Link href="/content-policy">Content Policy</Link>, which is part of these terms.
+        </>
+      }
     >
       <h2>1. Who this agreement is with</h2>
       <p>
@@ -395,7 +403,8 @@ export default function TermsPage() {
 
       <h2>19. The rest</h2>
       <p>
-        These terms, with the <Link href="/privacy">Privacy Policy</Link>, are the whole
+        These terms, with the <Link href="/content-policy">Content Policy</Link> and the{" "}
+        <Link href="/privacy">Privacy Policy</Link>, are the whole
         agreement between us. If a court finds part of them unenforceable, the rest still
         stands. Not enforcing something once does not waive it. You may not transfer this
         agreement without our consent; we may transfer it if the business is sold, on

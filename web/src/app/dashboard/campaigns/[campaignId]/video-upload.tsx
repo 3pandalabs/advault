@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 import { ApiError, uploadCreativeVideo } from "@/lib/api/browser";
 import { Card, CardDescription, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { AttestationChecks, useAttestation } from "@/components/AttestationChecks";
 
 // "Use my own video": attach a finished MP4 to this campaign instead of (or
 // as well as) the ad AdVault makes. A customer's upload is reviewed by
@@ -19,6 +20,7 @@ const ATTESTATION =
   "I own or have the rights to everything in this video, including the music. No copyrighted music.";
 
 const SHAPE_LABEL = { "16:9": "widescreen 16:9", "9:16": "vertical 9:16" } as const;
+const SHAPE_TITLE = { "16:9": "Widescreen 16:9 (YouTube)", "9:16": "Vertical 9:16 (Shorts)" } as const;
 
 function errorText(code: string, limits: { minSeconds: number; maxSeconds: number }, onlyAspect?: "16:9" | "9:16"): string {
   const known: Record<string, string> = {
@@ -45,10 +47,13 @@ export function VideoUpload({
   isAdmin,
   onUploaded,
   onlyAspect,
+  optional,
 }: {
   campaignId: string;
   isAdmin: boolean;
   onUploaded: () => void;
+  /** "Optional: we make it from your other video if you skip." */
+  optional?: boolean;
   /**
    * The second upload (admins and internal accounts, 2026-11-19): their own
    * video in the shape they haven't uploaded. It replaces AdVault's blurred
@@ -56,19 +61,22 @@ export function VideoUpload({
    */
   onlyAspect?: "16:9" | "9:16";
 }) {
-  const [open, setOpen] = useState(false);
+  // A shape slot (onlyAspect) is shown open, side by side with the other one.
+  const [open, setOpen] = useState(Boolean(onlyAspect));
   const [attested, setAttested] = useState(false);
+  // The two required ticks (api lib/compliance) on top of the rights tick.
+  const [ticks, setTicks, attestation] = useAttestation();
   const [busy, setBusy] = useState(false);
   const input = useRef<HTMLInputElement>(null);
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
   const limits = isAdmin ? ADMIN_LIMITS : CUSTOMER_LIMITS;
 
   async function onFile(file: File | undefined) {
-    if (!file || !attested) return;
+    if (!file || !attested || !attestation) return;
     setBusy(true);
     setMessage(null);
     try {
-      const creative = await uploadCreativeVideo(campaignId, file, limits, onlyAspect);
+      const creative = await uploadCreativeVideo(campaignId, file, limits, attestation, onlyAspect);
       setMessage({
         ok: true,
         text:
@@ -77,6 +85,7 @@ export function VideoUpload({
             : `Uploaded as a ${creative.aspectRatio} video. Publishing to YouTube…`,
       });
       setAttested(false);
+      setTicks({ accuracy: false, media: false });
       onUploaded();
     } catch (err) {
       const code = err instanceof ApiError ? err.code : err instanceof Error ? err.message : "error";
@@ -97,11 +106,13 @@ export function VideoUpload({
   }
 
   return (
-    <Card className="mt-6 border-dashed">
-      <CardTitle>{onlyAspect ? `Your ${SHAPE_LABEL[onlyAspect]} video` : "Use my own video"}</CardTitle>
+    <Card className={`${onlyAspect ? "" : "mt-6 "}border-dashed`}>
+      <CardTitle>{onlyAspect ? SHAPE_TITLE[onlyAspect] : "Use my own video"}</CardTitle>
       <CardDescription>
         {onlyAspect
-          ? `Optional. Have your own ${SHAPE_LABEL[onlyAspect]} cut? It is used instead of the copy AdVault makes from your other video. Skip it and we keep making that copy. `
+          ? optional
+            ? `Optional — we make it from your other video if you skip. Your own ${SHAPE_LABEL[onlyAspect]} cut is used instead of that copy. `
+            : `Your finished ${SHAPE_LABEL[onlyAspect]} MP4. `
           : "One finished MP4, vertical (9:16) or wide (16:9): we make the other shape for you. "}
         At least 720p,{" "}
         {limits.minSeconds}–{limits.maxSeconds} seconds, up to 200 MB.
@@ -118,6 +129,7 @@ export function VideoUpload({
         />
         <span>{ATTESTATION}</span>
       </label>
+      <AttestationChecks className="mt-3" value={ticks} onChange={setTicks} disabled={busy} />
       <div className="mt-3 flex items-center gap-3">
         <input
           ref={input}
@@ -129,16 +141,18 @@ export function VideoUpload({
             e.target.value = "";
           }}
         />
-        <Button variant="outline" size="sm" disabled={busy || !attested} onClick={() => input.current?.click()}>
+        <Button variant="outline" size="sm" disabled={busy || !attested || !attestation} onClick={() => input.current?.click()}>
           {busy ? "Uploading…" : "Choose video"}
         </Button>
-        <button
-          type="button"
-          className="text-xs text-zinc-500 hover:text-zinc-300"
-          onClick={() => setOpen(false)}
-        >
-          Cancel
-        </button>
+        {!onlyAspect && (
+          <button
+            type="button"
+            className="text-xs text-zinc-500 hover:text-zinc-300"
+            onClick={() => setOpen(false)}
+          >
+            Cancel
+          </button>
+        )}
       </div>
       {message && (
         <p className={`mt-3 text-sm ${message.ok ? "text-emerald-300" : "text-red-300"}`}>{message.text}</p>

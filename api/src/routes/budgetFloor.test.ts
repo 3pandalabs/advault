@@ -11,6 +11,9 @@ import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest }
 import { serializerCompiler, validatorCompiler } from "fastify-type-provider-zod";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import * as schema from "../db/schema.js";
+import { ATTESTATION_VERSION, TERMS_VERSION } from "../lib/compliance/texts.js";
+
+const ATTEST = { accuracy: true, media: true, version: ATTESTATION_VERSION };
 import { GoogleAdsApiError } from "../lib/googleAds/client.js";
 import { budgetBelowMinimum, minDailyBudgetMinorFor } from "../lib/pricing/index.js";
 
@@ -93,6 +96,8 @@ beforeAll(async () => {
     `insert into users (email, password_hash, role) values ('shop@x.test', 'x', 'advertiser') returning id`,
   );
   userId = r.rows[0]!.id;
+  // Compliance gate (lib/compliance): current terms accepted.
+  await pg.query(`insert into terms_acceptances (user_id, version) values ($1, $2)`, [userId, TERMS_VERSION]);
 
   const { campaignRoutes } = await import("./campaigns.js");
   const { launchRoutes } = await import("./launch.js");
@@ -207,7 +212,7 @@ describe("launch pre-check", () => {
   for (const validateOnly of [true, false]) {
     it(`answers 409 budget_below_minimum for a $1 campaign (validateOnly: ${validateOnly})`, async () => {
       const id = await campaignWithBudget(100);
-      const res = await call("POST", `/campaigns/${id}/launch`, { adAccountId, validateOnly });
+      const res = await call("POST", `/campaigns/${id}/launch`, { adAccountId, validateOnly, attestation: ATTEST });
       expect(res.statusCode).toBe(409);
       expect(res.json()).toEqual({
         error: "budget_below_minimum",
@@ -221,7 +226,7 @@ describe("launch pre-check", () => {
 
   it("lets a $5 campaign past the budget check", async () => {
     const id = await campaignWithBudget(500);
-    const res = await call("POST", `/campaigns/${id}/launch`, { adAccountId, validateOnly: true });
+    const res = await call("POST", `/campaigns/${id}/launch`, { adAccountId, validateOnly: true, attestation: ATTEST });
     // Stops later, at the (missing) ad account, not at the budget.
     expect(res.json().error).not.toBe("budget_below_minimum");
   });

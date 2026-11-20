@@ -195,6 +195,9 @@ export async function loadCreativeForRender(creativeId: string) {
       businessName: campaigns.businessName,
       businessCategory: campaigns.businessCategory,
       landingUrl: campaigns.landingUrl,
+      // A taken-down ad (lib/compliance) is never rendered again, including
+      // by reclaimStalled's automatic restart.
+      complianceStatus: campaigns.complianceStatus,
     })
     .from(creatives)
     .innerJoin(campaigns, eq(creatives.campaignId, campaigns.id))
