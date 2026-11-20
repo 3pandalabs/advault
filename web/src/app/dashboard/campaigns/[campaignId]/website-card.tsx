@@ -452,6 +452,12 @@ export function WebsiteCard({
         </p>
       )}
 
+      {campaign.landingUrl && !(isSiteVault && campaign.sitevaultEditEnc) && mode === "view" && (
+        <p className="mt-3 text-sm text-zinc-400">
+          We can’t post your ad video on this website. We can only do that for websites made with AdVault.
+        </p>
+      )}
+
       {siteOffer && campaign.landingUrl && mode === "view" && (
         <p className={`mt-3 text-sm ${siteOffer.outcome === "updated" ? "text-emerald-300" : siteOffer.outcome === "pending" ? "text-zinc-300" : "text-amber-300"}`}>
           Offer on your website: {SITE_OFFER_TEXT[siteOffer.outcome]}

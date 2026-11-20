@@ -1185,6 +1185,11 @@ export default function CampaignDetailPage({
                 <span>Also show this ad on my website</span>
               </label>
             )}
+            {!onSite && campaign.landingUrl && (
+              <p className="mt-4 text-sm text-zinc-400">
+                Your ad links to your website, but we can’t add the video to it. We can only put the ad on websites made with AdVault.
+              </p>
+            )}
             <AttestationChecks className="mt-4" value={launchTicks} onChange={setLaunchTicks} disabled={busy} />
             <div className="mt-4 flex flex-wrap gap-2">
               {launchableAccounts.map((account) => (
