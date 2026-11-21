@@ -1,15 +1,18 @@
 "use client";
 
+import { useId, useState } from "react";
 import Link from "next/link";
 import type { Campaign, CampaignStats, CampaignStatus } from "@/lib/api/browser";
 import { AUDIENCE_FILTERS_ENABLED } from "@/lib/audience";
 import { Badge, Card, CardDescription, CardTitle } from "@/components/ui/card";
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { ResultsCard } from "./campaigns/[campaignId]/results-card";
 import { formatDate, formatRelative } from "@/lib/utils";
 
-// One campaign on the dashboard list (2026-11-20): status, a stats row once
-// the ad has launched, and action buttons that deep-link into the campaign
+// One campaign on the dashboard list (2026-11-20): status, a stats summary
+// once the ad has launched (with "See details" = the campaign page's results
+// screen, loaded on open, 2026-11-21), and action buttons that deep-link into the campaign
 // page's own editors (never a copy of them), as a visible button row. Every campaign here is the
 // caller's own: GET /campaigns and GET /campaigns/stats only return those.
 
@@ -60,46 +63,98 @@ function actionsFor(c: Campaign, stats: CampaignStats | undefined): Action[] {
   return out;
 }
 
+/** "12.5%" from a 0..1 rate. */
+function rate(r: number | null): string | null {
+  if (r === null || !Number.isFinite(r)) return null;
+  const p = r * 100;
+  return `${p >= 10 ? Math.round(p) : Number(p.toFixed(1))}%`;
+}
+
 function Stat({ label, value }: { label: string; value: string }) {
   return (
-    <div>
+    <div className="rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2">
       <dt className="text-xs text-zinc-500">{label}</dt>
-      <dd className="text-sm font-semibold tabular-nums text-zinc-100">{value}</dd>
+      <dd className="mt-0.5 text-xl font-semibold tabular-nums text-amber-300">{value}</dd>
     </div>
   );
 }
 
-function StatsRow({ stats }: { stats: CampaignStats | undefined }) {
+/**
+ * The headline numbers since launch (2026-11-21: bigger, so customers see
+ * them without opening the campaign), plus "See details", which mounts the
+ * campaign page's own results screen inline. It fetches only when opened, so
+ * the list stays at one stats call however many campaigns there are.
+ */
+function StatsSummary({ campaignId, stats }: { campaignId: string; stats: CampaignStats | undefined }) {
+  const [open, setOpen] = useState(false);
+  const detailsId = useId();
   // Still loading, or the stats call failed: say nothing rather than zeros.
   if (!stats) return null;
   const t = stats.totals;
   if (!t || t.impressions === 0) {
     return (
       <p className="mt-4 border-t border-white/10 pt-3 text-xs text-zinc-400">
-        Waiting for Google&apos;s first numbers (usually within a day of launch).
+        Stats appear once Google starts showing your ad (usually within a day of launch).
       </p>
     );
   }
+  const viewRate = rate(t.viewRate);
+  const clickRate = rate(t.ctr);
   return (
     <div className="mt-4 border-t border-white/10 pt-3">
-      <dl className="grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-4">
+      {t.views > 0 && t.costPerViewDisplay && (
+        <p className="text-sm text-zinc-200">
+          <span className="font-semibold">{count.format(t.views)} people watched</span> your ad at{" "}
+          <span className="font-semibold text-amber-300">{t.costPerViewDisplay} a view</span>
+        </p>
+      )}
+      <dl className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
         <Stat label="Times shown" value={count.format(t.impressions)} />
         <Stat label="Views" value={count.format(t.views)} />
         <Stat label="Clicks" value={count.format(t.clicks)} />
         <Stat label="Spent" value={t.spendDisplay} />
+        {/* Only for ads that land on advault.3pandalabs.com (siteVisits null otherwise). */}
+        {typeof stats.siteVisits === "number" && (
+          <div className="col-span-2 sm:col-span-4">
+            <Stat label="Visits to your website from this ad" value={count.format(stats.siteVisits)} />
+          </div>
+        )}
       </dl>
-      {/* Only for ads that land on advault.3pandalabs.com (siteVisits null otherwise). */}
-      {typeof stats.siteVisits === "number" && (
-        <p className="mt-2 text-xs text-zinc-400">
-          Visits to your website from this ad:{" "}
-          <span className="font-semibold tabular-nums text-zinc-100">{count.format(stats.siteVisits)}</span>
+      {(viewRate || clickRate) && (
+        <p className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-zinc-400">
+          {viewRate && (
+            <span>
+              View rate <span className="font-semibold tabular-nums text-zinc-100">{viewRate}</span>
+            </span>
+          )}
+          {clickRate && (
+            <span>
+              Click rate <span className="font-semibold tabular-nums text-zinc-100">{clickRate}</span>
+            </span>
+          )}
         </p>
       )}
-      <p className="mt-2 text-xs text-zinc-500">
-        Since launch
-        {stats.lastSyncedAt && <> &middot; Updated {formatRelative(stats.lastSyncedAt)}</>} &middot; Google
-        reports lag a few hours
-      </p>
+      <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+        <p className="text-xs text-zinc-500">
+          Since launch
+          {stats.lastSyncedAt && <> &middot; Updated {formatRelative(stats.lastSyncedAt)}</>} &middot; Google
+          reports lag a few hours
+        </p>
+        <button
+          type="button"
+          aria-expanded={open}
+          aria-controls={detailsId}
+          onClick={() => setOpen((o) => !o)}
+          className="text-sm font-medium text-amber-300 underline-offset-4 hover:underline"
+        >
+          {open ? "Hide details ▴" : "See details ▾"}
+        </button>
+      </div>
+      {open && (
+        <div id={detailsId} className="mt-3 rounded-xl border border-white/10 bg-black/20 p-3 sm:p-4">
+          <ResultsCard campaignId={campaignId} embedded initialRange="all" />
+        </div>
+      )}
     </div>
   );
 }
@@ -135,7 +190,7 @@ export function CampaignCard({
         </div>
         <Badge tone={STATUS_TONE[c.status]}>{STATUS_LABEL[c.status]}</Badge>
       </div>
-      {launched && <StatsRow stats={stats} />}
+      {launched && <StatsSummary campaignId={c.id} stats={stats} />}
       {/* Full-width stack on narrow phones, a wrapping row from 400px up. */}
       <div className="mt-4 flex flex-col gap-2 min-[400px]:flex-row min-[400px]:flex-wrap">
         {actions.map((a, i) => (
