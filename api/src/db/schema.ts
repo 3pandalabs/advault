@@ -634,6 +634,14 @@ export const campaigns = pgTable(
     offerExpiresAt: timestamp("offer_expires_at", { withTimezone: true }),
     offerExpiredAt: timestamp("offer_expired_at", { withTimezone: true }),
 
+    // "Change my offer" (migration 0047, lib/offerSwap). The ad the campaign
+    // returns to when an offer ends (paused while an offer runs, never
+    // removed), and which offer change is serving now (NULL = the base / the
+    // launched ad). Offer CHANGES never set offerExpiresAt above: that column
+    // pauses the campaign (offer/managed lines); a change returns to the base.
+    baseAdResourceName: text("base_ad_resource_name"),
+    liveOfferChangeId: uuid("live_offer_change_id"),
+
     // Client attestation & compliance (migration 0043, lib/compliance).
     // public_id: the unguessable id in the public "Report this ad" link
     // (/report?ad=<publicId>); never the internal uuid.
@@ -766,6 +774,10 @@ export const creatives = pgTable(
     // that table exists. The foreign key is real — 0004 adds it in SQL — this
     // is only how it is spelled in the TypeScript.
     purchaseId: uuid("purchase_id"),
+    // The offer change this re-cut belongs to (migration 0047, lib/offerSwap).
+    // FK in SQL (offer_changes is defined further down this file). NULL for
+    // every ordinary ad.
+    offerChangeId: uuid("offer_change_id"),
 
     // Set once uploaded to YouTube. Google Ads video ads reference a YouTube
     // video id, not an arbitrary MP4 URL — see infra/google-ads-setup.md.
@@ -1240,6 +1252,13 @@ export const whatsappMessages = pgTable(
     // Provider message id. Unique — this is the replay guard.
     providerRef: text("provider_ref"),
     status: text("status"),
+    // Inbound photo / voice note (migration 0047): 'image' | 'audio'. The R2
+    // copy is deleted once used (lib/offerSwap/whatsapp.ts); a voice note's
+    // transcript stays with the message as the record of what was said.
+    mediaType: text("media_type"),
+    mediaKey: text("media_key"),
+    transcript: text("transcript"),
+    offerChangeId: uuid("offer_change_id"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
@@ -1338,7 +1357,7 @@ export const purchases = pgTable(
     // forever and are never producible again.
     index("idx_purchases_producible").on(t.createdAt).where(sql`status = 'paid'`),
     check("purchases_currency_check", sql`${t.currencyCode} in ('INR','USD')`),
-    check("purchases_sku_check", sql`${t.sku} in ('cinematic','new_ad','cinematic_pack','site_offer')`),
+    check("purchases_sku_check", sql`${t.sku} in ('cinematic','new_ad','cinematic_pack','site_offer','website','offer_change')`),
     check(
       "purchases_site_offer_mode_check",
       sql`${t.siteOfferMode} is null or ${t.siteOfferMode} in ('paid','credit','free')`,
@@ -1517,4 +1536,70 @@ export const signinHandoffNonces = pgTable(
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
   },
   (t) => [index("idx_signin_handoff_nonces_expires").on(t.expiresAt)],
+);
+
+// ---------------------------------------------------------------------------
+// "Change my offer" (migration 0047, lib/offerSwap). One row per requested
+// offer change on a launched campaign (kind 'offer'), plus at most one
+// no-offer base cut per campaign (kind 'base'). A change is a cheap re-cut of
+// the launched ad, published as NEW creatives and added to the same ad group
+// as a NEW ad; the old ad is paused/removed only once Google approves it.
+// ---------------------------------------------------------------------------
+
+export const OFFER_CHANGE_STATUSES = [
+  "rendering",
+  "preview",
+  "awaiting_payment",
+  "publishing",
+  "pending_google",
+  "parked",
+  "live",
+  "ended",
+  "disapproved",
+  "failed",
+  "cancelled",
+  "superseded",
+] as const;
+export type OfferChangeStatus = (typeof OFFER_CHANGE_STATUSES)[number];
+
+export const offerChanges = pgTable(
+  "offer_changes",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    campaignId: uuid("campaign_id")
+      .notNull()
+      .references(() => campaigns.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    kind: text("kind").$type<"offer" | "base">().notNull().default("offer"),
+    offerText: text("offer_text"),
+    callToAction: text("call_to_action"),
+    endsAt: timestamp("ends_at", { withTimezone: true }),
+    endsAtInferred: boolean("ends_at_inferred").notNull().default(false),
+    source: text("source").$type<"web" | "whatsapp">().notNull().default("web"),
+    status: text("status").$type<OfferChangeStatus>().notNull().default("rendering"),
+    // included = the plan's one change this month; paid = $2; exempt = admin / at_cost.
+    charge: text("charge").$type<"included" | "paid" | "exempt">(),
+    billingMonth: date("billing_month", { mode: "string" }),
+    priceMinor: integer("price_minor").notNull().default(0),
+    purchaseId: uuid("purchase_id").references(() => purchases.id, { onDelete: "set null" }),
+    newPhotoAssetId: uuid("new_photo_asset_id").references(() => assets.id, { onDelete: "set null" }),
+    googleAdResourceName: text("google_ad_resource_name"),
+    replacedAdResourceName: text("replaced_ad_resource_name"),
+    offerCycleId: uuid("offer_cycle_id").references(() => offerCycles.id, { onDelete: "set null" }),
+    reviewPhrases: jsonb("review_phrases").$type<{ phrase: string; reason: string }[]>(),
+    error: text("error"),
+    opsAlertedAt: timestamp("ops_alerted_at", { withTimezone: true }),
+    confirmedAt: timestamp("confirmed_at", { withTimezone: true }),
+    googleAddedAt: timestamp("google_added_at", { withTimezone: true }),
+    liveAt: timestamp("live_at", { withTimezone: true }),
+    endedAt: timestamp("ended_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("idx_offer_changes_campaign").on(t.campaignId, t.createdAt),
+    check("offer_changes_kind_check", sql`${t.kind} in ('offer','base')`),
+  ],
 );

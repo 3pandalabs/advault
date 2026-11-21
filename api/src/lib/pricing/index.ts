@@ -49,13 +49,28 @@ export const PRODUCT_LINES = ["offer", "managed", "evergreen"] as const;
 export type ProductLine = (typeof PRODUCT_LINES)[number];
 
 /**
- * Does this line run the monthly offer loop (WhatsApp prompt, offer text,
- * expiry that pauses the campaign)? Evergreen deliberately does not: its whole
- * promise is that the same ad keeps running with nothing to answer each month.
+ * Does this line run the ORIGINAL monthly offer loop (offer text re-renders
+ * the creatives and an expiry PAUSES the campaign)? Evergreen does not: its
+ * promise is that the ad keeps running. Since 2026-11-21 evergreen gets offer
+ * CHANGES instead (hasOfferChanges): a re-cut swapped into the live ad, and
+ * back to the base ad on the end date, never a pause.
  */
 export function hasMonthlyOffers(line: ProductLine): boolean {
   return line === "offer" || line === "managed";
 }
+
+/**
+ * Does this line get "Change my offer" with its monthly included change and
+ * the WhatsApp offer-change loop (lib/offerSwap)? Evergreen ("Keep it
+ * running") only. Anyone else with a launched campaign may still change the
+ * offer, at OFFER_CHANGE_PRICE each.
+ */
+export function hasOfferChanges(line: ProductLine): boolean {
+  return line === "evergreen";
+}
+
+/** Offer changes included per calendar month (UTC) on a hasOfferChanges plan. */
+export const OFFER_CHANGES_INCLUDED_PER_MONTH = 1;
 
 /** Does this line buy media, i.e. carry an ad budget and a live campaign? */
 export function buysMedia(line: ProductLine): boolean {
@@ -168,7 +183,7 @@ export const PLANS: Record<string, Plan> = {
     suggestedAdBudgetMinor: 3_500,
     minDailyBudgetMinor: 500, // $5/day, Google's Demand Gen minimum (see us-managed)
     label: "US — Keep it running",
-    blurb: "One ad kept running on YouTube around your business. $10 per ad, no monthly offers.",
+    blurb: "One ad kept running on YouTube around your business. $10 per ad, one offer change a month included.",
   },
 };
 
@@ -380,7 +395,7 @@ export function estimateReach(adBudgetMinor: number, currency: Currency): ReachE
 // (lib/cinematic: packCreditsLeft). US only.
 // `website` (2026-11-15): the $10 SiteVault website from "Make me a website",
 // first year of Pro included (lib/websiteFee). US only.
-export const ADD_ON_SKUS = ["cinematic", "new_ad", "cinematic_pack", "website"] as const;
+export const ADD_ON_SKUS = ["cinematic", "new_ad", "cinematic_pack", "website", "offer_change"] as const;
 export type AddOnSku = (typeof ADD_ON_SKUS)[number];
 
 export type AddOn = {
@@ -452,6 +467,20 @@ export const ADD_ONS: Record<string, AddOn> = {
     generatedSeconds: 0, // the standard photo pipeline; nothing text-to-video
     label: "US — New ad",
     blurb: "A new ad from your photos, for the Keep it running plan.",
+  },
+  // "Change my offer" (2026-11-21, lib/offerSwap): a cheap re-cut of the live
+  // ad with the new offer, swapped in at Google. The Keep it running plan
+  // includes one a month (OFFER_CHANGES_INCLUDED_PER_MONTH); every other
+  // change is this. Admins / at_cost free; test mode 50 cents (chargeMinor).
+  "us-offer_change": {
+    key: "us-offer_change",
+    sku: "offer_change",
+    currency: "USD",
+    priceMinor: 200, // $2
+    firstPurchasePriceMinor: 200, // no intro price: the first one a month is included instead
+    generatedSeconds: 0, // re-uses the launched ad's clips; nothing text-to-video
+    label: "US — Offer change",
+    blurb: "Your live ad with a new offer, swapped in at Google.",
   },
   "us-website": {
     key: "us-website",

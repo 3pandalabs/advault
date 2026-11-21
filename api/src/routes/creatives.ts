@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, ne, notInArray } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, ne, notInArray } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { requireAuth } from "../auth/plugin.js";
@@ -109,7 +109,7 @@ export async function creativeRoutes(app: FastifyInstance) {
       const current = await db
         .select()
         .from(creatives)
-        .where(and(eq(creatives.campaignId, campaign.id), ne(creatives.kind, "upload")))
+        .where(and(eq(creatives.campaignId, campaign.id), ne(creatives.kind, "upload"), isNull(creatives.offerChangeId)))
         .orderBy(desc(creatives.createdAt));
       if (current.length === 0) return reply.code(409).send({ error: "nothing_to_redo" });
       if (current.some((c) => c.renderStatus === "queued" || c.renderStatus === "rendering")) {
@@ -173,7 +173,7 @@ export async function creativeRoutes(app: FastifyInstance) {
     async (req, reply) => {
       const { campaignId } = req.params as { campaignId: string };
       if (!(await loadOwnedCampaign(campaignId, req.userId!, reply))) return;
-      return db.select().from(creatives).where(eq(creatives.campaignId, campaignId));
+      return db.select().from(creatives).where(and(eq(creatives.campaignId, campaignId), isNull(creatives.offerChangeId)));
     },
   );
 
@@ -194,6 +194,11 @@ export async function creativeRoutes(app: FastifyInstance) {
       const owned = await loadOwnedCreative(creativeId, req.userId!, reply);
       if (!owned) return;
 
+      // An offer-change re-cut (lib/offerSwap) is made, published and swapped
+      // by its own flow; editing or re-rendering it here would bypass it.
+      if (owned.creative.offerChangeId) {
+        return reply.code(409).send({ error: "creative_is_offer_change" });
+      }
       // An uploaded video has no script or photos to render from; re-rendering
       // would overwrite the uploaded MP4 with an empty slideshow.
       if (owned.creative.kind === "upload") {
@@ -281,6 +286,11 @@ export async function creativeRoutes(app: FastifyInstance) {
       const owned = await loadOwnedCreative(creativeId, req.userId!, reply);
       if (!owned) return;
 
+      // An offer-change re-cut (lib/offerSwap) is made, published and swapped
+      // by its own flow; editing or re-rendering it here would bypass it.
+      if (owned.creative.offerChangeId) {
+        return reply.code(409).send({ error: "creative_is_offer_change" });
+      }
       // An uploaded video has no script or photos to render from; re-rendering
       // would overwrite the uploaded MP4 with an empty slideshow.
       if (owned.creative.kind === "upload") {

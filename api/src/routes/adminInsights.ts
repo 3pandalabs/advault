@@ -154,7 +154,7 @@ export async function adminInsightsRoutes(app: FastifyInstance) {
     const revenue = (
       await db.execute<{ source: string; currency_code: string; last30: number; all_time: number; count: number }>(sql`
         select source, currency_code, sum(last30)::int as last30, sum(amount)::int as all_time, count(*)::int as count from (
-          select case p.sku when 'new_ad' then 'Ads ($10 each)' when 'cinematic' then 'Cinematic' else p.sku end as source,
+          select case p.sku when 'new_ad' then 'Ads ($10 each)' when 'cinematic' then 'Cinematic' when 'offer_change' then 'Offer changes ($2)' else p.sku end as source,
             p.currency_code, p.amount_minor as amount,
             case when p.created_at > now() - interval '30 days' then p.amount_minor else 0 end as last30
           from purchases p join users u on u.id = p.user_id
@@ -392,7 +392,7 @@ export async function adminInsightsRoutes(app: FastifyInstance) {
         }>(sql`
           select u.email, u.internal_label as label, u.currency_code,
             ${paidPayments("topup")} as ad_budget,
-            ${purchased(["new_ad"])} as ads,
+            ${purchased(["new_ad", "offer_change"])} as ads,
             ${purchased(["website"])} as website,
             ${purchased(["site_offer"])} as site_offer,
             ${purchased(["cinematic", "cinematic_pack"])} as video_bundle,

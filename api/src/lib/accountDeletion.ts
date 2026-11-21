@@ -7,6 +7,8 @@ import {
   adAccounts,
   adAttestations,
   assets,
+  offerChanges,
+  whatsappMessages,
   campaigns,
   passwordResetTokens,
   sessions,
@@ -143,6 +145,13 @@ export async function deleteAccount(userId: string): Promise<DeleteResult> {
       .where(and(eq(adAccounts.userId, userId), eq(adAccounts.isManaged, true)));
     await tx.update(adAttestations).set({ ipAddress: null, userAgent: null }).where(eq(adAttestations.userId, userId));
     await tx.update(termsAcceptances).set({ ipAddress: null, userAgent: null }).where(eq(termsAcceptances.userId, userId));
+    // WhatsApp transcript (phone, what they typed, voice-note transcripts;
+    // 0047) and any offer change not yet at Google (lib/offerSwap).
+    await tx.delete(whatsappMessages).where(eq(whatsappMessages.userId, userId));
+    await tx
+      .update(offerChanges)
+      .set({ status: "cancelled", updatedAt: now })
+      .where(and(eq(offerChanges.userId, userId), inArray(offerChanges.status, ["rendering", "preview", "awaiting_payment"])));
     const gone = await tx.delete(assets).where(eq(assets.userId, userId)).returning({ key: assets.r2Key });
     const [wallet] = await tx
       .select({ balanceMinor: wallets.balanceMinor, currencyCode: wallets.currencyCode })

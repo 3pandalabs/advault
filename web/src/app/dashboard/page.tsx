@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { siteVaultSlug } from "@/lib/sitevault";
 import {
   getCampaignStats,
+  listOfferChanges,
   getMe,
   getSubscription,
   getWallet,
@@ -18,7 +19,7 @@ import { BudgetBanner } from "@/components/BudgetBanner";
 import { CostSimulator } from "@/components/CostSimulator";
 import { Card, CardDescription, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { CampaignCard, isLaunched } from "./campaign-card";
+import { CampaignCard, isLaunched, type OfferChangeChip } from "./campaign-card";
 
 export default function CampaignsPage() {
   const [campaigns, setCampaigns] = useState<Campaign[] | null>(null);
@@ -32,6 +33,8 @@ export default function CampaignsPage() {
   // Stats row per launched campaign, one call for the whole list
   // (GET /campaigns/stats). null = loading or failed: cards show no row.
   const [stats, setStats] = useState<Map<string, CampaignStats> | null>(null);
+  // "Change my offer" status per campaign (GET /offer-changes), newest first.
+  const [offerChanges, setOfferChanges] = useState<Map<string, OfferChangeChip>>(new Map());
 
   // The cost simulator says "$0 today" for the plan only while the account
   // still has its included first month.
@@ -73,6 +76,13 @@ export default function CampaignsPage() {
           getCampaignStats()
             .then((r) => setStats(new Map(r.campaigns.map((c) => [c.campaignId, c]))))
             .catch(() => setStats(null));
+          listOfferChanges()
+            .then((r) => {
+              const m = new Map<string, OfferChangeChip>();
+              for (const ch of r.changes) if (!m.has(ch.campaignId)) m.set(ch.campaignId, ch);
+              setOfferChanges(m);
+            })
+            .catch(() => undefined);
         }
       })
       .catch(() => setError(true));
@@ -142,7 +152,7 @@ export default function CampaignsPage() {
 
       <div className="space-y-3">
         {campaigns.map((c) => (
-          <CampaignCard key={c.id} campaign={c} stats={stats?.get(c.id)} />
+          <CampaignCard key={c.id} campaign={c} stats={stats?.get(c.id)} offerChange={offerChanges.get(c.id)} />
         ))}
       </div>
     </div>

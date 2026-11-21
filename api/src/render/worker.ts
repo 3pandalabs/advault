@@ -32,6 +32,7 @@ import { startFalBalanceWatch } from "./falBalanceWatch.js";
 import { noteFalFailure } from "../lib/vendors/fal.js";
 import { startPlatformBillingSweep } from "../lib/billing/managedCard.js";
 import { startOfferScheduler } from "./offerCycles.js";
+import { startOfferSwapSweep } from "./offerSwaps.js";
 import { startCinematicWorker, stopCinematicWorker } from "./cinematic.js";
 import { enqueueYoutubeUpload } from "./youtubeJobs.js";
 import { startYoutubeUploadWorker, stopYoutubeUploadWorker } from "./youtubeUploads.js";
@@ -101,6 +102,11 @@ async function generateMotionClips(args: {
   campaignId: string;
   /** Photo indexes that must stay plain (before & after photos): never a motion clip. */
   plain?: number[];
+  /**
+   * Offer-change re-cut (lib/offerSwap): may a clip that is NOT in the cache be
+   * generated for this photo key? Absent = yes (an ordinary ad).
+   */
+  mayGenerate?: (sourceKey: string) => boolean;
 }): Promise<Map<number, string>> {
   const clips = new Map<number, string>();
   const provider = motionProvider();
@@ -166,6 +172,12 @@ async function generateMotionClips(args: {
           log("motion clip cache read failed; generating", { creativeId: args.creativeId, error: String(err) });
         }
       }
+      // Re-cut: no vendor call for a photo whose clip is not cached (it plays
+      // as a Ken Burns still), except the owner's one new photo when allowed.
+      if (args.mayGenerate && !args.mayGenerate(key)) {
+        log("motion clip not cached; re-cut keeps the still", { creativeId: args.creativeId, scene: i });
+        return;
+      }
 
       try {
         const result = await provider.generate({
@@ -221,6 +233,8 @@ async function generateOpener(args: {
   workDir: string;
   creativeId: string;
   campaignId: string;
+  /** Offer-change re-cut: the cached opener only, never a new one. */
+  cacheOnly?: boolean;
 }): Promise<{ path: string; reused: boolean } | null> {
   const prompt = args.script.openerPrompt;
   if (!AD_OPENER || !prompt || !falOmni.isConfigured()) return null;
@@ -237,6 +251,7 @@ async function generateOpener(args: {
   } catch (err) {
     log("opener cache read failed; generating", { creativeId: args.creativeId, error: String(err) });
   }
+  if (args.cacheOnly) return null;
   try {
     const result = await falOmni.generate({ prompt, seconds: OPENER_SECONDS, aspectRatio: args.aspectRatio });
     await writeFile(path, result.videoBytes);
@@ -249,6 +264,16 @@ async function generateOpener(args: {
     log("opener generation failed; ad starts on the photos", { creativeId: args.creativeId, error: String(err) });
     return null;
   }
+}
+
+/** The re-cut marker lib/offerSwap puts on a creative before it renders. */
+function recutInfo(info: Record<string, unknown> | null | undefined): { of: string | null; allowMotionKeys: string[] } | null {
+  const r = info?.recut as { of?: unknown; allowMotionKeys?: unknown } | undefined;
+  if (!r || typeof r !== "object") return null;
+  return {
+    of: typeof r.of === "string" ? r.of : null,
+    allowMotionKeys: Array.isArray(r.allowMotionKeys) ? r.allowMotionKeys.filter((k): k is string => typeof k === "string") : [],
+  };
 }
 
 // Per-render facts for creatives.render_info (filled by the helpers above).
@@ -341,6 +366,11 @@ async function processJob(job: RenderJob): Promise<void> {
   if (creative.kind === "upload" && isReformatCopy(creative.renderInfo)) return processReformat(job, creative);
 
   const script = adScriptSchema.parse(creative.script);
+  // An offer-change re-cut (lib/offerSwap, render_info.recut): REUSE-ONLY.
+  // Cached motion clips, opener and pro photos; no vendor video or image
+  // call, except a motion clip for the owner's one new photo when
+  // OFFER_CHANGE_PHOTO_MOTION=on. The voiceover is new (its text changed).
+  const recut = recutInfo(creative.renderInfo);
   const workDir = await mkdtemp(join(WORK_ROOT, "job-"));
 
   try {
@@ -386,6 +416,7 @@ async function processJob(job: RenderJob): Promise<void> {
       sourceAssetKeys: creative.sourceAssetKeys,
       imagePaths,
       skip: [...(script.portraitIndex != null ? [script.portraitIndex] : []), ...plain],
+      cacheOnly: Boolean(recut),
       workDir,
       log: (msg, extra) => log(msg, { creativeId: creative.id, ...(extra as object) }),
     });
@@ -405,10 +436,11 @@ async function processJob(job: RenderJob): Promise<void> {
       creativeId: creative.id,
       campaignId: creative.campaignId,
       plain,
+      mayGenerate: recut ? (key) => recut.allowMotionKeys.includes(key) : undefined,
     });
     // Template only: the ffmpeg fallback layout has no opener slot.
     const opener = TEMPLATE_ENABLED
-      ? await generateOpener({ script, aspectRatio, workDir, creativeId: creative.id, campaignId: creative.campaignId })
+      ? await generateOpener({ script, aspectRatio, workDir, creativeId: creative.id, campaignId: creative.campaignId, cacheOnly: Boolean(recut) })
       : null;
 
     const voicePath = await synthesizeVoiceover({
@@ -487,7 +519,8 @@ async function processJob(job: RenderJob): Promise<void> {
         beforeAfterPairs: beforeAfterPaths.length || undefined,
         // Why there is no opener, when there is none: the script had no usable
         // prompt (none written, or dropped by the safety filter) vs generation failed.
-        opener: opener ? (opener.reused ? "reused" : "made") : !AD_OPENER ? null : script.openerPrompt ? "failed" : "no-prompt",
+        opener: opener ? (opener.reused ? "reused" : "made") : !AD_OPENER ? null : script.openerPrompt ? (recut ? "not-cached" : "failed") : "no-prompt",
+        ...(recut ? { recut } : {}),
         at: new Date().toISOString(),
       },
     });
@@ -511,9 +544,16 @@ async function processJob(job: RenderJob): Promise<void> {
     // Enqueue failure is logged, never thrown: the render genuinely succeeded,
     // the creative is 'ready', and the upload is independently retryable from
     // POST /creatives/:id/youtube-upload.
-    await enqueueYoutubeUpload(creative.id).catch((err) =>
-      log("failed to enqueue the youtube upload", { creativeId: creative.id, error: String(err) }),
-    );
+    //
+    // NOT for an offer-change re-cut: that one is a preview until the owner
+    // says "Put it live", and only then is it published (lib/offerSwap
+    // startPublishing). Saves the channel's small daily upload quota for
+    // previews nobody approved.
+    if (!recut) {
+      await enqueueYoutubeUpload(creative.id).catch((err) =>
+        log("failed to enqueue the youtube upload", { creativeId: creative.id, error: String(err) }),
+      );
+    }
   } finally {
     // Always — a scratch directory left behind on a failed render fills the
     // 75GB disk, and a full disk takes Postgres down with it, which takes all
@@ -624,6 +664,9 @@ async function main(): Promise<void> {
   // offer expiry are all periodic work that needs a long-lived process and must
   // fire exactly once, not once per API replica.
   startOfferScheduler();
+  // "Change my offer": publish approved re-cuts, swap at Google after
+  // approval, and return to the base ad on the end date (lib/offerSwap).
+  startOfferSwapSweep();
   // The paid add-on queue. Separate from the render loop above because it is
   // metered per attempt and must never fall back — see render/cinematic.ts.
   startCinematicWorker();

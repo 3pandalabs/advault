@@ -190,7 +190,10 @@ Treat it accordingly:
   which is the single place that CREATES spend. The only other Google mutates
   are status flips of an existing campaign (spend sync, offer expiry, top-up
   resume, and since 2026-11-19 the customer's own `/pause` / `/resume`,
-  `routes/campaignRunState.ts`) and targeting edits. Keep it that way.
+  `routes/campaignRunState.ts`), targeting edits, and since 2026-11-21 the
+  offer-change sweep's AD-level mutates inside an existing ad group (add a
+  new ad, pause / enable / remove an ad; `lib/offerSwap/sweep.ts`), which
+  never touch the campaign, its budget or targeting. Keep it that way.
 
 ## A rendered MP4 is not an ad — the chain is five links
 
@@ -353,7 +356,9 @@ a green path with a broken product at the end of it.
   that already has a video id, and the edit/retry routes refuse one with a
   `google_ad_resource_name` (`creative_is_live`). A live ad points at a specific
   video asset, so a second upload would leave the ad showing the old cut with
-  nothing recording the swap.
+  nothing recording the swap. "Change my offer" (2026-11-21) keeps this: a
+  change is always NEW creatives (`creatives.offer_change_id`) in a NEW ad,
+  recorded in `offer_changes`; no old creative is re-uploaded or edited.
 - **"Ready" in the UI means ready to run, not rendered.** The campaign page's
   badge and its launch gating both require `youtubeVideoId`. Collapsing them
   back into `renderStatus` is how a Launch button got offered for a campaign
@@ -828,12 +833,21 @@ strings. `lib/pricing` now holds five SKUs and one of them has to be sold:
 |---|---|---|
 | `offer` — 3 fresh videos/month, **no Google at all** | ₹999/mo | $39/mo |
 | `managed` — creatives plus a live campaign | ₹1,499/mo fee | $79/mo fee |
-| `evergreen` ("Keep it running") — one ad kept live, no monthly offer, $10 per ad | not sold | $20/mo fee + chosen monthly ad budget (min $35) |
+| `evergreen` ("Keep it running") — one ad kept live, $10 per ad, offer CHANGES (1 a month included, $2 after) | not sold | $20/mo fee + chosen monthly ad budget (min $35) |
 
-**Evergreen never enters the offer loop.** No offer cycles, no WhatsApp prompt,
-and `POST /offers/current` refuses it (`plan_has_no_offers`): an offer sets an
-expiry that pauses the campaign, which is the opposite of what the plan sells.
-Use `hasMonthlyOffers(line)` rather than comparing line names.
+**Evergreen never enters the ORIGINAL offer loop, but it gets offer CHANGES
+(owner decision 2026-11-21).** The original loop (`hasMonthlyOffers`: `offer` and
+`managed`) re-renders the creatives and its expiry PAUSES the campaign
+(`campaigns.offer_expires_at`, `runOfferExpirySweep`), the opposite of what
+Keep it running sells; that stays exactly as it was for those two lines.
+Evergreen (`hasOfferChanges(line)`) instead gets "Change my offer"
+(`lib/offerSwap`, section "Change my offer" below): a cheap re-cut swapped into
+the live ad at Google after approval, and back to the BASE ad on the end date,
+never a pause. `POST /offers/current` answers evergreen 409
+`plan_uses_offer_changes` `{campaignId}` (was `plan_has_no_offers`). Offer
+cycles open for evergreen only when the WhatsApp change loop is on
+(`OFFER_SWAP_WHATSAPP=on`) and the owner has a launched campaign. Use
+`hasMonthlyOffers` / `hasOfferChanges` rather than comparing line names.
 
 **Every ad is bought one at a time** (`new_ad` purchase, $10 first and
 repeat, `lib/newAd` + `routes/newAds.ts`). Since 2026-11-13 this applies to
@@ -1198,6 +1212,101 @@ property matters more than the parsing: an offer campaign outliving its deadline
 spends the advertiser's budget sending people to a deal the shop will not
 honour, and nothing at Google expires an ad for us. The sweep in
 `render/offerCycles.ts` pauses them.
+
+## Change my offer (2026-11-21, migration 0047, `lib/offerSwap`)
+
+Owner decisions A-G. Routes: `api/ROUTES.md` "Change my offer". Pure rules
+in `lib/offerSwap/policy.ts` (tested); DB in `index.ts`; Google in
+`lib/googleAds/adSwap.ts` + the renderer sweep `sweep.ts`
+(`render/offerSwaps.ts`, every `OFFER_SWAP_SWEEP_INTERVAL_MS`, default 10 min);
+WhatsApp in `whatsapp.ts`. Web: the campaign page's "Change my offer" card
+(`change-offer-card.tsx`, `id="change-offer"`, opened by `?edit=offer`), and
+the dashboard card's "Change my offer" button + status line.
+
+- **A change is a cheap RE-CUT, not a new ad.** `queueRecut` copies each
+  launched shape's script and photos (the template = launched creatives:
+  `offer_change_id` NULL, `google_ad_resource_name` set, kind `standard`) and
+  rewrites ONLY hook, captions, end card text, voiceover and sticker
+  (`recutScript`: a small Claude edit constrained by a JSON schema, merged by
+  `mergeRecut` so scene order / photos / durations, `photoMotions`,
+  `openerPrompt`, voice and generate.ts's marks can't change; any failure =
+  the deterministic `deterministicRecut`). One voiceover shared by both
+  shapes (one TTS call; edge-tts fallback as always). The creatives carry
+  `render_info.recut` and the renderer runs **reuse-only**: cached motion
+  clips, opener and pro photos only; a cache miss is a Ken Burns still / no
+  opener, NEVER a fal or Vertex call. The one exception: the owner's ONE new
+  photo may get a motion clip when `OFFER_CHANGE_PHOTO_MOTION=on` (off by
+  default). Re-cuts are NOT auto-uploaded to YouTube: they are previews until
+  "Put it live". (There is no music track in the template to reuse.) This is
+  a deliberate render path outside `newAdGate`: it is gated by the change's
+  own price and capped at `MAX_OFFER_PREVIEWS_PER_DAY` (6) per campaign; don't
+  add another.
+- **Compliance is the same as any offer.** `claimBlock` refuses (400
+  `claim_not_allowed`, e.g. housing exclusions); `reevaluateCompliance` runs
+  over the new scripts, so a REVIEW phrase sets `needs_review` and confirm
+  answers 409 `needs_review` until an admin approves on
+  `/dashboard/admin/reports`. Web needs the two ticks (recorded `generate`);
+  a WhatsApp YES carries the two sentences in the preview message and is
+  recorded as `launch` with `user_agent = 'whatsapp'`.
+- **Swap at Google (`sweep.ts`, approve-then-swap).** `publishing` (YouTube
+  uploads of the new creatives) -> `add_to_google`: read the serving ad
+  (`ad_group_ad.ad.final_urls`, `demand_gen_video_responsive_ad.logo_images`),
+  then ONE `googleAds:mutate` creating any missing YOUTUBE_VIDEO assets + an
+  `adGroupAd` (demandGenVideoResponsiveAd, ENABLED, same final URL and logo,
+  copy from `buildAdCopy` with the new offer) in the SAME ad group ->
+  `pending_google` (the old ad keeps serving; a new ad serves only once
+  approved) -> the sweep reads the new ad's `policy_summary`: approved /
+  approved_limited -> ONE mutate pausing the serving ad if it is the base or
+  launch ad, else removing it (an older offer's ad) -> `live`
+  (`campaigns.live_offer_change_id`); disapproved -> the NEW ad is removed,
+  the old one keeps running, ntfy + owner told -> `disapproved`; 48 h in
+  review -> one ntfy. Both offers can be live together for at most one sweep
+  interval. Stats stay on the one campaign. `adPolicy` now ignores PAUSED
+  ads, so the paused base's verdict never stands for the serving ad. **Not
+  yet proven with a validateOnly mutate against the test customer: do that
+  before the first real change.**
+- **Base ad + end date (decision C).** Every change has an end date (the
+  owner's, else `inferOfferExpiry`; max 92 days). The BASE = the launch ad
+  when its writer input had no offer (`needsBaseCut`), recorded in
+  `campaigns.base_ad_resource_name`. Otherwise (the usual case: the launch ad
+  has the old offer baked in) the first change also queues ONE no-offer base
+  cut (`kind = 'base'`, same reuse-only path, no preview), published and
+  added to the ad group **PAUSED** (`parked`) so it is ready (and possibly
+  reviewed) before it is needed; the launch ad is paused, never removed. On
+  the end date: ONE mutate enabling the base and removing the offer ad ->
+  `ended`; the campaign keeps running (nothing pauses it, `campaigns.status`
+  stays). No base yet (its cut failed): the expired offer ad is PAUSED anyway
+  and ops get an urgent ntfy (the campaign shows nothing until a base
+  exists): an offer never outlives its date. A disapproved base is paged too.
+- **Price (decision D, `lib/pricing`).** `us-offer_change` = $2 (`sku =
+  offer_change`); a live evergreen plan (active / past_due) includes
+  `OFFER_CHANGES_INCLUDED_PER_MONTH` = 1 per UTC calendar month, enforced by
+  the unique index `uq_offer_changes_included_month` (a disapproved / failed
+  / cancelled change gives it back). Admins / at_cost: `exempt`. Test mode:
+  50 cents (`chargeMinor`). Paid via the shared purchases webhook
+  (`onOfferChangePaid`, idempotent). Customer-uploaded videos stay free and
+  can't be re-cut (409 `live_ad_is_upload`). Revenue reporting picks the
+  purchases up like any add-on (admins, test customers, internal and
+  `marked_test` excluded), labelled "Offer changes ($2)" on `/admin/business`.
+- **WhatsApp (decision F), behind `OFFER_SWAP_WHATSAPP=on`.** Off, or Meta
+  unconfigured: `handleSwapInbound` returns `{handled: false}` and every
+  notify is a no-op; the web card works fully without it. On: text, photo
+  (+ caption; saved as an asset), voice note (fal Whisper `lib/ai/stt.ts`,
+  caps in `transcriptionAllowed`, the recording deleted from R2 straight
+  after, the transcript kept on the message) or the YES / Not now buttons.
+  Preview = the 9:16 cut as a video message + a button message, only inside
+  the 24 h window; news after that (live / back to base / problem) is free
+  text inside the window, else the templates `offer_change_live`,
+  `offer_change_ended`, `offer_change_problem`. The monthly prompt is the
+  existing offer cycle (template `monthly_offer_prompt`, 2-reminder cap).
+  Fixed with it: `userForPhone` wrote the regex as a backslash-D inside a JS
+  template literal, which cooks to a bare `D`, so no formatted phone number
+  had ever matched; it is `[^0-9]` now.
+- Account deletion deletes the user's `whatsapp_messages` and cancels changes
+  not yet at Google. Tests: `lib/offerSwap/policy.test.ts`,
+  `lib/googleAds/adSwap.test.ts`, `routes/offerChanges.test.ts` (PGlite,
+  Google stubbed: approve-then-swap, disapproval, end date -> base, no base),
+  `lib/offerSwap/whatsapp.test.ts` (PGlite, Meta + STT stubbed).
 
 ## Not used here
 

@@ -49,6 +49,7 @@ import { WebsiteCard } from "./website-card";
 import { BeforeAfterCard } from "./before-after-card";
 import { SeasonCard } from "./season-card";
 import { OfferCard } from "./offer-card";
+import { ChangeOfferCard } from "./change-offer-card";
 import { BadgesCard } from "./badges-card";
 import { ExtrasCard } from "./extras-card";
 import { SiteOfferOption, payLabel } from "./site-offer-option";
@@ -954,6 +955,11 @@ export default function CampaignDetailPage({
             </Button>
           </div>
         </Card>
+      )}
+
+      {/* "Change my offer" (api lib/offerSwap): launched campaigns only. */}
+      {campaign.googleCampaignResourceName && (campaign.status === "live" || campaign.status === "paused") && (
+        <ChangeOfferCard campaign={campaign} />
       )}
 
       {/* Seasonal calendar (lib/categories/seasons): only when a season is near. */}
