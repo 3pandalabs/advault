@@ -273,6 +273,55 @@ export async function adminInsightsRoutes(app: FastifyInstance) {
     };
   });
 
+  // Account counts for the org admin site's AdVault section: who is a real
+  // customer and who is us. Not-deleted accounts only, four disjoint groups:
+  //   real      advertisers that are neither test (0030) nor internal (0032),
+  //             i.e. exactly the `customers` of /admin/business
+  //   test      admin-made test customers (users.test_owner_id), per owning
+  //             admin. Owners are admins, so their emails are ours.
+  //   internal  3PandaLabs' own accounts (users.is_internal, 0032) and the
+  //             product labels they advertise (no customer data)
+  //   admins    role = 'admin' (never counted in the other three)
+  // A test customer whose owner is gone still counts, with ownerEmail null.
+  app.get("/admin/account-counts", { preHandler: requireAdminOrAnalyticsToken }, async () => {
+    const [totals] = (
+      await db.execute<{ real: number; test: number; internal: number; admins: number }>(sql`
+        select
+          count(*) filter (where role = 'advertiser' and test_owner_id is null and not is_internal)::int as real,
+          count(*) filter (where role = 'advertiser' and test_owner_id is not null)::int as test,
+          count(*) filter (where role = 'advertiser' and test_owner_id is null and is_internal)::int as internal,
+          count(*) filter (where role = 'admin')::int as admins
+        from users
+        where deleted_at is null
+      `)
+    ).rows;
+    const byOwner = (
+      await db.execute<{ owner_email: string | null; count: number }>(sql`
+        select o.email as owner_email, count(*)::int as count
+        from users t left join users o on o.id = t.test_owner_id
+        where t.role = 'advertiser' and t.test_owner_id is not null and t.deleted_at is null
+        group by o.email
+        order by count(*) desc, o.email
+      `)
+    ).rows.map((r) => ({ ownerEmail: r.owner_email, count: r.count }));
+    const labels = (
+      await db.execute<{ label: string | null; count: number }>(sql`
+        select internal_label as label, count(*)::int as count
+        from users
+        where role = 'advertiser' and test_owner_id is null and is_internal and deleted_at is null
+        group by internal_label
+        order by internal_label nulls last
+      `)
+    ).rows;
+    return {
+      generatedAt: new Date().toISOString(),
+      real: totals.real,
+      test: { total: totals.test, byOwner },
+      internal: { total: totals.internal, labels },
+      admins: totals.admins,
+    };
+  });
+
   // 3PandaLabs' own accounts (0032) in a date range, for the org admin site's
   // "Internal" tab: what each internal account paid AdVault and what Google
   // actually spent on its campaigns. Aggregates only. `until` is exclusive.
