@@ -1,3 +1,4 @@
+import { onOfferChangePaid } from "../lib/offerSwap/index.js";
 import { and, desc, eq, sql } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
@@ -458,6 +459,12 @@ export async function cinematicRoutes(app: FastifyInstance) {
       if (!result.alreadyApplied && purchase.siteOfferMode) pushSiteOfferSoon(purchase.id);
       // $10 website fee: publish the SiteVault site the same way (lib/websiteFee).
       if (!result.alreadyApplied && purchase.sku === "website") publishPaidWebsiteSoon(purchase.id);
+      // "Change my offer" $2 (lib/offerSwap): publish the re-cut. Idempotent.
+      if (purchase.sku === "offer_change") {
+        await onOfferChangePaid(purchase.id).catch((err) =>
+          req.log.error({ err, purchaseId: purchase.id }, "offer change publish after payment failed"),
+        );
+      }
       return reply.code(200).send({ ok: true, alreadyApplied: result.alreadyApplied });
     },
   );

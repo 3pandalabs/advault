@@ -330,6 +330,13 @@
       "when": 1795506000000,
       "tag": "0046_marked_test_accounts",
       "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1795506100000,
+      "tag": "0047_offer_changes",
+      "breakpoints": true
     }
   ]
 }

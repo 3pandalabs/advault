@@ -707,6 +707,98 @@ export function setCampaignOffer(campaignId: string, body: { offerDetails: strin
   });
 }
 
+// ---------------------------------------------------------------------------
+// "Change my offer" (api lib/offerSwap, routes/offerChanges.ts, 2026-11-21):
+// a cheap re-cut of the live ad with a new offer, swapped in at Google only
+// after Google approves it; back to the regular ad on the end date.
+// ---------------------------------------------------------------------------
+
+export type OfferChangeStage =
+  | "making"
+  | "preview"
+  | "waiting_payment"
+  | "waiting_google"
+  | "live"
+  | "back_to_base"
+  | "disapproved"
+  | "failed"
+  | "cancelled";
+
+export type OfferChange = {
+  id: string;
+  offerText: string | null;
+  callToAction: string | null;
+  endsAt: string | null;
+  endsAtInferred: boolean;
+  source: "web" | "whatsapp";
+  status: string;
+  stage: OfferChangeStage;
+  charge: "included" | "paid" | "exempt" | null;
+  priceMinor: number;
+  reviewPhrases: { phrase: string; reason: string }[];
+  error: string | null;
+  createdAt: string;
+  liveAt: string | null;
+  endedAt: string | null;
+  creatives: { id: string; aspectRatio: "16:9" | "9:16"; renderStatus: string; videoUrl: string | null; thumbnailUrl: string | null }[];
+};
+
+export type OfferChangeQuote = {
+  charge: "included" | "paid" | "exempt";
+  amountMinor: number;
+  currency: string;
+  display: string;
+  includedLeft: number;
+  planIncludesChanges: boolean;
+  available: boolean;
+};
+
+export type OfferChangeState = {
+  eligible: boolean;
+  refusal: { error: string; detail?: string } | null;
+  quote: OfferChangeQuote;
+  current: OfferChange | null;
+  live: OfferChange | null;
+  lastEnded: { id: string; offerText: string | null; endedAt: string | null } | null;
+  lastProblem: { id: string; status: string; offerText: string | null; error: string | null } | null;
+  hasBase: boolean;
+  whatsappEnabled: boolean;
+};
+
+export function getOfferChanges(campaignId: string) {
+  return api<OfferChangeState>(`/campaigns/${campaignId}/offer-changes`);
+}
+
+export function createOfferChange(
+  campaignId: string,
+  body: { offerText: string; endsOn?: string | null; photoAssetId?: string | null; attestation: Attestation },
+) {
+  return api<{ change: OfferChange; quote: OfferChangeQuote }>(`/campaigns/${campaignId}/offer-changes`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export function confirmOfferChange(changeId: string) {
+  return api<
+    | { ok: true; status: "publishing"; charge: string }
+    | { ok: true; status: "awaiting_payment"; charge: "paid"; checkoutUrl: string | null; provider: string; purchaseId: string; display: string }
+  >(`/offer-changes/${changeId}/confirm`, { method: "POST" });
+}
+
+export function resumeOfferChangeCheckout(changeId: string) {
+  return api<{ checkoutUrl: string | null; provider: string; purchaseId: string }>(`/offer-changes/${changeId}/checkout`, { method: "POST" });
+}
+
+/** The owner's in-flight and live offer changes, for the dashboard cards. */
+export function listOfferChanges() {
+  return api<{ changes: { id: string; campaignId: string; status: string; offerText: string | null; endsAt: string | null }[] }>("/offer-changes");
+}
+
+export function cancelOfferChange(changeId: string) {
+  return api<{ ok: true }>(`/offer-changes/${changeId}/cancel`, { method: "POST" });
+}
+
 /** Category extras (api lib/categories/extras, migration 0040). */
 export type ExtrasState = { available: (keyof CategoryExtras)[]; extras: CategoryExtras };
 

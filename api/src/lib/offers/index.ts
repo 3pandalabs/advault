@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, lte, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, lte, or, sql } from "drizzle-orm";
 import { db } from "../../db/index.js";
 import {
   campaigns,
@@ -21,6 +21,7 @@ import {
 } from "./policy.js";
 import {
   isWhatsAppConfigured,
+  offerSwapWhatsAppEnabled,
   sendTemplate,
   sendText,
   TEMPLATES,
@@ -121,9 +122,20 @@ export async function openCyclesForEntitledSubscribers(at = new Date()) {
     .where(
       and(
         inArray(subscriptions.status, ["active", "past_due"]),
-        // Evergreen ("Keep it running") has no monthly offer: no prompt, and
-        // no offer expiry that would pause the ad it promises to keep running.
-        inArray(subscriptions.line, ["offer", "managed"]),
+        // Evergreen ("Keep it running") never gets the ORIGINAL loop (its
+        // expiry pauses the campaign). Since 2026-11-21 it gets the monthly
+        // "What's this month's offer?" prompt for the offer-CHANGE loop
+        // (lib/offerSwap/whatsapp.ts), only when that loop is switched on
+        // and only with a launched campaign to change.
+        offerSwapWhatsAppEnabled()
+          ? or(
+              inArray(subscriptions.line, ["offer", "managed"]),
+              and(
+                eq(subscriptions.line, "evergreen"),
+                sql`exists (select 1 from campaigns c where c.user_id = ${subscriptions.userId} and c.status in ('live','paused') and c.google_ad_group_resource_name is not null)`,
+              ),
+            )
+          : inArray(subscriptions.line, ["offer", "managed"]),
       ),
     );
 
@@ -274,7 +286,10 @@ export async function userForPhone(phone: string) {
     .from(users)
     // `tail` is digits-only by construction above, and is still bound as a
     // parameter rather than interpolated.
-    .where(sql`right(regexp_replace(coalesce(${users.phone}, ''), '\D', '', 'g'), 10) = ${tail}`);
+    // '[^0-9]', not '\D': inside a JS template literal "\D" cooks to a bare
+    // "D", so the old pattern stripped the letter D and no formatted number
+    // ("+1 (555) 201-0001") ever matched (fixed 2026-11-21).
+    .where(sql`right(regexp_replace(coalesce(${users.phone}, ''), '[^0-9]', '', 'g'), 10) = ${tail}`);
 
   return rows.length === 1 ? rows[0] : null;
 }

@@ -1,4 +1,4 @@
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq, isNull } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { requireAuth } from "../auth/plugin.js";
@@ -224,7 +224,10 @@ export async function campaignRoutes(app: FastifyInstance) {
       const rows = await db
         .select()
         .from(creatives)
-        .where(eq(creatives.campaignId, campaignId))
+        // Offer-change re-cuts (lib/offerSwap) live on the "Change my offer"
+        // card (GET /campaigns/:id/offer-changes), never in the ad list,
+        // whose redo / edit / upload buttons must not touch them.
+        .where(and(eq(creatives.campaignId, campaignId), isNull(creatives.offerChangeId)))
         .orderBy(desc(creatives.createdAt));
 
       return { ...campaign, creatives: rows };

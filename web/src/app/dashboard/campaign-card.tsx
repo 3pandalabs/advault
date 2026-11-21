@@ -48,6 +48,8 @@ function actionsFor(c: Campaign, stats: CampaignStats | undefined): Action[] {
   const out: Action[] = [{ label: "Open campaign", href: page }];
   // AdVault removed this ad: nothing to change or fund (the API refuses too).
   if (c.complianceStatus === "taken_down") return out;
+  // "Change my offer" (api lib/offerSwap): a running (or paused) launched ad.
+  if (isLaunched(c)) out.push({ label: "Change my offer", href: `${page}?edit=offer#change-offer` });
   // Same rule as the campaign page's "Who should see it" card.
   if (AUDIENCE_FILTERS_ENABLED || c.audienceFilters || c.googleCampaignResourceName) {
     out.push({ label: "Change audience", href: `${page}?edit=audience#audience` });
@@ -159,14 +161,39 @@ function StatsSummary({ campaignId, stats }: { campaignId: string; stats: Campai
   );
 }
 
+/** The campaign's offer change in flight or live (GET /offer-changes). */
+export type OfferChangeChip = { status: string; offerText: string | null; endsAt: string | null };
+
+/** "Making your new offer" / "Waiting for Google" / "Offer live until …". */
+export function offerChipText(ch: OfferChangeChip): string | null {
+  switch (ch.status) {
+    case "rendering":
+      return "Making your new offer ad";
+    case "preview":
+      return "New offer ready to check";
+    case "awaiting_payment":
+      return "New offer waiting for payment";
+    case "publishing":
+    case "pending_google":
+      return "New offer waiting for Google's approval";
+    case "live":
+      return ch.endsAt ? `Offer live until ${formatDate(ch.endsAt)}, then back to your regular ad` : "Offer live";
+    default:
+      return null;
+  }
+}
+
 export function CampaignCard({
   campaign: c,
   stats,
+  offerChange,
 }: {
   campaign: Campaign;
   /** From GET /campaigns/stats; undefined while loading or not launched. */
   stats: CampaignStats | undefined;
+  offerChange?: OfferChangeChip;
 }) {
+  const chip = offerChange ? offerChipText(offerChange) : null;
   const launched = isLaunched(c);
   const actions = actionsFor(c, stats);
   const page = `/dashboard/campaigns/${c.id}`;
@@ -190,6 +217,7 @@ export function CampaignCard({
         </div>
         <Badge tone={STATUS_TONE[c.status]}>{STATUS_LABEL[c.status]}</Badge>
       </div>
+      {chip && <p className="mt-3 break-words text-sm text-amber-200">{chip}</p>}
       {launched && <StatsSummary campaignId={c.id} stats={stats} />}
       {/* Full-width stack on narrow phones, a wrapping row from 400px up. */}
       <div className="mt-4 flex flex-col gap-2 min-[400px]:flex-row min-[400px]:flex-wrap">

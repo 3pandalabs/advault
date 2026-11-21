@@ -191,7 +191,9 @@ export async function markPurchasePaid(args: {
             ? "New ad payment received"
             : purchase.sku === "cinematic_pack"
               ? "Cinematic 3-pack payment received"
-              : "Cinematic ad payment received",
+              : purchase.sku === "offer_change"
+                ? "Offer change payment received"
+                : "Cinematic ad payment received",
         externalRef: refs.credit,
       });
     } catch (err) {

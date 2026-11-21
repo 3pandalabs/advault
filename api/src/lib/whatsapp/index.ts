@@ -31,7 +31,22 @@ const GRAPH = process.env.WHATSAPP_API_URL ?? "https://graph.facebook.com/v21.0"
 export const TEMPLATES = {
   monthlyOfferPrompt: process.env.WHATSAPP_TEMPLATE_OFFER_PROMPT ?? "monthly_offer_prompt",
   offerReminder: process.env.WHATSAPP_TEMPLATE_OFFER_REMINDER ?? "monthly_offer_reminder",
+  // "Change my offer" (lib/offerSwap). Sent only when the owner's 24-hour
+  // window is closed (Google's approval often takes longer than a day);
+  // inside the window the same news goes as free text.
+  offerChangeLive: process.env.WHATSAPP_TEMPLATE_OFFER_CHANGE_LIVE ?? "offer_change_live",
+  offerChangeEnded: process.env.WHATSAPP_TEMPLATE_OFFER_CHANGE_ENDED ?? "offer_change_ended",
+  offerChangeProblem: process.env.WHATSAPP_TEMPLATE_OFFER_CHANGE_PROBLEM ?? "offer_change_problem",
 } as const;
+
+/**
+ * The WhatsApp offer-CHANGE loop (lib/offerSwap/whatsapp.ts): Meta configured
+ * AND switched on with OFFER_SWAP_WHATSAPP=on. Off, every part of it is a
+ * no-op and evergreen owners use the web page only.
+ */
+export function offerSwapWhatsAppEnabled(): boolean {
+  return isWhatsAppConfigured() && process.env.OFFER_SWAP_WHATSAPP === "on";
+}
 
 export function isWhatsAppConfigured(): boolean {
   return Boolean(TOKEN && PHONE_NUMBER_ID && APP_SECRET);
@@ -94,6 +109,60 @@ export async function sendTemplate(args: {
   });
 }
 
+/**
+ * Free text with up to three quick-reply buttons (YES / NO on a preview).
+ * Inside the 24-hour window only, like sendText.
+ */
+export async function sendButtons(args: { to: string; body: string; buttons: { id: string; title: string }[] }): Promise<SendResult> {
+  return post({
+    messaging_product: "whatsapp",
+    to: args.to,
+    type: "interactive",
+    interactive: {
+      type: "button",
+      body: { text: args.body.slice(0, 1024) },
+      action: {
+        buttons: args.buttons.slice(0, 3).map((b) => ({ type: "reply", reply: { id: b.id, title: b.title.slice(0, 20) } })),
+      },
+    },
+  });
+}
+
+/** A video by link (Meta fetches it at send time). Inside the window only. */
+export async function sendVideo(args: { to: string; link: string; caption?: string }): Promise<SendResult> {
+  return post({
+    messaging_product: "whatsapp",
+    to: args.to,
+    type: "video",
+    video: { link: args.link, ...(args.caption ? { caption: args.caption.slice(0, 1024) } : {}) },
+  });
+}
+
+/**
+ * Downloads an inbound photo / voice note. Two calls, per Meta's spec:
+ * GET /{media-id} (a short-lived URL, mime type and size), then the URL with
+ * the same bearer token. Refuses anything over `maxBytes` before downloading.
+ */
+export async function downloadMedia(
+  mediaId: string,
+  maxBytes: number,
+): Promise<{ bytes: Buffer; mimeType: string } | { tooLarge: true }> {
+  if (!isWhatsAppConfigured()) throw new WhatsAppNotConfigured();
+  const meta = await fetch(`${GRAPH}/${encodeURIComponent(mediaId)}`, {
+    headers: { authorization: `Bearer ${TOKEN}` },
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (!meta.ok) throw new Error(`WhatsApp media lookup failed: ${meta.status}`);
+  const info = (await meta.json()) as { url?: string; mime_type?: string; file_size?: number };
+  if (!info.url) throw new Error("WhatsApp media has no url");
+  if ((info.file_size ?? 0) > maxBytes) return { tooLarge: true };
+  const res = await fetch(info.url, { headers: { authorization: `Bearer ${TOKEN}` }, signal: AbortSignal.timeout(30_000) });
+  if (!res.ok) throw new Error(`WhatsApp media download failed: ${res.status}`);
+  const bytes = Buffer.from(await res.arrayBuffer());
+  if (bytes.byteLength > maxBytes) return { tooLarge: true };
+  return { bytes, mimeType: info.mime_type ?? res.headers.get("content-type") ?? "application/octet-stream" };
+}
+
 /** Free text. Valid ONLY inside the 24-hour window opened by their last reply. */
 export async function sendText(args: { to: string; body: string }): Promise<SendResult> {
   return post({
@@ -150,6 +219,15 @@ export type InboundMessage = {
   timestamp: Date;
 };
 
+/** Every inbound kind the offer-change loop understands (parseInboundAll). */
+export type InboundAny = InboundMessage & {
+  kind: "text" | "image" | "audio" | "button";
+  /** Photo / voice note media id (downloadMedia). */
+  mediaId?: string;
+  /** Quick-reply button id (interactive.button_reply.id or a template button payload). */
+  buttonId?: string;
+};
+
 /**
  * Extracts inbound text messages from a verified webhook body.
  *
@@ -158,6 +236,17 @@ export type InboundMessage = {
  * later, but silently treating its empty caption as ad copy is not.
  */
 export function parseInbound(rawBody: string): InboundMessage[] {
+  return parseInboundAll(rawBody)
+    .filter((m) => m.kind === "text")
+    .map(({ providerRef, from, body, timestamp }) => ({ providerRef, from, body, timestamp }));
+}
+
+/**
+ * Text, photos (with caption), voice notes / audio, and quick-reply button
+ * taps from a verified webhook body. Reactions, stickers, locations, status
+ * callbacks and anything else are dropped.
+ */
+export function parseInboundAll(rawBody: string): InboundAny[] {
   let payload: {
     entry?: {
       changes?: {
@@ -168,6 +257,10 @@ export function parseInbound(rawBody: string): InboundMessage[] {
             timestamp?: string;
             type?: string;
             text?: { body?: string };
+            image?: { id?: string; caption?: string };
+            audio?: { id?: string; voice?: boolean };
+            interactive?: { type?: string; button_reply?: { id?: string; title?: string } };
+            button?: { payload?: string; text?: string };
           }[];
         };
       }[];
@@ -179,17 +272,20 @@ export function parseInbound(rawBody: string): InboundMessage[] {
     return [];
   }
 
-  const out: InboundMessage[] = [];
+  const out: InboundAny[] = [];
   for (const entry of payload.entry ?? []) {
     for (const change of entry.changes ?? []) {
       for (const msg of change.value?.messages ?? []) {
-        if (msg.type !== "text" || !msg.id || !msg.from) continue;
-        out.push({
-          providerRef: msg.id,
-          from: msg.from,
-          body: msg.text?.body ?? "",
-          timestamp: new Date(Number(msg.timestamp ?? 0) * 1000),
-        });
+        if (!msg.id || !msg.from) continue;
+        const base = { providerRef: msg.id, from: msg.from, timestamp: new Date(Number(msg.timestamp ?? 0) * 1000) };
+        if (msg.type === "text") out.push({ ...base, kind: "text", body: msg.text?.body ?? "" });
+        else if (msg.type === "image" && msg.image?.id) out.push({ ...base, kind: "image", body: msg.image.caption ?? "", mediaId: msg.image.id });
+        else if (msg.type === "audio" && msg.audio?.id) out.push({ ...base, kind: "audio", body: "", mediaId: msg.audio.id });
+        else if (msg.type === "interactive" && msg.interactive?.button_reply?.id) {
+          out.push({ ...base, kind: "button", body: msg.interactive.button_reply.title ?? "", buttonId: msg.interactive.button_reply.id });
+        } else if (msg.type === "button" && msg.button?.payload) {
+          out.push({ ...base, kind: "button", body: msg.button.text ?? "", buttonId: msg.button.payload });
+        }
       }
     }
   }
