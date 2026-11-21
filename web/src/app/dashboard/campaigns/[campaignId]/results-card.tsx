@@ -243,14 +243,30 @@ function SuggestionCard({
   );
 }
 
+/** "12.5%" from a 0..1 rate; null when there is nothing to divide by. */
+function pct(part: number, whole: number): string | null {
+  if (whole <= 0) return null;
+  const p = (part / whole) * 100;
+  return `${p >= 10 ? Math.round(p) : Number(p.toFixed(1))}%`;
+}
+
 export function ResultsCard({
   campaignId,
   onTargetingChanged,
+  embedded = false,
+  initialRange = "7d",
 }: {
   campaignId: string;
   onTargetingChanged?: (c: Campaign) => void;
+  /**
+   * Inside another card (the dashboard list's "See details", 2026-11-21): no
+   * outer Card and no title, the parent already has both. It fetches on
+   * mount, so the parent mounts it only when opened.
+   */
+  embedded?: boolean;
+  initialRange?: ResultsRange;
 }) {
-  const [range, setRange] = useState<ResultsRange>("7d");
+  const [range, setRange] = useState<ResultsRange>(initialRange);
   const [data, setData] = useState<CampaignResults | null>(null);
   const [failed, setFailed] = useState(false);
 
@@ -276,10 +292,14 @@ export function ResultsCard({
   const cpvCents = t && t.views > 0 ? t.costMicros / 10_000 / t.views : null;
   const cpcCents = t && t.clicks > 0 ? t.costMicros / 10_000 / t.clicks : null;
 
+  const viewRate = t ? pct(t.views, t.impressions) : null;
+  const clickRate = t ? pct(t.clicks, t.impressions) : null;
+  const Shell = embedded ? EmbeddedShell : PageShell;
+
   return (
-    <Card className="mt-6">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <CardTitle>How your ad is doing</CardTitle>
+    <Shell>
+      <div className={`flex flex-wrap items-center gap-2 ${embedded ? "justify-end" : "justify-between"}`}>
+        {!embedded && <CardTitle>How your ad is doing</CardTitle>}
         <div className="flex gap-1" role="tablist" aria-label="Date range">
           {RANGES.map((o) => (
             <button
@@ -355,6 +375,8 @@ export function ResultsCard({
             <Stat label="Times shown" value={count.format(t.impressions)} />
             <Stat label="Spent" value={t.spendDisplay} />
             {r.balance && <Stat label="Budget left" value={r.balance.display} />}
+            {viewRate && <Stat label="View rate" value={viewRate} hint="of times shown were watched" />}
+            {clickRate && <Stat label="Click rate" value={clickRate} hint="of times shown got a tap" />}
           </div>
 
           <div className="mt-4 grid gap-2 sm:grid-cols-2">
@@ -392,6 +414,14 @@ export function ResultsCard({
         finding people to show your ad to — keep an eye on cost per view and clicks.
         {r?.lastSyncedAt && ` Last updated ${new Date(r.lastSyncedAt).toLocaleString()}.`}
       </p>
-    </Card>
+    </Shell>
   );
+}
+
+function PageShell({ children }: { children: React.ReactNode }) {
+  return <Card className="mt-6">{children}</Card>;
+}
+
+function EmbeddedShell({ children }: { children: React.ReactNode }) {
+  return <div>{children}</div>;
 }
