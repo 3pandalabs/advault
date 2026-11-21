@@ -20,6 +20,7 @@ import {
   targetingViolations,
 } from "../lib/audience/policy.js";
 import { loadOwnedCampaign } from "../lib/ownership.js";
+import { takenDownRefusal } from "../lib/compliance/policy.js";
 import { spreadSchedule } from "../lib/schedule/spread.js";
 import { categoryKey } from "../lib/categories/key.js";
 import { getBalance } from "../lib/wallet/index.js";
@@ -69,6 +70,9 @@ export async function targetingRoutes(app: FastifyInstance) {
       const input = req.body as z.infer<typeof body>;
       const campaign = await loadOwnedCampaign(campaignId, req.userId!, reply);
       if (!campaign) return;
+      // AdVault removed this ad: no audience or schedule change, here or at Google.
+      const takenDown = takenDownRefusal(campaign);
+      if (takenDown) return reply.code(takenDown.status).send(takenDown.body);
 
       const touchAudience = input.audienceFilters !== undefined;
       const spread = input.scheduleMode === "spread";

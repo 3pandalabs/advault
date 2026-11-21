@@ -130,6 +130,15 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             >
               Balance
             </Link>
+            {/* The cost simulator (was a fold on the campaign list). Short
+                label on phones so the wrapped rows stay compact. */}
+            <Link
+              href="/dashboard/costs"
+              className="rounded-lg px-3 py-2 text-zinc-300 hover:bg-white/10"
+            >
+              <span className="sm:hidden">Costs</span>
+              <span className="hidden sm:inline">What it costs</span>
+            </Link>
             {me?.role === "admin" && (
               <Link
                 href="/dashboard/admin"

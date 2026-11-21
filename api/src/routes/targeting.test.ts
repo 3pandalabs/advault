@@ -259,6 +259,17 @@ describe("PUT /campaigns/:id/targeting", () => {
     expect((await put(id, { audienceFilters: null }, otherId)).statusCode).toBe(404);
   });
 
+  it("a taken-down campaign is 409 ad_taken_down, nothing saved, no Google call", async () => {
+    const id = await campaign({ launched: true, filters: { ages: ["25-34"] } });
+    await pg.query(`update campaigns set compliance_status = 'taken_down' where id = $1`, [id]);
+    const res = await put(id, { audienceFilters: null });
+    expect(res.statusCode).toBe(409);
+    expect(res.json()).toMatchObject({ error: "ad_taken_down" });
+    expect((await row(id)).audience_filters).toEqual({ ages: ["25-34"] });
+    expect(holder.calls).toHaveLength(0);
+    expect((await put(id, { adSchedule: null })).statusCode).toBe(409);
+  });
+
   it("an unknown filter key is a 400", async () => {
     const id = await campaign({ launched: false });
     expect((await put(id, { audienceFilters: { gender: ["female"] } })).statusCode).toBe(400);

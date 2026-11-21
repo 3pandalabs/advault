@@ -480,6 +480,26 @@ export default function CampaignDetailPage({
     }
   }
 
+  // Deep links from the dashboard's Manage menu (#audience, #ad-budget): the
+  // page renders "Loading…" first, so the browser's own jump to the hash
+  // misses. Once the campaign is here, wait for the card (it can depend on
+  // the wallet / ad accounts loading too) and scroll to it, once.
+  const loaded = campaign !== null;
+  useEffect(() => {
+    if (!loaded) return;
+    const id = window.location.hash.slice(1);
+    if (!id) return;
+    let tries = 0;
+    const timer = window.setInterval(() => {
+      const el = document.getElementById(id);
+      if (el || ++tries > 20) {
+        window.clearInterval(timer);
+        el?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+    }, 100);
+    return () => window.clearInterval(timer);
+  }, [loaded]);
+
   if (error && !campaign) return <p className="text-sm text-red-300">{error}</p>;
   if (!campaign) return <p className="text-sm text-zinc-500">Loading…</p>;
 

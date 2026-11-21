@@ -404,6 +404,18 @@ export type CampaignMetrics = {
   lastSyncedAt: string | null;
 };
 
+/** GET /campaigns/stats: the dashboard list's stats row, launched campaigns only. */
+export type CampaignStats = {
+  campaignId: string;
+  currency: string;
+  /** The AdVault ad budget pays (platform billing): the campaign page has the top-up card. */
+  walletPays: boolean;
+  /** Totals since launch; null until Google's first numbers arrive. */
+  totals: MetricSummary | null;
+  lastSyncedAt: string | null;
+};
+export const getCampaignStats = () => api<{ note: string; campaigns: CampaignStats[] }>("/campaigns/stats");
+
 export type AdminMetrics = {
   days: number;
   since: string;
