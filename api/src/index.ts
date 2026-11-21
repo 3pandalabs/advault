@@ -39,6 +39,7 @@ import { cinematicRoutes } from "./routes/cinematic.js";
 import { offerRoutes } from "./routes/offers.js";
 import { youtubeRoutes } from "./routes/youtube.js";
 import { sitevaultAuthRoutes } from "./routes/sitevaultAuth.js";
+import { signinHandoffRoutes } from "./routes/signinHandoff.js";
 import { db } from "./db/index.js";
 
 const app = Fastify({
@@ -124,6 +125,7 @@ app.setErrorHandler((err: FastifyError & { code?: string }, req, reply) => {
 });
 
 await app.register(authRoutes);
+await app.register(signinHandoffRoutes);
 await app.register(testCustomerRoutes);
 // Pricing + wallet + payment webhooks. The /pricing routes inside are
 // deliberately public — the landing-page calculator is the top of the funnel

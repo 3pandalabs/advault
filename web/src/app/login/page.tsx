@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { WordmarkName, WordmarkTag } from "@/components/Wordmark";
+import { safeNextPath } from "@/lib/safeNext";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -23,7 +24,9 @@ export default function LoginPage() {
     try {
       const tokens = await login(email, password);
       setTokens(tokens.accessToken, tokens.refreshToken);
-      router.push("/dashboard");
+      // ?next= (e.g. from a SiteVault one-tap link that couldn't sign in): a
+      // relative AdVault path only, else the dashboard.
+      router.push(safeNextPath(new URLSearchParams(window.location.search).get("next")));
     } catch (err) {
       // The API deliberately returns one generic code for both "no such
       // account" and "wrong password" — repeating that here rather than

@@ -1481,3 +1481,14 @@ export const adReports = pgTable(
   },
   (t) => [index("idx_ad_reports_status").on(t.status, t.createdAt), index("idx_ad_reports_ip").on(t.ipAddress, t.createdAt)],
 );
+
+// One-tap sign-in from SiteVault (0044, lib/signinHandoff): each handoff
+// token's nonce, inserted once, so a token works a single time.
+export const signinHandoffNonces = pgTable(
+  "signin_handoff_nonces",
+  {
+    nonce: text("nonce").primaryKey(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  },
+  (t) => [index("idx_signin_handoff_nonces_expires").on(t.expiresAt)],
+);
