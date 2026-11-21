@@ -86,7 +86,7 @@ export default function AdminUsersPage() {
   return (
     <div>
       <div className="mb-6">
-        <h1 className="text-2xl font-semibold tracking-tight">Admins</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">Users &amp; admins</h1>
         <p className="mt-1 text-sm text-zinc-400">
           Find a user and make them an admin. They need to sign up first.{" "}
           <Link href="/dashboard/admin" className="text-amber-300 hover:underline">

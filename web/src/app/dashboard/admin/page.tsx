@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useState } from "react";
 import { ApiError, getAdminMetrics, getMe, type AdminMetrics } from "@/lib/api/browser";
 import { Badge, Card, CardDescription, CardTitle } from "@/components/ui/card";
@@ -46,19 +45,7 @@ export default function AdminMetricsPage() {
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Ad performance</h1>
           <p className="mt-1 text-sm text-zinc-400">
-            Every launched campaign, all customers.{" "}
-            <Link href="/dashboard/admin/business" className="text-amber-300 hover:underline">
-              Business →
-            </Link>{" "}
-            <Link href="/dashboard/admin/reviews" className="text-amber-300 hover:underline">
-              Video reviews →
-            </Link>{" "}
-            <Link href="/dashboard/admin/reports" className="text-amber-300 hover:underline">
-              Reports & wording →
-            </Link>{" "}
-            <Link href="/dashboard/admin/users" className="text-amber-300 hover:underline">
-              Admins →
-            </Link>
+            Every launched campaign, all customers.
           </p>
         </div>
         <div className="flex rounded-lg border border-white/15 p-0.5 text-sm">

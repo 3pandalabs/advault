@@ -73,10 +73,7 @@ export default function AdminReportsPage() {
       <div className="mb-6">
         <h1 className="text-2xl font-semibold tracking-tight">Reports & wording reviews</h1>
         <p className="mt-1 text-sm text-zinc-400">
-          Wording that must be approved before launch, public reports, and takedowns.{" "}
-          <Link href="/dashboard/admin/reviews" className="text-amber-300 hover:underline">
-            Video reviews →
-          </Link>
+          Wording that must be approved before launch, public reports, and takedowns.
         </p>
       </div>
 
