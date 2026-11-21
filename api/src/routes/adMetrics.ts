@@ -152,8 +152,9 @@ export async function adMetricsRoutes(app: FastifyInstance) {
             sql`${purchases.sku} = 'new_ad'`,
             sql`${purchases.amountMinor} > 0`,
             // Not admins' $0.50 "Test as customer" payments (lib/testMode),
-            // test customers (0030), or 3PandaLabs' own internal accounts (0032).
-            sql`${purchases.userId} not in (select id from users where role = 'admin' or test_owner_id is not null or is_internal)`,
+            // test customers (0030), 3PandaLabs' own internal accounts (0032), or
+            // accounts an admin marked as test (0046).
+            sql`${purchases.userId} not in (select id from users where role = 'admin' or test_owner_id is not null or is_internal or marked_test)`,
             gte(purchases.paidAt, from),
             lt(purchases.paidAt, to),
           ),

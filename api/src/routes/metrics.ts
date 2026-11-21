@@ -128,17 +128,18 @@ export async function metricsRoutes(app: FastifyInstance) {
         -- when testing as a customer at $0.50 (lib/testMode), which is not revenue;
         -- nor are an admin's test customers' (users.test_owner_id, 0030), nor
         -- 3PandaLabs' own internal accounts (users.is_internal, 0032): those pay
-        -- full price but are the org paying itself, reported separately below.
-        (select count(*) from subscriptions where status = 'active' and not cancel_at_period_end and (included_until is null or included_until <= now()) and user_id not in (select id from users where role = 'admin' or test_owner_id is not null or is_internal))::int as paying_subscribers,
+        -- full price but are the org paying itself, reported separately below;
+        -- nor accounts an admin marked as test (users.marked_test, 0046).
+        (select count(*) from subscriptions where status = 'active' and not cancel_at_period_end and (included_until is null or included_until <= now()) and user_id not in (select id from users where role = 'admin' or test_owner_id is not null or is_internal or marked_test))::int as paying_subscribers,
         -- The plan follows the running ad (0038, lib/planBilling): a plan
         -- stopping at period end (no ad running) or still in its included
         -- free month is not recurring revenue, so MRR and paying subscribers
         -- above skip both; they are counted here instead.
-        (select count(*) from subscriptions where status in ('active','past_due') and cancel_at_period_end and user_id not in (select id from users where role = 'admin' or test_owner_id is not null or is_internal))::int as plan_stopping_subscribers,
-        (select count(*) from subscriptions where status in ('active','past_due') and not cancel_at_period_end and included_until > now() and user_id not in (select id from users where role = 'admin' or test_owner_id is not null or is_internal))::int as plan_included_month_subscribers,
-        (select count(*) from subscriptions where status = 'past_due' and user_id not in (select id from users where role = 'admin' or test_owner_id is not null or is_internal))::int as past_due_subscribers,
-        (select coalesce(sum(amount_minor), 0) from subscriptions where status in ('active','past_due') and not cancel_at_period_end and (included_until is null or included_until <= now()) and currency_code = 'INR' and user_id not in (select id from users where role = 'admin' or test_owner_id is not null or is_internal))::int as mrr_minor_inr,
-        (select coalesce(sum(amount_minor), 0) from subscriptions where status in ('active','past_due') and not cancel_at_period_end and (included_until is null or included_until <= now()) and currency_code = 'USD' and user_id not in (select id from users where role = 'admin' or test_owner_id is not null or is_internal))::int as mrr_minor_usd,
+        (select count(*) from subscriptions where status in ('active','past_due') and cancel_at_period_end and user_id not in (select id from users where role = 'admin' or test_owner_id is not null or is_internal or marked_test))::int as plan_stopping_subscribers,
+        (select count(*) from subscriptions where status in ('active','past_due') and not cancel_at_period_end and included_until > now() and user_id not in (select id from users where role = 'admin' or test_owner_id is not null or is_internal or marked_test))::int as plan_included_month_subscribers,
+        (select count(*) from subscriptions where status = 'past_due' and user_id not in (select id from users where role = 'admin' or test_owner_id is not null or is_internal or marked_test))::int as past_due_subscribers,
+        (select coalesce(sum(amount_minor), 0) from subscriptions where status in ('active','past_due') and not cancel_at_period_end and (included_until is null or included_until <= now()) and currency_code = 'INR' and user_id not in (select id from users where role = 'admin' or test_owner_id is not null or is_internal or marked_test))::int as mrr_minor_inr,
+        (select coalesce(sum(amount_minor), 0) from subscriptions where status in ('active','past_due') and not cancel_at_period_end and (included_until is null or included_until <= now()) and currency_code = 'USD' and user_id not in (select id from users where role = 'admin' or test_owner_id is not null or is_internal or marked_test))::int as mrr_minor_usd,
         -- Prepaid balances the org is holding against platform-funded ad spend.
         -- This is money we owe as media, not revenue, and it was previously
         -- invisible on the admin page — the outstanding exposure under MCC.
@@ -149,8 +150,8 @@ export async function metricsRoutes(app: FastifyInstance) {
         (select count(*) from purchases where status in ('paid','producing'))::int as cinematic_awaiting_production,
         (select count(*) from purchases where status = 'delivered')::int as cinematic_delivered,
         (select count(*) from purchases where status = 'failed')::int as cinematic_failed_unrefunded,
-        (select coalesce(sum(amount_minor),0) from purchases where currency_code = 'INR' and status in ('paid','producing','delivered') and user_id not in (select id from users where role = 'admin' or test_owner_id is not null or is_internal))::int as add_on_revenue_minor_inr,
-        (select coalesce(sum(amount_minor),0) from purchases where currency_code = 'USD' and status in ('paid','producing','delivered') and user_id not in (select id from users where role = 'admin' or test_owner_id is not null or is_internal))::int as add_on_revenue_minor_usd,
+        (select coalesce(sum(amount_minor),0) from purchases where currency_code = 'INR' and status in ('paid','producing','delivered') and user_id not in (select id from users where role = 'admin' or test_owner_id is not null or is_internal or marked_test))::int as add_on_revenue_minor_inr,
+        (select coalesce(sum(amount_minor),0) from purchases where currency_code = 'USD' and status in ('paid','producing','delivered') and user_id not in (select id from users where role = 'admin' or test_owner_id is not null or is_internal or marked_test))::int as add_on_revenue_minor_usd,
         -- Internal accounts (0032): the org advertising its own apps. Real
         -- charges, never revenue or traction; shown on their own.
         (select count(*) from users where is_internal and deleted_at is null)::int as internal_accounts,

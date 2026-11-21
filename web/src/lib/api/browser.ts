@@ -1113,6 +1113,8 @@ export type AdminUser = {
   signupApp: "advault" | "sitevault";
   isInternal?: boolean;
   internalLabel?: string | null;
+  /** Marked as test (0046): left out of real customers / revenue, keeps its login. */
+  markedTest?: boolean;
   createdAt: string;
 };
 
@@ -1130,6 +1132,12 @@ export const setInternalAccount = (email: string, internal: boolean, label?: str
     method: "POST",
     body: JSON.stringify({ email, internal, ...(label ? { label } : {}) }),
   });
+
+/** Accounts marked as test (0046): keep their login and launches, left out of customer numbers. */
+export const listTestAccounts = () => api<{ users: AdminUser[] }>("/admin/test-accounts");
+
+export const setTestAccount = (email: string, test: boolean) =>
+  api<{ user: AdminUser }>("/admin/test-accounts", { method: "POST", body: JSON.stringify({ email, test }) });
 
 // --- billing ---------------------------------------------------------------
 

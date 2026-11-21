@@ -69,6 +69,11 @@ export const users = pgTable(
     // ("INTERNAL · ", Stripe `internal=1`). `internalLabel` is the product.
     isInternal: boolean("is_internal").notNull().default(false),
     internalLabel: text("internal_label"),
+    // Marked as test (0046, POST /admin/test-accounts): an ordinary account
+    // that is really ours (Play reviewer demo login, our own QA). Left out of
+    // real customers / revenue / traction only; changes NO login, price, gate
+    // or launch (unlike testOwnerId).
+    markedTest: boolean("marked_test").notNull().default(false),
     // The plan's included first month (0038, lib/planBilling): set when
     // it was used. NULL = this account's next plan starts with a free month.
     planFirstMonthUsedAt: timestamp("plan_first_month_used_at", { withTimezone: true }),

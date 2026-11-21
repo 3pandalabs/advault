@@ -42,12 +42,12 @@ let customerId: string;
 async function newUser(
   email: string,
   role: "admin" | "advertiser",
-  extra: { testOwnerId?: string; internal?: boolean; label?: string; deleted?: boolean } = {},
+  extra: { testOwnerId?: string; internal?: boolean; label?: string; deleted?: boolean; marked?: boolean } = {},
 ): Promise<string> {
   const r = await pg.query<{ id: string }>(
-    `insert into users (email, password_hash, role, test_owner_id, is_internal, internal_label, deleted_at)
-     values ($1, 'x', $2, $3, $4, $5, $6) returning id`,
-    [email, role, extra.testOwnerId ?? null, extra.internal ?? false, extra.label ?? null, extra.deleted ? new Date().toISOString() : null],
+    `insert into users (email, password_hash, role, test_owner_id, is_internal, internal_label, deleted_at, marked_test)
+     values ($1, 'x', $2, $3, $4, $5, $6, $7) returning id`,
+    [email, role, extra.testOwnerId ?? null, extra.internal ?? false, extra.label ?? null, extra.deleted ? new Date().toISOString() : null, extra.marked ?? false],
   );
   return r.rows[0]!.id;
 }
@@ -75,6 +75,11 @@ beforeAll(async () => {
   await newUser("sv2@3pandalabs.test", "advertiser", { internal: true, label: "SiteVault" });
   await newUser("rsvp@3pandalabs.test", "advertiser", { internal: true, label: "RsvpVault" });
   await newUser("misc@3pandalabs.test", "advertiser", { internal: true });
+  // Marked as test (0046, keeps its login): one plain, one also internal (test
+  // wins), one deleted.
+  await newUser("reviewer@x.test", "advertiser", { marked: true });
+  await newUser("qa@3pandalabs.test", "advertiser", { marked: true, internal: true, label: "QA" });
+  await newUser("old@x.test", "advertiser", { marked: true, deleted: true });
 
   const { authPlugin } = await import("../auth/plugin.js");
   const { adminInsightsRoutes } = await import("./adminInsights.js");
@@ -94,13 +99,15 @@ const get = (url: string, token?: string) =>
   app.inject({ method: "GET", url, headers: token ? { authorization: `Bearer ${token}` } : {} });
 
 describe("GET /admin/account-counts", () => {
-  it("splits accounts into real, test (per owner), internal (per label) and admins", async () => {
+  it("splits accounts into real, test (per owner + marked), internal (per label) and admins", async () => {
     const res = await get("/admin/account-counts", "analytics-token-for-tests");
     expect(res.statusCode).toBe(200);
     const body = res.json();
     expect(body.real).toBe(2);
     expect(body.test).toEqual({
-      total: 4,
+      total: 6,
+      createdByAdmins: 4,
+      markedByAdmin: 2,
       byOwner: [
         { ownerEmail: "admin@x.test", count: 3 },
         { ownerEmail: "admin2@x.test", count: 1 },
@@ -118,6 +125,8 @@ describe("GET /admin/account-counts", () => {
     // No customer emails, only admins' (test owners).
     expect(JSON.stringify(body)).not.toContain("shop@x.test");
     expect(JSON.stringify(body)).not.toContain("invalid");
+    expect(JSON.stringify(body)).not.toContain("reviewer@x.test");
+    expect(JSON.stringify(body)).not.toContain("QA");
   });
 
   it("agrees with /admin/business customers", async () => {

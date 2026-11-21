@@ -21,6 +21,10 @@ const internalBody = z.object({
   internal: z.boolean(),
   label: z.string().trim().max(60).optional(),
 });
+const testBody = z.object({
+  email: z.string().trim().min(3).max(320),
+  test: z.boolean(),
+});
 const roleBody = z.object({ role: z.enum(["advertiser", "admin"]) });
 
 async function requireDbAdmin(req: FastifyRequest, reply: FastifyReply) {
@@ -37,6 +41,7 @@ const columns = {
   signupApp: users.signupApp,
   isInternal: users.isInternal,
   internalLabel: users.internalLabel,
+  markedTest: users.markedTest,
   createdAt: users.createdAt,
 };
 
@@ -95,6 +100,40 @@ export async function adminUserRoutes(app: FastifyInstance) {
         .where(eq(users.id, target.id))
         .returning(columns);
       req.log.info({ actor: req.userId, target: target.id, internal, label }, "internal account changed");
+      return { user: row };
+    },
+  );
+
+  // Accounts marked as test (0046): an ordinary account that is really ours
+  // (the Play reviewer's demo login, our own QA). The flag changes NO login,
+  // price, gate or launch; it only keeps the account out of real customers,
+  // revenue and traction numbers. Unlike a test customer (test_owner_id) it
+  // can still sign in and launch for real.
+  app.get("/admin/test-accounts", { preHandler: [requireAuth, requireDbAdmin] }, async () => {
+    const rows = await db
+      .select(columns)
+      .from(users)
+      .where(and(eq(users.markedTest, true), isNull(users.deletedAt)))
+      .orderBy(asc(users.email));
+    return { users: rows };
+  });
+
+  app.post(
+    "/admin/test-accounts",
+    { preHandler: [requireAuth, requireDbAdmin], schema: { body: testBody } },
+    async (req, reply) => {
+      const { email, test } = req.body as z.infer<typeof testBody>;
+      const [target] = await db
+        .select({ id: users.id, role: users.role, testOwnerId: users.testOwnerId })
+        .from(users)
+        .where(and(sql`lower(${users.email}) = lower(${email})`, isNull(users.deletedAt)))
+        .limit(1);
+      if (!target) return reply.code(404).send({ error: "not_found" });
+      // Already out of every number: a test customer, or an admin.
+      if (target.testOwnerId) return reply.code(409).send({ error: "test_customer" });
+      if (target.role === "admin") return reply.code(409).send({ error: "admin_account" });
+      const [row] = await db.update(users).set({ markedTest: test }).where(eq(users.id, target.id)).returning(columns);
+      req.log.info({ actor: req.userId, target: target.id, test }, "test account mark changed");
       return { user: row };
     },
   );
