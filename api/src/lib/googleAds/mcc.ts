@@ -135,7 +135,11 @@ export async function fetchCampaignSpend(args: {
       query:
         "SELECT campaign.resource_name, segments.date, metrics.cost_micros " +
         "FROM campaign " +
-        `WHERE segments.date >= '${args.sinceDate}' ` +
+        // A closed range: Google rejects an open `>=` whenever segments.date is
+        // selected ("Request contains an invalid argument"), which silently
+        // stopped every wallet debit until 2026-11-21. Tomorrow (UTC) covers
+        // accounts whose timezone is ahead of UTC.
+        `WHERE segments.date BETWEEN '${args.sinceDate}' AND '${isoTomorrowUtc()}' ` +
         "AND metrics.cost_micros > 0",
     },
   });
@@ -147,6 +151,10 @@ export async function fetchCampaignSpend(args: {
       date: r.segments!.date!,
       costMicros: Number(r.metrics?.costMicros ?? 0),
     }));
+}
+
+function isoTomorrowUtc(): string {
+  return new Date(Date.now() + 86_400_000).toISOString().slice(0, 10);
 }
 
 /** Google reports micros (1e6 per unit); wallets hold minor units (1e2). */
