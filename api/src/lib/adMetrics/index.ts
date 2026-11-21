@@ -1,6 +1,6 @@
 import { and, asc, between, eq, gte, isNotNull, sql } from "drizzle-orm";
 import { db } from "../../db/index.js";
-import { campaignDailyMetrics, campaignSegmentMetrics, campaigns, users } from "../../db/schema.js";
+import { adAccounts, campaignDailyMetrics, campaignSegmentMetrics, campaigns, users } from "../../db/schema.js";
 import {
   buildGeoNameQuery,
   buildSegmentQuery,
@@ -194,6 +194,65 @@ export async function allCampaignMetrics(sinceDate: string) {
   );
 
   return { campaigns: list, totals };
+}
+
+/**
+ * The dashboard list's stats row (2026-11-20, GET /campaigns/stats): totals
+ * since launch for every one of ONE owner's launched campaigns, in one query
+ * (no per-card round trip). `totals` is null until Google's first numbers
+ * arrive. `walletPays` = the AdVault ad budget pays (platform billing), i.e.
+ * the campaign page shows its "Your ad budget" top-up card.
+ */
+export async function ownerCampaignStats(userId: string) {
+  const sums = db
+    .select({
+      campaignId: campaignDailyMetrics.campaignId,
+      impressions: sql<string>`sum(${campaignDailyMetrics.impressions})`.as("impressions"),
+      views: sql<string>`sum(${campaignDailyMetrics.views})`.as("views"),
+      clicks: sql<string>`sum(${campaignDailyMetrics.clicks})`.as("clicks"),
+      costMicros: sql<string>`sum(${campaignDailyMetrics.costMicros})`.as("cost_micros"),
+      lastSyncedAt: sql<Date>`max(${campaignDailyMetrics.updatedAt})`.as("last_synced_at"),
+    })
+    .from(campaignDailyMetrics)
+    .innerJoin(campaigns, eq(campaigns.id, campaignDailyMetrics.campaignId))
+    .where(eq(campaigns.userId, userId))
+    .groupBy(campaignDailyMetrics.campaignId)
+    .as("sums");
+
+  const rows = await db
+    .select({
+      campaignId: campaigns.id,
+      currency: campaigns.currencyCode,
+      billingMode: adAccounts.billingMode,
+      impressions: sums.impressions,
+      views: sums.views,
+      clicks: sums.clicks,
+      costMicros: sums.costMicros,
+      lastSyncedAt: sums.lastSyncedAt,
+    })
+    .from(campaigns)
+    .leftJoin(adAccounts, eq(adAccounts.id, campaigns.adAccountId))
+    .leftJoin(sums, eq(sums.campaignId, campaigns.id))
+    .where(and(eq(campaigns.userId, userId), isNotNull(campaigns.googleCampaignResourceName)));
+
+  return rows.map((r) => ({
+    campaignId: r.campaignId,
+    currency: r.currency as Currency,
+    walletPays: r.billingMode === "platform",
+    lastSyncedAt: r.lastSyncedAt ? new Date(r.lastSyncedAt).toISOString() : null,
+    totals:
+      r.impressions === null
+        ? null
+        : summarise(
+            {
+              impressions: Number(r.impressions),
+              views: Number(r.views ?? 0),
+              clicks: Number(r.clicks ?? 0),
+              costMicros: Number(r.costMicros ?? 0),
+            },
+            r.currency as Currency,
+          ),
+  }));
 }
 
 // ---------------------------------------------------------------------------

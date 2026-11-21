@@ -5,7 +5,7 @@ import { db } from "../db/index.js";
 import { campaigns, creatives, purchases } from "../db/schema.js";
 import { requireAdminOrAnalyticsToken } from "../auth/adminAccess.js";
 import { requireAuth } from "../auth/plugin.js";
-import { allCampaignMetrics, campaignMetrics } from "../lib/adMetrics/index.js";
+import { allCampaignMetrics, campaignMetrics, ownerCampaignStats } from "../lib/adMetrics/index.js";
 import { loadResults } from "../lib/adMetrics/results.js";
 import { clampRangeDays, isoDaysAgo } from "../lib/adMetrics/policy.js";
 import { loadOwnedCampaign } from "../lib/ownership.js";
@@ -21,6 +21,12 @@ const NOTE =
 const rangeQuery = z.object({ days: z.coerce.number().optional() });
 
 export async function adMetricsRoutes(app: FastifyInstance) {
+  // The dashboard list's stats row: every launched campaign of the caller's
+  // own, totals since launch, one query. Never anyone else's campaigns.
+  app.get("/campaigns/stats", { preHandler: requireAuth }, async (req) => {
+    return { note: NOTE, campaigns: await ownerCampaignStats(req.userId!) };
+  });
+
   app.get(
     "/campaigns/:campaignId/metrics",
     {

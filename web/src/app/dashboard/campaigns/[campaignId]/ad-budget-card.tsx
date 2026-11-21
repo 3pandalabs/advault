@@ -30,7 +30,7 @@ export function AdBudgetCard({ campaign, wallet }: { campaign: Campaign; wallet:
   const balance = wallet.balanceMinor;
 
   return (
-    <Card className="mt-2 mb-4" id="ad-budget">
+    <Card className="mt-2 mb-4 scroll-mt-6" id="ad-budget">
       <CardTitle>Your ad budget</CardTitle>
       <p className="mt-2 text-3xl font-semibold">{formatMoney(balance, wallet.currencyCode)}</p>
       <CardDescription className="mt-1">

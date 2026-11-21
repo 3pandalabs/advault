@@ -29,7 +29,10 @@ export function AudienceCard({
 }) {
   const housing = isHousingCategory(campaign.businessCategory);
   const launched = Boolean(campaign.googleCampaignResourceName);
-  const [editing, setEditing] = useState(false);
+  // ?edit=audience (the dashboard's "Change audience") opens the editor.
+  const [editing, setEditing] = useState(
+    () => typeof window !== "undefined" && new URLSearchParams(window.location.search).get("edit") === "audience",
+  );
   const [done, setDone] = useState<string | null>(null);
   const [draft, setDraft] = useState<AudienceFilters>(campaign.audienceFilters ?? {});
   const [busy, setBusy] = useState(false);
@@ -63,7 +66,7 @@ export function AudienceCard({
   }
 
   return (
-    <Card className="mb-4">
+    <Card className="mb-4 scroll-mt-6" id="audience">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <CardTitle>Who should see it</CardTitle>

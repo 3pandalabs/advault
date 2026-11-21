@@ -408,6 +408,17 @@ It must never call a mutate endpoint. Routes (`/campaigns/:id/metrics`,
   average and < 90% of spend; never Unknown, never a dimension already
   narrowed, never age/gender for real estate. Age narrowing keeps Google's
   unknown-age group. Device is not suggested (no device targeting here).
+- **Dashboard list (2026-11-20).** Each launched campaign card on
+  `/dashboard` (`app/dashboard/campaign-card.tsx`) shows times shown / views /
+  clicks / spent since launch from ONE `GET /campaigns/stats` call (same
+  table, `ownerCampaignStats`), "Waiting for Google's first numbers" before
+  any row, and a Manage menu that deep-links into the campaign page's own
+  editors: `?edit=audience#audience` (opens "Who should see it"; offered by
+  the same rule the page uses) and `#ad-budget` (only when `walletPays`;
+  not-launched campaigns go to the Balance page). The campaign page scrolls
+  to its hash once the data has loaded. The cost simulator moved from a fold
+  on the list to the header's "What it costs" tab (`/dashboard/costs`); the
+  empty state and the public home page keep theirs.
 - `/admin/metrics` takes an admin session or the optional
   `ADMIN_ANALYTICS_TOKEN`, never the shared `METRICS_TOKEN`: it names
   businesses and their spend, which `/metrics` deliberately never does.

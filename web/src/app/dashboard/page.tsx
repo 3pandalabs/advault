@@ -4,30 +4,21 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { siteVaultSlug } from "@/lib/sitevault";
-import { getMe, getSubscription, getWallet, listCampaigns, type Campaign, type CampaignStatus, type Wallet } from "@/lib/api/browser";
+import {
+  getCampaignStats,
+  getMe,
+  getSubscription,
+  getWallet,
+  listCampaigns,
+  type Campaign,
+  type CampaignStats,
+  type Wallet,
+} from "@/lib/api/browser";
 import { BudgetBanner } from "@/components/BudgetBanner";
 import { CostSimulator } from "@/components/CostSimulator";
-import { Badge, Card, CardDescription, CardTitle } from "@/components/ui/card";
+import { Card, CardDescription, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { formatDate } from "@/lib/utils";
-
-const STATUS_TONE: Record<CampaignStatus, "neutral" | "pending" | "success" | "danger"> = {
-  draft: "neutral",
-  rendering: "pending",
-  ready: "pending",
-  live: "success",
-  paused: "neutral",
-  failed: "danger",
-};
-
-const STATUS_LABEL: Record<CampaignStatus, string> = {
-  draft: "Draft",
-  rendering: "Rendering",
-  ready: "Ready to launch",
-  live: "Live",
-  paused: "Paused",
-  failed: "Launch failed",
-};
+import { CampaignCard, isLaunched } from "./campaign-card";
 
 export default function CampaignsPage() {
   const [campaigns, setCampaigns] = useState<Campaign[] | null>(null);
@@ -38,6 +29,9 @@ export default function CampaignsPage() {
   const router = useRouter();
   // Low / ran-out ad budget banner (top-up-first model).
   const [wallet, setWallet] = useState<Wallet | null>(null);
+  // Stats row per launched campaign, one call for the whole list
+  // (GET /campaigns/stats). null = loading or failed: cards show no row.
+  const [stats, setStats] = useState<Map<string, CampaignStats> | null>(null);
 
   // The cost simulator says "$0 today" for the plan only while the account
   // still has its included first month.
@@ -75,6 +69,11 @@ export default function CampaignsPage() {
           return;
         }
         setCampaigns(list);
+        if (list.some(isLaunched)) {
+          getCampaignStats()
+            .then((r) => setStats(new Map(r.campaigns.map((c) => [c.campaignId, c]))))
+            .catch(() => setStats(null));
+        }
       })
       .catch(() => setError(true));
   }, [router]);
@@ -141,41 +140,9 @@ export default function CampaignsPage() {
         </Link>
       </div>
 
-      <details className="group mb-6 rounded-2xl border border-white/10 bg-white/[0.03]">
-        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-5 py-4 text-sm font-medium text-zinc-200 [&::-webkit-details-marker]:hidden">
-          What will this cost?
-          <span aria-hidden className="text-zinc-400 transition group-open:rotate-180">
-            ▾
-          </span>
-        </summary>
-        <div className="border-t border-white/10 px-5 pt-4 pb-5">
-          <CostSimulator
-            bare
-            ctaHref="/dashboard/campaigns/new"
-            addMoreHref="/dashboard/wallet"
-            firstMonthIncluded={firstMonthIncluded}
-          />
-        </div>
-      </details>
-
       <div className="space-y-3">
         {campaigns.map((c) => (
-          <Link key={c.id} href={`/dashboard/campaigns/${c.id}`} className="block">
-            <Card className="transition-colors hover:border-white/20 hover:bg-white/[0.05]">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <CardTitle>{c.name}</CardTitle>
-                  <CardDescription>
-                    {c.targetAddress
-                      ? `${c.radiusMiles} miles around a listing`
-                      : `${c.targetZipCodes.length} ZIP${c.targetZipCodes.length === 1 ? "" : "s"} within ${c.radiusMiles} miles`}{" "}
-                    &middot; created {formatDate(c.createdAt)}
-                  </CardDescription>
-                </div>
-                <Badge tone={STATUS_TONE[c.status]}>{STATUS_LABEL[c.status]}</Badge>
-              </div>
-            </Card>
-          </Link>
+          <CampaignCard key={c.id} campaign={c} stats={stats?.get(c.id)} />
         ))}
       </div>
     </div>
