@@ -412,7 +412,7 @@ It must never call a mutate endpoint. Routes (`/campaigns/:id/metrics`,
   `/dashboard` (`app/dashboard/campaign-card.tsx`) shows times shown / views /
   clicks / spent since launch from ONE `GET /campaigns/stats` call (same
   table, `ownerCampaignStats`), "Waiting for Google's first numbers" before
-  any row, and a Manage menu that deep-links into the campaign page's own
+  any row, and action buttons (Open campaign / Change audience / Top up budget) that deep-link into the campaign page's own
   editors: `?edit=audience#audience` (opens "Who should see it"; offered by
   the same rule the page uses) and `#ad-budget` (only when `walletPays`;
   not-launched campaigns go to the Balance page). The campaign page scrolls

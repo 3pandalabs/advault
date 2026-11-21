@@ -1,15 +1,16 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useId, useRef, useState } from "react";
 import type { Campaign, CampaignStats, CampaignStatus } from "@/lib/api/browser";
 import { AUDIENCE_FILTERS_ENABLED } from "@/lib/audience";
 import { Badge, Card, CardDescription, CardTitle } from "@/components/ui/card";
+import { buttonVariants } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import { formatDate, formatRelative } from "@/lib/utils";
 
 // One campaign on the dashboard list (2026-11-20): status, a stats row once
-// the ad has launched, and a Manage menu that deep-links into the campaign
-// page's own editors (never a copy of them). Every campaign here is the
+// the ad has launched, and action buttons that deep-link into the campaign
+// page's own editors (never a copy of them), as a visible button row. Every campaign here is the
 // caller's own: GET /campaigns and GET /campaigns/stats only return those.
 
 const STATUS_TONE: Record<CampaignStatus, "neutral" | "pending" | "success" | "danger"> = {
@@ -52,99 +53,11 @@ function actionsFor(c: Campaign, stats: CampaignStats | undefined): Action[] {
   // back to it). Launched on the customer's own Google billing: nothing of
   // ours to top up. Not launched yet: the Balance page.
   if (stats?.walletPays) {
-    out.push({ label: "Top up ad budget", href: `${page}#ad-budget` });
+    out.push({ label: "Top up budget", href: `${page}#ad-budget` });
   } else if (!c.googleCampaignResourceName) {
-    out.push({ label: "Top up ad budget", href: "/dashboard/wallet" });
+    out.push({ label: "Top up budget", href: "/dashboard/wallet" });
   }
   return out;
-}
-
-function ManageMenu({ campaign, actions }: { campaign: Campaign; actions: Action[] }) {
-  const [open, setOpen] = useState(false);
-  const wrap = useRef<HTMLDivElement>(null);
-  const button = useRef<HTMLButtonElement>(null);
-  const items = useRef<(HTMLAnchorElement | null)[]>([]);
-  const menuId = useId();
-
-  useEffect(() => {
-    if (!open) return;
-    items.current[0]?.focus();
-    const onDown = (e: PointerEvent) => {
-      if (wrap.current && !wrap.current.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener("pointerdown", onDown);
-    return () => document.removeEventListener("pointerdown", onDown);
-  }, [open]);
-
-  function onMenuKey(e: React.KeyboardEvent) {
-    const list = items.current.filter(Boolean) as HTMLAnchorElement[];
-    const i = list.indexOf(document.activeElement as HTMLAnchorElement);
-    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-      e.preventDefault();
-      const next = e.key === "ArrowDown" ? (i + 1) % list.length : (i - 1 + list.length) % list.length;
-      list[next]?.focus();
-    } else if (e.key === "Home" || e.key === "End") {
-      e.preventDefault();
-      list[e.key === "Home" ? 0 : list.length - 1]?.focus();
-    } else if (e.key === "Escape") {
-      e.preventDefault();
-      setOpen(false);
-      button.current?.focus();
-    } else if (e.key === "Tab") {
-      setOpen(false);
-    }
-  }
-
-  return (
-    <div ref={wrap} className="relative z-10">
-      <button
-        ref={button}
-        type="button"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        aria-controls={open ? menuId : undefined}
-        aria-label={`Manage ${campaign.name}`}
-        onClick={() => setOpen((o) => !o)}
-        onKeyDown={(e) => {
-          if (e.key === "ArrowDown") {
-            e.preventDefault();
-            setOpen(true);
-          }
-        }}
-        className="inline-flex min-h-9 items-center gap-1 rounded-lg border border-white/15 px-3 py-1.5 text-sm text-zinc-200 hover:border-white/30 hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-amber-400"
-      >
-        Manage
-        <span aria-hidden className={`text-zinc-400 transition ${open ? "rotate-180" : ""}`}>
-          ▾
-        </span>
-      </button>
-      {open && (
-        <div
-          id={menuId}
-          role="menu"
-          aria-label={`Manage ${campaign.name}`}
-          onKeyDown={onMenuKey}
-          className="absolute right-0 mt-1 w-52 overflow-hidden rounded-xl border border-white/15 bg-zinc-900 py-1 shadow-xl"
-        >
-          {actions.map((a, i) => (
-            <Link
-              key={a.label}
-              ref={(el) => {
-                items.current[i] = el;
-              }}
-              href={a.href}
-              role="menuitem"
-              tabIndex={-1}
-              onClick={() => setOpen(false)}
-              className="block px-4 py-2.5 text-sm text-zinc-200 hover:bg-white/10 focus:bg-white/10 focus:outline-none"
-            >
-              {a.label}
-            </Link>
-          ))}
-        </div>
-      )}
-    </div>
-  );
 }
 
 function Stat({ label, value }: { label: string; value: string }) {
@@ -193,17 +106,16 @@ export function CampaignCard({
   stats: CampaignStats | undefined;
 }) {
   const launched = isLaunched(c);
+  const actions = actionsFor(c, stats);
+  const page = `/dashboard/campaigns/${c.id}`;
   return (
-    // The title link stretches over the whole card (after:inset-0), so the
-    // card stays one big tap target while the Manage menu sits above it.
-    <Card className="relative transition-colors hover:border-white/20 hover:bg-white/[0.05]">
+    // No link wraps the card: the title and the buttons are separate links,
+    // so a button tap never also opens the card (no nested interactive elements).
+    <Card className="transition-colors hover:border-white/20">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <CardTitle>
-            <Link
-              href={`/dashboard/campaigns/${c.id}`}
-              className="after:absolute after:inset-0 after:rounded-xl focus-visible:outline-none focus-visible:after:outline-2 focus-visible:after:outline-amber-400"
-            >
+            <Link href={page} className="hover:underline hover:underline-offset-4">
               {c.name}
             </Link>
           </CardTitle>
@@ -214,12 +126,21 @@ export function CampaignCard({
             &middot; created {formatDate(c.createdAt)}
           </CardDescription>
         </div>
-        <div className="flex items-center gap-2">
-          <Badge tone={STATUS_TONE[c.status]}>{STATUS_LABEL[c.status]}</Badge>
-          <ManageMenu campaign={c} actions={actionsFor(c, stats)} />
-        </div>
+        <Badge tone={STATUS_TONE[c.status]}>{STATUS_LABEL[c.status]}</Badge>
       </div>
       {launched && <StatsRow stats={stats} />}
+      {/* Full-width stack on narrow phones, a wrapping row from 400px up. */}
+      <div className="mt-4 flex flex-col gap-2 min-[400px]:flex-row min-[400px]:flex-wrap">
+        {actions.map((a, i) => (
+          <Link
+            key={a.label}
+            href={a.href}
+            className={cn(buttonVariants({ variant: i === 0 ? "default" : "outline", size: "sm" }))}
+          >
+            {a.label}
+          </Link>
+        ))}
+      </div>
     </Card>
   );
 }
