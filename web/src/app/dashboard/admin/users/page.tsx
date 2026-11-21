@@ -6,6 +6,7 @@ import { ApiError, getMe, listAdminUsers, setUserRole, type AdminUser } from "@/
 import { Badge, Card, CardDescription, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { InternalAccounts } from "./internal-accounts";
+import { TestAccounts } from "./test-accounts";
 
 // Admin-only: find a user and make them an admin, or back to a normal user.
 // GET/POST /admin/users enforce admin themselves (re-read from the database);
@@ -151,6 +152,7 @@ export default function AdminUsersPage() {
                       {[u.displayName, u.businessName].filter(Boolean).join(" · ") || "—"}
                       {u.signupApp === "sitevault" ? " · joined via SiteVault" : ""}
                       {u.isInternal ? ` · internal${u.internalLabel ? ` (${u.internalLabel})` : ""}` : ""}
+                      {u.markedTest ? " · marked test" : ""}
                     </div>
                   </td>
                   <td className="px-3 py-2">
@@ -178,6 +180,7 @@ export default function AdminUsersPage() {
       )}
 
       <InternalAccounts />
+      <TestAccounts />
     </div>
   );
 }

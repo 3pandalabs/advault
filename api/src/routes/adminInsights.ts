@@ -11,9 +11,10 @@ import { microsToMinor } from "../lib/adMetrics/policy.js";
 // The admin Business page (web /dashboard/admin/business): customers, the
 // signup -> launch funnel, customer groups, categories, revenue and top ads.
 // Read-only and DB-only. Customers = advertisers that are not deleted; admins,
-// test customers (0030) and 3PandaLabs' own internal accounts (0032) are left
-// out so our own testing and our own ads don't count as customers or revenue.
-// Internal accounts are listed on their own under `internal`.
+// test customers (0030), accounts marked as test (0046) and 3PandaLabs' own
+// internal accounts (0032) are left out so our own testing and our own ads
+// don't count as customers or revenue. Internal accounts (not marked test) are
+// listed on their own under `internal`.
 
 type CustomerRow = {
   id: string;
@@ -72,7 +73,7 @@ export async function adminInsightsRoutes(app: FastifyInstance) {
             + coalesce((select sum(i.amount_minor) from subscription_invoices i where i.user_id = u.id and i.status = 'paid'), 0)::int
             as revenue_minor
         from users u
-        where u.role = 'advertiser' and u.test_owner_id is null and not u.is_internal and u.deleted_at is null
+        where u.role = 'advertiser' and u.test_owner_id is null and not u.is_internal and not u.marked_test and u.deleted_at is null
         order by u.created_at desc
       `)
     ).rows;
@@ -144,7 +145,7 @@ export async function adminInsightsRoutes(app: FastifyInstance) {
           count(c.launched_at)::int as launched,
           coalesce(sum((select sum(m.views) from campaign_daily_metrics m where m.campaign_id = c.id)), 0)::bigint as views
         from campaigns c join users u on u.id = c.user_id
-        where u.role = 'advertiser' and u.test_owner_id is null and not u.is_internal and u.deleted_at is null
+        where u.role = 'advertiser' and u.test_owner_id is null and not u.is_internal and not u.marked_test and u.deleted_at is null
         group by c.business_category
         order by customers desc, campaigns desc
       `)
@@ -157,12 +158,12 @@ export async function adminInsightsRoutes(app: FastifyInstance) {
             p.currency_code, p.amount_minor as amount,
             case when p.created_at > now() - interval '30 days' then p.amount_minor else 0 end as last30
           from purchases p join users u on u.id = p.user_id
-          where ${PAID_PURCHASE} and u.role = 'advertiser' and u.test_owner_id is null and not u.is_internal
+          where ${PAID_PURCHASE} and u.role = 'advertiser' and u.test_owner_id is null and not u.is_internal and not u.marked_test
           union all
           select 'Subscriptions', i.currency_code, i.amount_minor,
             case when i.paid_at > now() - interval '30 days' then i.amount_minor else 0 end
           from subscription_invoices i join users u on u.id = i.user_id
-          where i.status = 'paid' and u.role = 'advertiser' and u.test_owner_id is null and not u.is_internal
+          where i.status = 'paid' and u.role = 'advertiser' and u.test_owner_id is null and not u.is_internal and not u.marked_test
         ) r group by source, currency_code order by all_time desc
       `)
     ).rows.map((r) => ({
@@ -220,7 +221,7 @@ export async function adminInsightsRoutes(app: FastifyInstance) {
           (coalesce((select sum(p.amount_minor) from purchases p where p.user_id = u.id and ${PAID_PURCHASE} and p.created_at > now() - interval '30 days'), 0)
             + coalesce((select sum(i.amount_minor) from subscription_invoices i where i.user_id = u.id and i.status = 'paid' and i.paid_at > now() - interval '30 days'), 0))::int as last30_minor
         from users u
-        where u.is_internal and u.deleted_at is null
+        where u.is_internal and not u.marked_test and u.deleted_at is null
         order by u.internal_label nulls last, u.email
       `)
     ).rows.map((r) => ({
@@ -270,6 +271,65 @@ export async function adminInsightsRoutes(app: FastifyInstance) {
       topAds,
       customers: list,
       internal,
+    };
+  });
+
+  // Account counts for the org admin site's AdVault section: who is a real
+  // customer and who is us. Not-deleted accounts only, four disjoint groups,
+  // first match wins:
+  //   test      admin-made test customers (users.test_owner_id, 0030), per
+  //             owning admin (owners are admins, so their emails are ours),
+  //             PLUS accounts an admin marked as test (users.marked_test,
+  //             0046: they keep their login; `markedByAdmin`). A marked
+  //             account that is also internal counts here, not as internal.
+  //   internal  3PandaLabs' own accounts (users.is_internal, 0032) and the
+  //             product labels they advertise (no customer data)
+  //   real      every other advertiser, i.e. exactly the `customers` of
+  //             /admin/business
+  //   admins    role = 'admin' (never counted in the other three)
+  // A test customer whose owner is gone still counts, with ownerEmail null.
+  app.get("/admin/account-counts", { preHandler: requireAdminOrAnalyticsToken }, async () => {
+    const [totals] = (
+      await db.execute<{ real: number; created: number; marked: number; internal: number; admins: number }>(sql`
+        select
+          count(*) filter (where role = 'advertiser' and test_owner_id is null and not marked_test and not is_internal)::int as real,
+          count(*) filter (where role = 'advertiser' and test_owner_id is not null)::int as created,
+          count(*) filter (where role = 'advertiser' and test_owner_id is null and marked_test)::int as marked,
+          count(*) filter (where role = 'advertiser' and test_owner_id is null and not marked_test and is_internal)::int as internal,
+          count(*) filter (where role = 'admin')::int as admins
+        from users
+        where deleted_at is null
+      `)
+    ).rows;
+    const byOwner = (
+      await db.execute<{ owner_email: string | null; count: number }>(sql`
+        select o.email as owner_email, count(*)::int as count
+        from users t left join users o on o.id = t.test_owner_id
+        where t.role = 'advertiser' and t.test_owner_id is not null and t.deleted_at is null
+        group by o.email
+        order by count(*) desc, o.email
+      `)
+    ).rows.map((r) => ({ ownerEmail: r.owner_email, count: r.count }));
+    const labels = (
+      await db.execute<{ label: string | null; count: number }>(sql`
+        select internal_label as label, count(*)::int as count
+        from users
+        where role = 'advertiser' and test_owner_id is null and not marked_test and is_internal and deleted_at is null
+        group by internal_label
+        order by internal_label nulls last
+      `)
+    ).rows;
+    return {
+      generatedAt: new Date().toISOString(),
+      real: totals.real,
+      test: {
+        total: totals.created + totals.marked,
+        createdByAdmins: totals.created,
+        markedByAdmin: totals.marked,
+        byOwner,
+      },
+      internal: { total: totals.internal, labels },
+      admins: totals.admins,
     };
   });
 

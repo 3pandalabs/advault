@@ -1080,6 +1080,25 @@ e.g. "SiteVault"), set by a real admin (DB role) via `POST
 Never let it change a price, gate or launch. Tests:
 `routes/internalAccounts.test.ts`, `routes/internalSpend.test.ts`.
 
+## Accounts marked as test (2026-11-21, migration 0046)
+
+Some ordinary sign-ups are really ours (the Google Play reviewer's demo
+login, our own QA account) and showed up as real customers. They must keep
+working exactly like a customer, so they cannot become test customers
+(`test_owner_id`: no login, dry-run launches, $0.50 prices).
+`users.marked_test`, set by a real admin (DB role) via `POST
+/admin/test-accounts {email, test}` / the "Test users" box on
+`/dashboard/admin/users`, ONLY keeps the account out of real customers,
+revenue and traction: everywhere admins / test customers / internal accounts
+are excluded (`/metrics` subscriber/MRR/add-on revenue, `/admin/ad-production`
+`paidAds`, `/admin/business` customers, funnel, segments, categories,
+revenue and its `internal` list), and `/admin/account-counts` counts it under
+`test.markedByAdmin` (an account both internal and marked counts as test only).
+It changes NO login, price, gate, test mode, Stripe tag or launch; nothing in
+`lib/testMode` reads it. Refused for test customers and admins (409). Never
+put a real email in a migration or test to set it (public repo): admins set it
+in the UI. Tests: `routes/markedTest.test.ts`, `routes/accountCounts.test.ts`.
+
 ## Stripe: one org account, one AdVault endpoint
 
 The 3PandaLabs Stripe account is shared by every app. AdVault tags what it
