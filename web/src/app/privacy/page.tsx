@@ -356,7 +356,10 @@ export default function PrivacyPage() {
               put this offer on my website&rdquo; when buying an ad, we send only your offer
               text to that website, after payment. Your shared account: when you sign in to
               SiteVault, it sends us the email and password you typed so we can check them, and
-              we reply only yes or no with your account ID; when you sign up on SiteVault, it
+              we reply only yes or no with your account ID; when you follow a link between
+              AdVault and SiteVault while signed in, the two apps pass a one-time sign-in code
+              (it works once, for 60 seconds, and holds your account ID and email, never your
+              password) so you arrive signed in; when you sign up on SiteVault, it
               asks us to create your account here, and tells us when you make your first website
             </td>
           </tr>

@@ -139,6 +139,30 @@ sessions) linked by `advaultUserId`, but the login lives here. Routes:
   pattern for anything else that needs a real database.
 - Privacy and terms pages on BOTH apps describe the shared account. Change
   them with any change to what it stores.
+- **One-tap sign-in between the apps (2026-11-20, migration 0044,
+  `lib/signinHandoff`, `routes/signinHandoff.ts`; routes in `api/ROUTES.md`
+  "Auth").** A signed-in person follows a link to the other app and arrives
+  signed in to the same account. Same shape as the editor/create handoffs:
+  HMAC with `SITEVAULT_INTERNAL_TOKEN`, 60 s, single use, bound to uid +
+  email, but its own MAC prefix `3pl-signin-v1.` AND a `purpose`
+  (`signin-advault` / `signin-sitevault`), so no editor/create token and no
+  token for the other direction can sign anyone in. SiteVault -> here:
+  SiteVault's signed-in "Video ads" / "Make a YouTube ad" go to its
+  `/go/advault`, which 302s to the web page `/auth/handoff?t=&to=`
+  (`web/src/app/auth/handoff`, `referrer: no-referrer`); the page POSTs the
+  token to `/auth/handoff`, stores the normal token pair (`issueTokens`, the
+  login path) and goes to `to` (relative paths only, `lib/safeNext.ts`;
+  default /dashboard). Any refusal or an older API = `/login?next=<to>`
+  (login honours a safe `next`). Here -> SiteVault: `components/SiteVaultLink.tsx`
+  (used by "Edit it on SiteVault") opens the tab at once, asks
+  `POST /auth/sitevault-handoff` for a one-time link, and falls back to the
+  plain SiteVault URL (signed out, admin, older API, unconfigured). Admins
+  are refused on both sides (real `users.role`), test customers can't be
+  entered from SiteVault (as `/auth/login` refuses them) but go TO SiteVault
+  by id. The nonce table holds no user id (nothing for account deletion).
+  Tests: `routes/signinHandoff.test.ts` (PGlite). **Deploy advault-api and
+  advault-web before SiteVault** (its links would otherwise land on a
+  missing `/auth/handoff` page).
 
 ## Google Ads OAuth tokens are the most sensitive thing in this database
 

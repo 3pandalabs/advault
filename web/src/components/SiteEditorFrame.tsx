@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getWebsiteEditor } from "@/lib/api/browser";
+import { SiteVaultLink } from "@/components/SiteVaultLink";
 
 // SiteVault's full editor inside AdVault (2026-11-19). Used by "Your website"
 // (/dashboard/website) and inline on the campaign page's website card, right
@@ -168,14 +169,9 @@ export function EditOnSiteVault({ slug }: { slug: string }) {
   return (
     <>
       This website was made on SiteVault, so you edit it there with the same login.{" "}
-      <a
-        href={`${SITEVAULT_ORIGIN}/edit/${encodeURIComponent(slug)}`}
-        target="_blank"
-        rel="noreferrer"
-        className="text-amber-300 underline underline-offset-4"
-      >
+      <SiteVaultLink path={`/edit/${encodeURIComponent(slug)}`} className="text-amber-300 underline underline-offset-4">
         Edit it on SiteVault
-      </a>
+      </SiteVaultLink>
     </>
   );
 }

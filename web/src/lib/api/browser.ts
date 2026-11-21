@@ -537,6 +537,28 @@ export function login(email: string, password: string) {
   });
 }
 
+// One-tap sign-in from SiteVault (2026-11-20): exchange the 60 s, single-use
+// token SiteVault put in /auth/handoff?t= for the normal token pair. Any
+// refusal is ApiError("handoff_refused"); the page then shows /login.
+export function exchangeSigninHandoff(token: string) {
+  return api<{ accessToken: string; refreshToken: string }>("/auth/handoff", {
+    method: "POST",
+    body: JSON.stringify({ token }),
+  });
+}
+
+/**
+ * A one-time (60 s) SiteVault link that signs this user in there and opens
+ * `to` (a SiteVault path). null = use the plain SiteVault link (not set up,
+ * or an admin, who signs in by hand).
+ */
+export function sitevaultSigninUrl(to: string) {
+  return api<{ url: string | null }>("/auth/sitevault-handoff", {
+    method: "POST",
+    body: JSON.stringify({ to }),
+  });
+}
+
 export function register(input: {
   email: string;
   password: string;
