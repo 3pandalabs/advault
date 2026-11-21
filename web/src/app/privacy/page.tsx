@@ -13,6 +13,11 @@ import { LegalPage } from "@/components/legal/LegalPage";
 //
 //   - the subprocessor table mirrors the configured providers in api/src/lib
 //   - "no cookies, no analytics" is true only while web/src stays free of them
+//   - "Visits from an AdVault ad" is campaign_site_visits + users.signup_campaign_id
+//     (api migration 0045, lib/siteVisits, POST /track/visit): a per-campaign,
+//     per-day, per-path counter, no IP / user agent stored; the IP is only an
+//     in-memory rate-limit key; web/src/lib/adAttribution.ts keeps the campaign
+//     id in localStorage for 30 days (not a cookie)
 //   - the log/metric retention figures come from the monitoring stack
 //     (Loki 14 days, VictoriaMetrics 3 months)
 //   - AES-256-GCM at rest is api/src/lib/crypto.ts, bcrypt is auth/password.ts
@@ -40,7 +45,7 @@ export default function PrivacyPage() {
   return (
     <LegalPage
       title="Privacy Policy"
-      effective="20 November 2026"
+      effective="21 November 2026"
       summary="We collect what we need to make your ad and run your campaign, and nothing else. We do not sell your data, we do not track you around the internet, and this site sets no cookies at all."
     >
       <h2>Who we are</h2>
@@ -139,6 +144,14 @@ export default function PrivacyPage() {
           report page. We keep the reason and details given, the email address if the
           person chose to leave one, and their IP address and user agent (used to stop
           the form being abused).
+        </li>
+        <li>
+          <strong>Visits from an AdVault ad</strong> — when you arrive on this site by
+          clicking one of our ads (the link carries the ad&rsquo;s campaign number), we add
+          one to a count for that ad, that day and that page. The count holds no IP address,
+          no browser details and nothing that identifies you. Your browser remembers the
+          campaign number for 30 days (in browser storage, not a cookie), and if you create
+          an account in that time we note on your account which ad brought you.
         </li>
       </ul>
 

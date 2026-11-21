@@ -31,6 +31,8 @@ import {
   type MetricCounts,
   type MetricSummary,
 } from "./policy.js";
+import { siteVisitCounts, signupCounts } from "../siteVisits/index.js";
+import { landsOnAdvault } from "../siteVisits/policy.js";
 
 // I/O half of ad performance analytics. Google is only ever READ here
 // (googleAds:search) — no mutate endpoint is reachable from this module.
@@ -164,6 +166,11 @@ export async function allCampaignMetrics(sinceDate: string) {
     .where(isNotNull(campaigns.googleCampaignResourceName))
     .orderBy(asc(campaigns.launchedAt));
 
+  // Ad click tracking (0045): visits to advault.3pandalabs.com from the ad
+  // (utm_campaign) and accounts that signed up after one, in the same range.
+  const [visits, signups] = await Promise.all([siteVisitCounts({ sinceDate }), signupCounts(sinceDate)]);
+  const siteByCurrency = new Map<Currency, { siteVisits: number; signups: number }>();
+
   const totalsByCurrency = new Map<Currency, MetricCounts[]>();
   const list = rows.map((r) => {
     const currency = r.currency as Currency;
@@ -174,6 +181,9 @@ export async function allCampaignMetrics(sinceDate: string) {
       costMicros: Number(r.costMicros ?? 0),
     };
     totalsByCurrency.set(currency, [...(totalsByCurrency.get(currency) ?? []), counts]);
+    const site = { siteVisits: visits.get(r.campaignId) ?? 0, signups: signups.get(r.campaignId) ?? 0 };
+    const acc = siteByCurrency.get(currency) ?? { siteVisits: 0, signups: 0 };
+    siteByCurrency.set(currency, { siteVisits: acc.siteVisits + site.siteVisits, signups: acc.signups + site.signups });
     return {
       campaignId: r.campaignId,
       name: r.name,
@@ -184,13 +194,16 @@ export async function allCampaignMetrics(sinceDate: string) {
       googleCustomerId: r.googleCustomerId,
       launchedAt: r.launchedAt?.toISOString() ?? null,
       lastSyncedAt: r.lastSyncedAt ? new Date(r.lastSyncedAt).toISOString() : null,
-      totals: summarise(counts, currency),
+      totals: { ...summarise(counts, currency), ...site },
     };
   });
 
   // Never summed across currencies — a rupee and a dollar are not the same unit.
   const totals = Object.fromEntries(
-    [...totalsByCurrency].map(([currency, c]) => [currency, summarise(sumCounts(c), currency)]),
+    [...totalsByCurrency].map(([currency, c]) => [
+      currency,
+      { ...summarise(sumCounts(c), currency), ...(siteByCurrency.get(currency) ?? { siteVisits: 0, signups: 0 }) },
+    ]),
   );
 
   return { campaigns: list, totals };
@@ -224,6 +237,7 @@ export async function ownerCampaignStats(userId: string) {
       campaignId: campaigns.id,
       currency: campaigns.currencyCode,
       billingMode: adAccounts.billingMode,
+      landingUrl: campaigns.landingUrl,
       impressions: sums.impressions,
       views: sums.views,
       clicks: sums.clicks,
@@ -235,10 +249,17 @@ export async function ownerCampaignStats(userId: string) {
     .leftJoin(sums, eq(sums.campaignId, campaigns.id))
     .where(and(eq(campaigns.userId, userId), isNotNull(campaigns.googleCampaignResourceName)));
 
+  // "Visits to your website from this ad" (0045): only countable when the ad
+  // lands on advault.3pandalabs.com. A customer's own site or a SiteVault site
+  // is invisible to us, so those get null (the card shows nothing), never 0.
+  const ours = rows.filter((r) => landsOnAdvault(r.landingUrl)).map((r) => r.campaignId);
+  const visits = await siteVisitCounts({ campaignIds: ours });
+
   return rows.map((r) => ({
     campaignId: r.campaignId,
     currency: r.currency as Currency,
     walletPays: r.billingMode === "platform",
+    siteVisits: ours.includes(r.campaignId) ? (visits.get(r.campaignId) ?? 0) : null,
     lastSyncedAt: r.lastSyncedAt ? new Date(r.lastSyncedAt).toISOString() : null,
     totals:
       r.impressions === null

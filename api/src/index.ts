@@ -25,6 +25,7 @@ import { creativeRoutes } from "./routes/creatives.js";
 import { uploadRoutes } from "./routes/uploads.js";
 import { videoReviewRoutes } from "./routes/videoReviews.js";
 import { reportRoutes } from "./routes/reports.js";
+import { siteVisitRoutes } from "./routes/siteVisits.js";
 import { adminUserRoutes } from "./routes/adminUsers.js";
 import { newAdRoutes } from "./routes/newAds.js";
 import { startSiteOfferSweep } from "./lib/siteOffer/index.js";
@@ -157,6 +158,8 @@ await app.register(videoReviewRoutes);
 await app.register(adminUserRoutes);
 // "Report this ad" (public) + admin reports, takedown and wording review.
 await app.register(reportRoutes);
+// Public ad-click visit counter (0045): no session, no IP stored.
+await app.register(siteVisitRoutes);
 // SiteVault checks AdVault logins here (same email + password on both).
 await app.register(sitevaultAuthRoutes, { db });
 // Registered last and on its own, because it is the only route in this app

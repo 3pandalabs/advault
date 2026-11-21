@@ -10,6 +10,7 @@ import { Card } from "@/components/ui/card";
 import { WordmarkName, WordmarkTag } from "@/components/Wordmark";
 import { CATEGORIES } from "@/lib/audience";
 import { TERMS_VERSION } from "@/lib/compliance/texts";
+import { rememberedAdCampaignId } from "@/lib/adAttribution";
 
 // Business name and category are collected here rather than later because both
 // feed the ad script directly — asking for them up front means the first
@@ -41,7 +42,8 @@ export default function SignupPage() {
     setError(null);
     try {
       // termsVersion: the version this checkbox showed (POST /auth/register).
-      const input = { ...form, termsVersion: TERMS_VERSION };
+      // adCampaignId: the ad that brought this browser here, last 30 days.
+      const input = { ...form, termsVersion: TERMS_VERSION, adCampaignId: rememberedAdCampaignId() };
       const tokens = await register(input);
       setTokens(tokens.accessToken, tokens.refreshToken);
       // Ad account setup first. Sending a new advertiser straight to the

@@ -410,7 +410,7 @@ It must never call a mutate endpoint. Routes (`/campaigns/:id/metrics`,
   unknown-age group. Device is not suggested (no device targeting here).
 - **Dashboard list (2026-11-20).** Each launched campaign card on
   `/dashboard` (`app/dashboard/campaign-card.tsx`) shows times shown / views /
-  clicks / spent since launch from ONE `GET /campaigns/stats` call (same
+  clicks / spent (and, for ads landing on our own site, visits) since launch from ONE `GET /campaigns/stats` call (same
   table, `ownerCampaignStats`), "Waiting for Google's first numbers" before
   any row, and action buttons (Open campaign / Change audience / Top up budget) that deep-link into the campaign page's own
   editors: `?edit=audience#audience` (opens "Who should see it"; offered by
@@ -422,6 +422,28 @@ It must never call a mutate endpoint. Routes (`/campaigns/:id/metrics`,
 - `/admin/metrics` takes an admin session or the optional
   `ADMIN_ANALYTICS_TOKEN`, never the shared `METRICS_TOKEN`: it names
   businesses and their spend, which `/metrics` deliberately never does.
+- **Ad click tracking (2026-11-21, migration 0045, `lib/siteVisits`,
+  `lib/googleAds/utm.ts`).** A test ad was shown 180 times with 1 click and
+  0 sign-ups, and nothing said what the clicker did. Every NEW launch's final
+  URL gets `utm_source=youtube&utm_medium=paid_video&utm_campaign=<campaign
+  id>` (`withAdUtm`: appended as text before any `#fragment`, existing
+  params kept byte for byte, a tag already present never duplicated). Live
+  ads keep the URL they launched with. On advault.3pandalabs.com the root
+  layout's `AdVisitTracker` (`web/src/lib/adAttribution.ts`) POSTs a uuid
+  `utm_campaign` once per browser session to the public `POST /track/visit`
+  and keeps the id in localStorage 30 days (never a cookie); signup sends it
+  as `adCampaignId` -> `users.signup_campaign_id`. `campaign_site_visits` is
+  a counter per (campaign, UTC day, pathname): no IP, no user agent, no
+  visitor id; the IP is only an in-memory rate-limit key (30/hour), plus
+  2,000 visits per campaign per day. Unknown ids: 204, nothing stored.
+  `/admin/metrics` carries `siteVisits` + `signups` per campaign and per
+  currency total. The dashboard card shows "Visits to your website from this
+  ad" ONLY when the landing URL is on advault.3pandalabs.com
+  (`ownerCampaignStats` `siteVisits`, null otherwise): a customer's own site
+  or a SiteVault site is invisible to us, so never show 0 for those. Not
+  attributed: accounts created on SiteVault (`POST /internal/sitevault/accounts`).
+  Privacy page describes it. Tests: `routes/siteVisits.test.ts` (PGlite),
+  `lib/googleAds/utm.test.ts`, `lib/siteVisits/policy.test.ts`.
 
 ## Uploaded videos: behind a human review (admins only for launch)
 

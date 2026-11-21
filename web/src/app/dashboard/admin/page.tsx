@@ -97,12 +97,15 @@ export default function AdminMetricsPage() {
                   <CardDescription>
                     Totals · last {data.days} days · {cur}
                   </CardDescription>
-                  <div className="mt-3 grid grid-cols-2 gap-4 sm:grid-cols-5">
+                  <div className="mt-3 grid grid-cols-2 gap-4 sm:grid-cols-4">
                     <Stat label="Views" value={n(t.views)} />
-                    <Stat label="Impressions" value={n(t.impressions)} />
+                    <Stat label="Times shown" value={n(t.impressions)} />
                     <Stat label="Clicks" value={n(t.clicks)} />
                     <Stat label="Spend" value={t.spendDisplay} />
                     <Stat label="Cost / view" value={t.costPerViewDisplay ?? "—"} />
+                    {/* Ad click tracking (api 0045): visits to advault.3pandalabs.com + sign-ups. */}
+                    <Stat label="Site visits" value={n(t.siteVisits ?? 0)} />
+                    <Stat label="Sign-ups" value={n(t.signups ?? 0)} />
                   </div>
                 </div>
               ))
@@ -124,11 +127,13 @@ export default function AdminMetricsPage() {
                     <th className="px-3 py-2">Business</th>
                     <th className="px-3 py-2">Status</th>
                     <th className="px-3 py-2 text-right">Views</th>
-                    <th className="px-3 py-2 text-right">Impr.</th>
+                    <th className="px-3 py-2 text-right">Shown</th>
                     <th className="px-3 py-2 text-right">Clicks</th>
                     <th className="px-3 py-2 text-right">CTR</th>
                     <th className="px-3 py-2 text-right">Spend</th>
                     <th className="px-3 py-2 text-right">Cost/view</th>
+                    <th className="px-3 py-2 text-right">Site visits</th>
+                    <th className="px-3 py-2 text-right">Sign-ups</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/5">
@@ -155,6 +160,8 @@ export default function AdminMetricsPage() {
                       <td className="px-3 py-2 text-right">{pct(c.totals.ctr)}</td>
                       <td className="px-3 py-2 text-right">{c.totals.spendDisplay}</td>
                       <td className="px-3 py-2 text-right">{c.totals.costPerViewDisplay ?? "—"}</td>
+                      <td className="px-3 py-2 text-right">{n(c.totals.siteVisits ?? 0)}</td>
+                      <td className="px-3 py-2 text-right">{n(c.totals.signups ?? 0)}</td>
                     </tr>
                   ))}
                 </tbody>

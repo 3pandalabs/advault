@@ -88,6 +88,13 @@ function StatsRow({ stats }: { stats: CampaignStats | undefined }) {
         <Stat label="Clicks" value={count.format(t.clicks)} />
         <Stat label="Spent" value={t.spendDisplay} />
       </dl>
+      {/* Only for ads that land on advault.3pandalabs.com (siteVisits null otherwise). */}
+      {typeof stats.siteVisits === "number" && (
+        <p className="mt-2 text-xs text-zinc-400">
+          Visits to your website from this ad:{" "}
+          <span className="font-semibold tabular-nums text-zinc-100">{count.format(stats.siteVisits)}</span>
+        </p>
+      )}
       <p className="mt-2 text-xs text-zinc-500">
         Since launch
         {stats.lastSyncedAt && <> &middot; Updated {formatRelative(stats.lastSyncedAt)}</>} &middot; Google
