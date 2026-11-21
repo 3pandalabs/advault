@@ -74,13 +74,7 @@ export default function AdminVideoReviewsPage() {
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Video reviews</h1>
           <p className="mt-1 text-sm text-zinc-400">
-            Customer-uploaded videos. Nothing is published or launched until it is approved here.{" "}
-            <Link href="/dashboard/admin" className="text-amber-300 hover:underline">
-              Ad performance →
-            </Link>{" "}
-            <Link href="/dashboard/admin/reports" className="text-amber-300 hover:underline">
-              Wording reviews & reports →
-            </Link>
+            Customer-uploaded videos. Nothing is published or launched until it is approved here.
           </p>
         </div>
         <div className="flex rounded-lg border border-white/15 p-0.5 text-sm">

@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import {
   ApiError,
@@ -67,13 +66,7 @@ export default function AdminBusinessPage() {
       <div className="mb-6">
         <h1 className="text-2xl font-semibold tracking-tight">Business</h1>
         <p className="mt-1 text-sm text-zinc-400">
-          Customers, groups and categories. Admin accounts are not counted.{" "}
-          <Link href="/dashboard/admin" className="text-amber-300 hover:underline">
-            Ad performance →
-          </Link>{" "}
-          <Link href="/dashboard/admin/reviews" className="text-amber-300 hover:underline">
-            Video reviews →
-          </Link>
+          Customers, groups and categories. Admin accounts are not counted.
         </p>
       </div>
 
