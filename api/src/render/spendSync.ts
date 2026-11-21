@@ -1,5 +1,5 @@
 import { freezeCardsForUser } from "../lib/billing/managedCard.js";
-import { and, eq, isNotNull } from "drizzle-orm";
+import { and, eq, gte, isNotNull, or } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { adAccounts, campaigns } from "../db/schema.js";
 import {
@@ -27,6 +27,9 @@ import { pauseForFunds } from "../lib/schedule/spread.js";
 // Runs inside the renderer container (which is already a long-lived process, so
 // it needs no new deployment) rather than the API, where it would fire once per
 // replica.
+
+/** Days of Google spend re-read each run; also how long a stopped campaign stays in the sync. */
+const LOOKBACK_DAYS = 7;
 
 const SYNC_INTERVAL_MS = Number(process.env.SPEND_SYNC_INTERVAL_MS ?? 60 * 60 * 1000);
 
@@ -60,13 +63,21 @@ export async function runSpendSync(): Promise<{ synced: number; paused: number; 
   // for looks identical structurally but is none of the wallet's business:
   // debiting it would charge an advertiser for spend they already paid Google
   // directly, and auto-pause would then stop a campaign we never funded.
+  //
+  // Live campaigns, PLUS any launched campaign that changed in the lookback
+  // window (paused by the owner, paused for funds, taken down). Google reports
+  // cost hours late, so the spend of a campaign's last serving hours usually
+  // arrives after it stopped. Reading only `live` rows skipped that spend for
+  // good and left the wallet too high (the first test ad: $1.70 spent, $0
+  // debited, 2026-11-21). Only live rows are ever paused below.
+  const recentlyStopped = new Date(Date.now() - (LOOKBACK_DAYS + 1) * 86_400_000);
   const rows = await db
     .select({ campaign: campaigns, account: adAccounts })
     .from(campaigns)
     .innerJoin(adAccounts, eq(campaigns.adAccountId, adAccounts.id))
     .where(
       and(
-        eq(campaigns.status, "live"),
+        or(eq(campaigns.status, "live"), gte(campaigns.updatedAt, recentlyStopped)),
         eq(adAccounts.billingMode, "platform"),
         isNotNull(campaigns.googleCampaignResourceName),
       ),
@@ -88,6 +99,7 @@ export async function runSpendSync(): Promise<{ synced: number; paused: number; 
   // One wallet pays all of a customer's live campaigns.
   const liveDailyByUser = new Map<string, number>();
   for (const r of rows) {
+    if (r.campaign.status !== "live") continue;
     liveDailyByUser.set(r.campaign.userId, (liveDailyByUser.get(r.campaign.userId) ?? 0) + r.campaign.dailyBudgetCents);
   }
 
@@ -108,7 +120,7 @@ export async function runSpendSync(): Promise<{ synced: number; paused: number; 
     // land as DuplicateLedgerEntry and are skipped.
     let spendRows;
     try {
-      spendRows = await fetchCampaignSpend({ accessToken, customerId, sinceDate: isoDaysAgo(7) });
+      spendRows = await fetchCampaignSpend({ accessToken, customerId, sinceDate: isoDaysAgo(LOOKBACK_DAYS) });
     } catch (err) {
       log("spend query failed for a customer", { customerId, error: String(err) });
       continue;
@@ -151,6 +163,8 @@ export async function runSpendSync(): Promise<{ synced: number; paused: number; 
       // A SCHEDULED campaign (the spread days, "$55 a month") also stops while
       // money is left but under 2 days of budget: Google may spend 2x on its
       // next serving day, before this hourly sync sees it (lib/schedule/spread.ts).
+      // A stopped campaign only needed its late spend recorded.
+      if (row.campaign.status !== "live") continue;
       const balance = await getBalance(row.campaign.userId);
       if (
         pauseForFunds({
@@ -190,7 +204,7 @@ export async function runSpendSync(): Promise<{ synced: number; paused: number; 
     }
   }
 
-  await lowBalanceAlerts(rows.map((r) => r.campaign.id));
+  await lowBalanceAlerts(rows.filter((r) => r.campaign.status === "live").map((r) => r.campaign.id));
 
   return { synced, paused, resumed };
 }
