@@ -42,6 +42,8 @@ type Action = { label: string; href: string };
 function actionsFor(c: Campaign, stats: CampaignStats | undefined): Action[] {
   const page = `/dashboard/campaigns/${c.id}`;
   const out: Action[] = [{ label: "Open campaign", href: page }];
+  // AdVault removed this ad: nothing to change or fund (the API refuses too).
+  if (c.complianceStatus === "taken_down") return out;
   // Same rule as the campaign page's "Who should see it" card.
   if (AUDIENCE_FILTERS_ENABLED || c.audienceFilters || c.googleCampaignResourceName) {
     out.push({ label: "Change audience", href: `${page}?edit=audience#audience` });

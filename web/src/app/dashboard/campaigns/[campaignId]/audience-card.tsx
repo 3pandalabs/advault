@@ -29,9 +29,15 @@ export function AudienceCard({
 }) {
   const housing = isHousingCategory(campaign.businessCategory);
   const launched = Boolean(campaign.googleCampaignResourceName);
+  // AdVault removed this ad: show the audience, never offer to change it
+  // (PUT /campaigns/:id/targeting answers 409 ad_taken_down).
+  const takenDown = campaign.complianceStatus === "taken_down";
   // ?edit=audience (the dashboard's "Change audience") opens the editor.
   const [editing, setEditing] = useState(
-    () => typeof window !== "undefined" && new URLSearchParams(window.location.search).get("edit") === "audience",
+    () =>
+      !takenDown &&
+      typeof window !== "undefined" &&
+      new URLSearchParams(window.location.search).get("edit") === "audience",
   );
   const [done, setDone] = useState<string | null>(null);
   const [draft, setDraft] = useState<AudienceFilters>(campaign.audienceFilters ?? {});
@@ -76,7 +82,7 @@ export function AudienceCard({
               : "Everyone in your target area, unless you narrow it below."}
           </CardDescription>
         </div>
-        {!editing && (
+        {!editing && !takenDown && (
           <Button size="sm" variant="ghost" onClick={() => {
               setDone(null);
               setDraft(campaign.audienceFilters ?? {});
