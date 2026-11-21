@@ -13,6 +13,7 @@ import { mayToggleTestMode } from "../lib/testMode/policy.js";
 import { env } from "../env.js";
 import { acceptedTermsVersion, recordTermsAcceptance } from "../lib/compliance/index.js";
 import { TERMS_VERSION } from "../lib/compliance/texts.js";
+import { knownCampaignId } from "../lib/siteVisits/index.js";
 
 // Password reset (2026-11-18): email a single-use, 30-minute link, then set a
 // new password. Reuses lib/passwordReset — the same core the SiteVault-proxied
@@ -43,6 +44,9 @@ export async function authRoutes(app: FastifyInstance) {
           // version it showed (lib/compliance). Recorded in terms_acceptances
           // when it is the current one; otherwise the dashboard asks again.
           termsVersion: z.string().max(40).optional(),
+          // The campaign whose ad brought them (0045, lib/siteVisits): the web
+          // app remembers utm_campaign for 30 days. Unknown ids are ignored.
+          adCampaignId: z.string().max(64).optional(),
         }),
       },
     },
@@ -52,7 +56,9 @@ export async function authRoutes(app: FastifyInstance) {
         businessName?: string;
         businessCategory?: string;
         termsVersion?: string;
+        adCampaignId?: string;
       };
+      const signupCampaignId = await knownCampaignId(body.adCampaignId);
 
       const [user] = await db
         .insert(users)
@@ -62,6 +68,7 @@ export async function authRoutes(app: FastifyInstance) {
           displayName: body.displayName,
           businessName: body.businessName,
           businessCategory: body.businessCategory,
+          signupCampaignId,
         })
         .onConflictDoNothing({ target: users.email })
         .returning({ id: users.id, role: users.role });

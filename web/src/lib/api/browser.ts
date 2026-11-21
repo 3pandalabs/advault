@@ -410,6 +410,12 @@ export type CampaignStats = {
   currency: string;
   /** The AdVault ad budget pays (platform billing): the campaign page has the top-up card. */
   walletPays: boolean;
+  /**
+   * Visits to advault.3pandalabs.com from this ad (api migration 0045). null
+   * when the ad lands anywhere else (we can't see those visits): show nothing.
+   * Optional: an older API omits it.
+   */
+  siteVisits?: number | null;
   /** Totals since launch; null until Google's first numbers arrive. */
   totals: MetricSummary | null;
   lastSyncedAt: string | null;
@@ -420,7 +426,7 @@ export type AdminMetrics = {
   days: number;
   since: string;
   note: string;
-  totals: Record<string, MetricSummary>;
+  totals: Record<string, AdminSiteTotals>;
   campaigns: {
     campaignId: string;
     name: string;
@@ -431,9 +437,15 @@ export type AdminMetrics = {
     googleCustomerId: string | null;
     launchedAt: string | null;
     lastSyncedAt: string | null;
-    totals: MetricSummary;
+    totals: AdminSiteTotals;
   }[];
 };
+/**
+ * Ad click tracking (api migration 0045): visits to advault.3pandalabs.com
+ * from the ad (utm_campaign) and sign-ups after one, in the same range.
+ * Optional: an older API omits them.
+ */
+type AdminSiteTotals = MetricSummary & { siteVisits?: number; signups?: number };
 
 // Admin only (the API enforces it).
 export const getAdminMetrics = (days = 7) => api<AdminMetrics>(`/admin/metrics?days=${days}`);
@@ -579,6 +591,8 @@ export function register(input: {
   businessCategory?: string;
   /** The signup checkbox: the Terms version shown (api lib/compliance). */
   termsVersion?: string;
+  /** The ad that brought them, last 30 days (lib/adAttribution, api migration 0045). */
+  adCampaignId?: string;
 }) {
   return api<{ accessToken: string; refreshToken: string }>("/auth/register", {
     method: "POST",

@@ -145,6 +145,8 @@ describe("GET /campaigns/stats", () => {
       campaignId: waiting,
       currency: "USD",
       walletPays: false,
+      // landing_url is example.com, not advault.3pandalabs.com: visits unknowable.
+      siteVisits: null,
       lastSyncedAt: null,
       totals: null,
     });

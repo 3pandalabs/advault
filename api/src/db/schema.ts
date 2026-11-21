@@ -8,6 +8,7 @@ import {
   integer,
   jsonb,
   pgTable,
+  primaryKey,
   text,
   timestamp,
   uniqueIndex,
@@ -88,6 +89,11 @@ export const users = pgTable(
     signupApp: text("signup_app").notNull().default("advault"),
     advaultFirstUsedAt: timestamp("advault_first_used_at", { withTimezone: true }),
     sitevaultFirstUsedAt: timestamp("sitevault_first_used_at", { withTimezone: true }),
+    // The campaign whose ad brought this account (0045, lib/siteVisits): sent
+    // by the web app with POST /auth/register when the visitor arrived with
+    // utm_campaign=<id> in the last 30 days. FK (ON DELETE SET NULL) lives in
+    // the migration, like test_owner_id (campaigns references users).
+    signupCampaignId: uuid("signup_campaign_id"),
 
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -1356,6 +1362,21 @@ export const purchases = pgTable(
 // Counts are bigint (Google reports int64) read back as JS numbers — a single
 // local campaign is many orders of magnitude below 2^53.
 // ---------------------------------------------------------------------------
+
+// Visits to advault.3pandalabs.com from an ad click (0045, lib/siteVisits):
+// a counter per (campaign, day, path). No IP, no user agent, no visitor id.
+export const campaignSiteVisits = pgTable(
+  "campaign_site_visits",
+  {
+    campaignId: uuid("campaign_id")
+      .notNull()
+      .references(() => campaigns.id, { onDelete: "cascade" }),
+    day: date("day", { mode: "string" }).notNull(),
+    path: text("path").notNull(),
+    visits: integer("visits").notNull().default(0),
+  },
+  (t) => [primaryKey({ columns: [t.campaignId, t.day, t.path] }), index("idx_campaign_site_visits_day").on(t.day)],
+);
 
 export const campaignDailyMetrics = pgTable(
   "campaign_daily_metrics",

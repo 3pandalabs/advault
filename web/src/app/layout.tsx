@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { GradientBackdrop } from "@/components/GradientBackdrop";
 import { Footer } from "@/components/Footer";
+import { AdVisitTracker } from "@/components/AdVisitTracker";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -14,6 +15,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en">
       <body className="flex min-h-screen flex-col bg-zinc-950 text-zinc-100 antialiased">
         <GradientBackdrop />
+        <AdVisitTracker />
         <div className="flex-1">{children}</div>
         <Footer />
       </body>

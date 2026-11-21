@@ -52,6 +52,7 @@ import { spreadSchedule } from "../lib/schedule/spread.js";
 import { categoryKey } from "../lib/categories/key.js";
 import { billingGate, requiresWalletCheck } from "../lib/billing/policy.js";
 import { syncCardLimit } from "../lib/billing/managedCard.js";
+import { withAdUtm } from "../lib/googleAds/utm.js";
 
 // ---------------------------------------------------------------------------
 // THE ONLY ROUTE IN THIS CODEBASE THAT SPENDS MONEY.
@@ -179,7 +180,9 @@ export async function launchRoutes(app: FastifyInstance) {
       if (openHouseIsOver(campaign.realty, new Date().toISOString().slice(0, 10))) {
         return reply.code(409).send({ error: "open_house_over" });
       }
-      const finalUrl = campaign.landingUrl;
+      // UTM-tagged (lib/googleAds/utm): tells a click from this ad apart on the
+      // landing site. New launches only; live ads keep the URL they launched with.
+      const finalUrl = withAdUtm(campaign.landingUrl, campaign.id);
 
       // The plan (lib/planBilling): "$20 a month + the monthly ad budget while your ad runs,
       // first month included". Skipped on a dry run, like the billing and
