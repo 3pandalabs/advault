@@ -765,6 +765,12 @@ export type OfferChange = {
   reviewPhrases: { phrase: string; reason: string }[];
   error: string | null;
   createdAt: string;
+  /** When "Put it live" was pressed. Older APIs omit it. */
+  confirmedAt?: string | null;
+  /** 'slide' = their own video + an end slide; 'recut' = our ad re-cut. Older APIs omit it. */
+  mode?: "recut" | "slide";
+  /** The progress bar for making / publishing (null = no bar, e.g. Google's review). Older APIs omit it. */
+  progress?: { startedAt: string; expectedSeconds: number } | null;
   liveAt: string | null;
   endedAt: string | null;
   creatives: { id: string; aspectRatio: "16:9" | "9:16"; renderStatus: string; videoUrl: string | null; thumbnailUrl: string | null }[];

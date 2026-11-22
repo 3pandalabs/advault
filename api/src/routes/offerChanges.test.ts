@@ -558,6 +558,91 @@ describe("an uploaded-video ad: the same video + a 'This month's offer' end slid
   });
 });
 
+describe("immediate advance (no waiting for the 10-minute sweep)", () => {
+  const advanceFor = async (creativeId: string, port: unknown) => {
+    const { advanceOfferChangeForCreative } = await import("../lib/offerSwap/sweep.js");
+    return advanceOfferChangeForCreative(creativeId, { google: port as never });
+  };
+  const cutsOf = async (changeId: string) =>
+    (await pg.query<{ id: string }>(`select id from creatives where offer_change_id = $1 order by aspect_ratio`, [changeId])).rows.map((r) => r.id);
+  const addsFor = (g: ReturnType<typeof fakeGoogle>, changeId: string) =>
+    g.calls.filter((c) => c.op === "add" && (c.arg as { name: string }).name.includes(changeId.slice(0, 8)));
+
+  it("slide ad: the change is a preview as soon as its LAST cut renders; the bar is 60 s from createdAt", async () => {
+    const u = await user({ plan: "evergreen", upload: true });
+    const g = fakeGoogle();
+    const made = await post(`/campaigns/${u.campaign}/offer-changes`, u.id, { offerText: "$25 off any move-out clean", attestation: ATTEST });
+    expect(made.statusCode, made.body).toBe(201);
+    const id = made.json().change.id as string;
+    const current = (await get(`/campaigns/${u.campaign}/offer-changes`, u.id)).json().current;
+    expect(current).toMatchObject({ stage: "making", mode: "slide", progress: { expectedSeconds: 60 } });
+    expect(Date.parse(current.progress.startedAt)).toBe(Date.parse(current.createdAt));
+
+    const [a, b] = await cutsOf(id);
+    await pg.query(`update creatives set render_status = 'ready', video_key = 'cut.mp4' where id = $1`, [a]);
+    expect(await advanceFor(a!, g.port)).toBe("wait");
+    expect(await statusOf(id)).toBe("rendering");
+    await pg.query(`update creatives set render_status = 'ready', video_key = 'cut.mp4' where id = $1`, [b]);
+    expect(await advanceFor(b!, g.port)).toBe("preview_ready");
+    expect(await statusOf(id)).toBe("preview");
+    const after = (await get(`/campaigns/${u.campaign}/offer-changes`, u.id)).json().current;
+    expect(after).toMatchObject({ stage: "preview", progress: null });
+    // A second call (the sweep, or a retry) does nothing more.
+    expect(await advanceFor(b!, g.port)).toBeNull();
+  });
+
+  it("re-cut: 4 min bar while making; after Put it live, the last YouTube upload adds the ad at Google at once", async () => {
+    const u = await user({ plan: "evergreen" });
+    const g = fakeGoogle();
+    const res = await post(`/campaigns/${u.campaign}/offer-changes`, u.id, { offerText: "$25 off any move-out clean until Dec 15", attestation: ATTEST });
+    const id = res.json().change.id as string;
+    expect(res.json().change).toMatchObject({ mode: "recut", progress: { expectedSeconds: 240 } });
+    await pg.query(`update creatives set render_status = 'ready', video_key = 'cut.mp4', thumbnail_key = 'cut.jpg' where offer_change_id = $1`, [id]);
+    const [a, b] = await cutsOf(id);
+    expect(await advanceFor(b!, g.port)).toBe("preview_ready");
+    expect((await post(`/offer-changes/${id}/confirm`, u.id)).statusCode).toBe(200);
+    const publishing = (await get(`/campaigns/${u.campaign}/offer-changes`, u.id)).json().current;
+    expect(publishing).toMatchObject({ status: "publishing", progress: { expectedSeconds: 120 } });
+    expect(Date.parse(publishing.progress.startedAt)).toBe(Date.parse(publishing.confirmedAt));
+
+    await pg.query(`update creatives set youtube_video_id = 'newa' || substr(md5(random()::text), 1, 7) where id = $1`, [a]);
+    expect(await advanceFor(a!, g.port)).toBe("wait");
+    expect(addsFor(g, id)).toHaveLength(0);
+    await pg.query(`update creatives set youtube_video_id = 'newb' || substr(md5(random()::text), 1, 7) where id = $1`, [b]);
+    expect(await advanceFor(b!, g.port)).toBe("add_to_google");
+    expect(await statusOf(id)).toBe("pending_google");
+    expect(addsFor(g, id)).toHaveLength(1);
+    // pending_google is the sweep's alone (Google review); no bar for it.
+    expect(await advanceFor(b!, g.port)).toBeNull();
+    expect((await get(`/campaigns/${u.campaign}/offer-changes`, u.id)).json().current.progress).toBeNull();
+  });
+
+  it("a creative with no offer change is a no-op", async () => {
+    const u = await user({ plan: "evergreen" });
+    const launch = (await pg.query<{ id: string }>(`select id from creatives where campaign_id = $1 limit 1`, [u.campaign])).rows[0]!.id;
+    expect(await advanceFor(launch, fakeGoogle().port)).toBeNull();
+  });
+
+  it("sweep and immediate advance together act ONCE (one ad at Google, one preview move)", async () => {
+    const u = await user({ plan: "evergreen" });
+    const g = fakeGoogle();
+    const id = await makePreview(u);
+    const [, b] = await cutsOf(id);
+    const [, r2] = await Promise.all([sweep(g.port), advanceFor(b!, g.port)]);
+    expect(await statusOf(id)).toBe("preview");
+    // Whichever got the change's lock second found it already a preview and
+    // did nothing (no second WhatsApp preview).
+    expect([null, "preview_ready"]).toContain(r2);
+
+    expect((await post(`/offer-changes/${id}/confirm`, u.id)).statusCode).toBe(200);
+    await pg.query(`update creatives set youtube_video_id = 'race' || substr(md5(random()::text), 1, 7) where offer_change_id = $1`, [id]);
+    await Promise.all([sweep(g.port), advanceFor(b!, g.port), advanceFor(b!, g.port)]);
+    expect(await statusOf(id)).toBe("pending_google");
+    expect(addsFor(g, id)).toHaveLength(1);
+    expect(holder.alerts.some((a) => a.title.includes("raced"))).toBe(false);
+  });
+});
+
 describe("WhatsApp stays inert without its env", () => {
   it("handleSwapInbound does nothing and the page says WhatsApp is off", async () => {
     const { handleSwapInbound } = await import("../lib/offerSwap/whatsapp.js");

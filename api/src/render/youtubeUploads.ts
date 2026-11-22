@@ -6,6 +6,7 @@ import { isYouTubeConfigured } from "../lib/youtube/env.js";
 import { mayPublishToYoutube } from "../lib/uploads/review.js";
 import { reportUrl } from "../lib/compliance/report.js";
 import { uploadVideo, YouTubeUploadError } from "../lib/youtube/upload.js";
+import { advanceOfferChangeForCreative } from "../lib/offerSwap/sweep.js";
 import {
   claimNextUploadJob,
   completeUploadJob,
@@ -172,6 +173,10 @@ async function runLoop(): Promise<void> {
         log("failed to record upload failure", String(e)),
       );
     }
+    // A cut of an offer change: once its last cut is on YouTube, add the new
+    // ad at Google now (publishing -> add_to_google), not at the next swap
+    // sweep. No-op for any other creative; never throws.
+    await advanceOfferChangeForCreative(job.creativeId);
   }
 }
 

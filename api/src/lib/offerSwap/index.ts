@@ -51,6 +51,7 @@ import {
   billingMonthOf,
   offerChangeCharge,
   offerChangeMode,
+  offerChangeProgress,
   offerChangeStage,
   offerSlideRenderInfo,
   OFFER_SLIDE_SECONDS,
@@ -738,6 +739,7 @@ export async function offerChangeView(change: OfferChange) {
   const rows = await db
     .select({
       id: creatives.id,
+      kind: creatives.kind,
       aspectRatio: creatives.aspectRatio,
       renderStatus: creatives.renderStatus,
       videoKey: creatives.videoKey,
@@ -748,9 +750,13 @@ export async function offerChangeView(change: OfferChange) {
     .from(creatives)
     .where(eq(creatives.offerChangeId, change.id));
   const sign = (k: string | null) => (k ? presignDownload(k).catch(() => null) : Promise.resolve(null));
+  // Slide cuts (an uploaded-video ad) are kind 'upload'; re-cuts are 'standard'.
+  const mode = rows.some((r) => r.kind === "upload") ? "slide" : "recut";
+  const progress = offerChangeProgress({ mode, status: change.status, createdAt: change.createdAt, confirmedAt: change.confirmedAt });
   return {
     id: change.id,
     kind: change.kind,
+    mode,
     offerText: change.offerText,
     callToAction: change.callToAction,
     endsAt: change.endsAt,
@@ -763,6 +769,9 @@ export async function offerChangeView(change: OfferChange) {
     reviewPhrases: change.reviewPhrases ?? [],
     error: change.error,
     createdAt: change.createdAt,
+    confirmedAt: change.confirmedAt,
+    // The web card's progress bar (null = no bar for this stage).
+    progress: progress ? { startedAt: progress.startedAt, expectedSeconds: progress.expectedSeconds } : null,
     liveAt: change.liveAt,
     endedAt: change.endedAt,
     creatives: await Promise.all(

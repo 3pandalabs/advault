@@ -3,6 +3,7 @@ import type { AdScript } from "../script/schema.js";
 import {
   baseCutNeeded,
   offerChangeMode,
+  offerChangeProgress,
   offerSlideOf,
   offerSlideRenderInfo,
   OFFER_SLIDE_ENGINE,
@@ -272,5 +273,20 @@ describe("uploaded-video ads: the end slide", () => {
     expect(offerSlideOf({ engine: "reformat", from: "c1" })).toBeNull();
     expect(offerSlideOf(null)).toBeNull();
     expect(offerSlideOf({ engine: OFFER_SLIDE_ENGINE, slide: { offer: "x", seconds: 99 } })?.seconds).toBe(OFFER_SLIDE_SECONDS);
+  });
+});
+
+describe("offerChangeProgress (the web card's bar)", () => {
+  const createdAt = new Date("2026-11-22T10:00:00Z");
+  const confirmedAt = new Date("2026-11-22T10:05:00Z");
+  it("making: ~60 s for a slide cut, ~4 min for a re-cut, from createdAt", () => {
+    expect(offerChangeProgress({ mode: "slide", status: "rendering", createdAt, confirmedAt: null })).toEqual({ startedAt: createdAt, expectedSeconds: 60 });
+    expect(offerChangeProgress({ mode: "recut", status: "rendering", createdAt, confirmedAt: null })).toEqual({ startedAt: createdAt, expectedSeconds: 240 });
+  });
+  it("publishing runs from Put it live; Google's review and every other stage get no bar", () => {
+    expect(offerChangeProgress({ mode: "slide", status: "publishing", createdAt, confirmedAt })).toEqual({ startedAt: confirmedAt, expectedSeconds: 120 });
+    for (const status of ["preview", "awaiting_payment", "pending_google", "live", "ended", "failed"]) {
+      expect(offerChangeProgress({ mode: "recut", status, createdAt, confirmedAt })).toBeNull();
+    }
   });
 });

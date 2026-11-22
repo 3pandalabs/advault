@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { aboutMinutes, estimateFraction, estimateOverdue } from "@/lib/estimateProgress";
 
 // A progress bar for an ad being made. Rendering has no live progress feed:
 // the renderer reports only queued / rendering / ready. So this is an honest
@@ -59,6 +60,45 @@ export function RenderProgress({
       <p className="mt-2 text-xs text-zinc-500">
         Ads usually take {Math.round(expectedSeconds / 60)} minutes. You can leave this page; it keeps going.
       </p>
+    </div>
+  );
+}
+
+// The same bar for any step with a known start and a typical length (the
+// "Change my offer" card: making the new ad, then publishing it). Time-based
+// from the API's start time, so a refresh keeps its place; holds at 95% with
+// `overdueText` until the caller's polling sees the real status change.
+export function EstimateProgress({
+  startedAt,
+  expectedSeconds,
+  label,
+  overdueText = "Almost there, checking…",
+  note,
+}: {
+  startedAt: string;
+  expectedSeconds: number;
+  label: string;
+  overdueText?: string;
+  note?: string;
+}) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
+  const started = Date.parse(startedAt);
+  const fraction = estimateFraction(started, now, expectedSeconds);
+  const overdue = estimateOverdue(started, now, expectedSeconds);
+  return (
+    <div role="status" aria-live="polite">
+      <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-white/10">
+        <div
+          className="h-full rounded-full bg-amber-400 transition-[width] duration-1000 ease-linear"
+          style={{ width: `${Math.round(fraction * 100)}%` }}
+        />
+      </div>
+      <p className="mt-2 text-sm text-zinc-300">{overdue ? overdueText : `${label}… ${aboutMinutes(expectedSeconds)}`}</p>
+      {note && <p className="mt-1 text-xs text-zinc-500">{note}</p>}
     </div>
   );
 }

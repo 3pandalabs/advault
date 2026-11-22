@@ -296,6 +296,31 @@ export function offerChangeStage(status: string): OfferChangeStage {
   }
 }
 
+/**
+ * How long a stage usually takes, for the web card's progress bar (an honest
+ * estimate: the renderer reports no progress). Measured 2026-11-22: a slide
+ * cut (ffmpeg only) is ready in ~45 s; a re-cut (template render, reuse-only)
+ * takes a few minutes; publishing = the YouTube upload of each cut + adding
+ * the ad at Google, which since then happens as soon as the uploads finish.
+ */
+export const OFFER_CHANGE_EXPECTED_SECONDS = { slide: 60, recut: 240, publishing: 120 } as const;
+
+/**
+ * What the progress bar runs against, or null for a stage with no bar.
+ * `pending_google` deliberately has none: Google's review can take hours, and
+ * a bar that sits at 95% for hours is a lie.
+ */
+export function offerChangeProgress(args: {
+  mode: OfferChangeMode;
+  status: string;
+  createdAt: Date;
+  confirmedAt: Date | null;
+}): { startedAt: Date; expectedSeconds: number } | null {
+  if (args.status === "rendering") return { startedAt: args.createdAt, expectedSeconds: OFFER_CHANGE_EXPECTED_SECONDS[args.mode] };
+  if (args.status === "publishing") return { startedAt: args.confirmedAt ?? args.createdAt, expectedSeconds: OFFER_CHANGE_EXPECTED_SECONDS.publishing };
+  return null;
+}
+
 // ---------------------------------------------------------------------------
 // The re-cut script.
 //
