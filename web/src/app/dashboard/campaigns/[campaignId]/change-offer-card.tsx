@@ -19,6 +19,7 @@ import { Input, Label, Textarea } from "@/components/ui/input";
 import { ClaimWarnings, hasBlockedClaim } from "@/components/ClaimWarnings";
 import { AttestationChecks, useAttestation } from "@/components/AttestationChecks";
 import { formatDate } from "@/lib/utils";
+import { WhatsAppPrompt } from "@/components/WhatsAppOptIn";
 
 // "Change my offer" (api lib/offerSwap, 2026-11-21) on a launched campaign.
 // A cheap re-cut of the running ad with the new offer: same photos, motion
@@ -237,6 +238,9 @@ export function ChangeOfferCard({ campaign }: { campaign: Campaign }) {
         </div>
       )}
       {error && <p className="mt-3 text-sm text-red-300">{error}</p>}
+      {/* The WhatsApp way: the "WhatsApp your new offer" note when it answers
+          them, else the optional add-number box. */}
+      {!editing && <WhatsAppPrompt className="mt-4" title="Next time, change it from WhatsApp" />}
     </Card>
   );
 }

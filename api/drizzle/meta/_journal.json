@@ -337,6 +337,13 @@
       "when": 1795506100000,
       "tag": "0047_offer_changes",
       "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1795506200000,
+      "tag": "0048_whatsapp_opt_in",
+      "breakpoints": true
     }
   ]
 }

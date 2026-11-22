@@ -14,6 +14,7 @@ import {
   type Campaign,
   type CampaignStats,
   type Wallet,
+  type WhatsAppState,
 } from "@/lib/api/browser";
 import { BudgetBanner } from "@/components/BudgetBanner";
 import { CostSimulator } from "@/components/CostSimulator";
@@ -27,6 +28,8 @@ export default function CampaignsPage() {
   // Shared 3PandaLabs account: someone who came from SiteVault (or has a
   // SiteVault website) gets a link back to it from the empty state.
   const [usesSitevault, setUsesSitevault] = useState(false);
+  // WhatsApp for offer changes (/auth/me): the card's "WhatsApp your offer" line.
+  const [whatsapp, setWhatsapp] = useState<WhatsAppState | undefined>(undefined);
   const router = useRouter();
   // Low / ran-out ad budget banner (top-up-first model).
   const [wallet, setWallet] = useState<Wallet | null>(null);
@@ -51,7 +54,10 @@ export default function CampaignsPage() {
 
   useEffect(() => {
     getMe()
-      .then((me) => setUsesSitevault(Boolean(me.usesSitevault || me.signupApp === "sitevault")))
+      .then((me) => {
+        setUsesSitevault(Boolean(me.usesSitevault || me.signupApp === "sitevault"));
+        setWhatsapp(me.whatsapp);
+      })
       .catch(() => setUsesSitevault(false));
   }, []);
 
@@ -152,7 +158,7 @@ export default function CampaignsPage() {
 
       <div className="space-y-3">
         {campaigns.map((c) => (
-          <CampaignCard key={c.id} campaign={c} stats={stats?.get(c.id)} offerChange={offerChanges.get(c.id)} />
+          <CampaignCard key={c.id} campaign={c} stats={stats?.get(c.id)} offerChange={offerChanges.get(c.id)} whatsapp={whatsapp} />
         ))}
       </div>
     </div>

@@ -43,6 +43,7 @@ import { AttestationChecks, useAttestation } from "@/components/AttestationCheck
 import { CategoryExtrasFields, NeighborPriceField } from "@/components/CategoryExtrasFields";
 import { categoryKey } from "@/lib/categories/key";
 import { BADGE_DETAIL, badgeOptions, badgeViolation } from "@/lib/categories/badges";
+import { WhatsAppPrompt } from "@/components/WhatsAppOptIn";
 import { EXTRAS_DETAIL, extrasFor, extrasProblem, parseZips, type CategoryExtras } from "@/lib/categories/extras";
 
 import {
@@ -1468,6 +1469,9 @@ export default function NewCampaignPage() {
               <ScriptProgress startedAt={writingSince} />
             </div>
           )}
+
+          {/* Optional WhatsApp number for offer changes later. Skippable. */}
+          <WhatsAppPrompt className="mt-6" title="Optional: change your offer later from WhatsApp" />
 
           <AttestationChecks className="mt-6" value={ticks} onChange={setTicks} disabled={busy} />
 

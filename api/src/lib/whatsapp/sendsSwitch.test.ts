@@ -38,4 +38,17 @@ describe("WHATSAPP_SENDS", () => {
     expect(wa.whatsAppSendsEnabled()).toBe(true);
     expect(wa.offerSwapWhatsAppEnabled()).toBe(false);
   });
+
+  it("OFFER_SWAP_WHATSAPP=internal runs the loop (per user: internal + opt-in); it still needs WHATSAPP_SENDS=on", async () => {
+    let wa = await load({ ...CREDS, WHATSAPP_SENDS: "on", OFFER_SWAP_WHATSAPP: "internal" });
+    expect(wa.offerSwapMode()).toBe("internal");
+    expect(wa.offerSwapWhatsAppEnabled()).toBe(true);
+    const u = { phone: "+15550000000", whatsappOptInAt: new Date(), isInternal: false };
+    expect(wa.whatsAppRecipientAllowed(u, true, "internal")).toBe(false);
+    expect(wa.whatsAppRecipientAllowed({ ...u, isInternal: true }, true, "internal")).toBe(true);
+    expect(wa.whatsAppRecipientAllowed({ ...u, isInternal: true }, false, "internal")).toBe(false);
+    expect(wa.whatsAppRecipientAllowed({ ...u, whatsappOptInAt: null }, true, "on")).toBe(false);
+    wa = await load({ ...CREDS, WHATSAPP_SENDS: undefined, OFFER_SWAP_WHATSAPP: "internal" });
+    expect(wa.offerSwapWhatsAppEnabled()).toBe(false);
+  });
 });

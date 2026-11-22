@@ -1,6 +1,7 @@
 // The WhatsApp half of "Change my offer" (2026-11-21), for Keep it running
-// subscribers. Runs ONLY when offerSwapWhatsAppEnabled() (Meta configured AND
-// OFFER_SWAP_WHATSAPP=on); otherwise handleSwapInbound returns
+// subscribers. Runs ONLY for users offerSwapAllowedFor() accepts (sends on,
+// OFFER_SWAP_WHATSAPP internal/on, the owner's opt-in, internal accounts only
+// in `internal` mode); otherwise handleSwapInbound returns
 // { handled: false } and every notify is a no-op, so the web page is the
 // whole product. The rules it keeps from the original loop (lib/offers,
 // CLAUDE.md "Local ads are OFFER ads"):
@@ -17,7 +18,7 @@ import { db } from "../../db/index.js";
 import { assets, campaigns, offerChanges, offerCycles, users, whatsappMessages } from "../../db/schema.js";
 import { assetKey, deleteObject, presignDownload, putObject } from "../../plugins/r2.js";
 import { transcribe } from "../ai/stt.js";
-import { recordMessage, userForPhone } from "../offers/index.js";
+import { offerSwapAllowedFor, recordMessage, userForPhone, whatsAppUser } from "../offers/index.js";
 import { hasOfferChanges, type ProductLine } from "../pricing/index.js";
 import { liveSubscriptionFor } from "../subscriptions/index.js";
 import { ATTESTATION_ACCURACY_TEXT, ATTESTATION_MEDIA_TEXT } from "../compliance/texts.js";
@@ -72,9 +73,10 @@ export async function windowOpen(userId: string, now = new Date()): Promise<bool
   return (row?.n ?? 0) > 0;
 }
 
+/** The owner's phone, only when the offer-change loop runs for them (opt-in, mode). */
 async function phoneOf(userId: string): Promise<string | null> {
-  const [u] = await db.select({ phone: users.phone, businessName: users.businessName }).from(users).where(eq(users.id, userId)).limit(1);
-  return u?.phone ?? null;
+  const u = await whatsAppUser(userId);
+  return u && offerSwapAllowedFor(u) ? u.phone : null;
 }
 
 /** Free text to the owner, inside the window only. */
@@ -217,6 +219,8 @@ export async function handleSwapInbound(msg: InboundAny, opts: { now?: Date; log
   if (!offerSwapWhatsAppEnabled()) return { handled: false };
   const user = await userForPhone(msg.from);
   if (!user) return { handled: false };
+  // Not opted in, or not internal while OFFER_SWAP_WHATSAPP=internal.
+  if (!offerSwapAllowedFor(user)) return { handled: false };
   const sub = await liveSubscriptionFor(user.id);
   if (!sub || !hasOfferChanges(sub.line as ProductLine)) return { handled: false };
 

@@ -2,7 +2,8 @@
 
 import { useId, useState } from "react";
 import Link from "next/link";
-import type { Campaign, CampaignStats, CampaignStatus } from "@/lib/api/browser";
+import type { Campaign, CampaignStats, CampaignStatus, WhatsAppState } from "@/lib/api/browser";
+import { WhatsAppOfferLine } from "@/components/WhatsAppOptIn";
 import { AUDIENCE_FILTERS_ENABLED } from "@/lib/audience";
 import { Badge, Card, CardDescription, CardTitle } from "@/components/ui/card";
 import { buttonVariants } from "@/components/ui/button";
@@ -187,11 +188,14 @@ export function CampaignCard({
   campaign: c,
   stats,
   offerChange,
+  whatsapp,
 }: {
   campaign: Campaign;
   /** From GET /campaigns/stats; undefined while loading or not launched. */
   stats: CampaignStats | undefined;
   offerChange?: OfferChangeChip;
+  /** /auth/me `whatsapp`: the "WhatsApp your new offer" line when it answers them. */
+  whatsapp?: WhatsAppState;
 }) {
   const chip = offerChange ? offerChipText(offerChange) : null;
   const launched = isLaunched(c);
@@ -218,6 +222,7 @@ export function CampaignCard({
         <Badge tone={STATUS_TONE[c.status]}>{STATUS_LABEL[c.status]}</Badge>
       </div>
       {chip && <p className="mt-3 break-words text-sm text-amber-200">{chip}</p>}
+      {launched && <WhatsAppOfferLine state={whatsapp} />}
       {launched && <StatsSummary campaignId={c.id} stats={stats} />}
       {/* Full-width stack on narrow phones, a wrapping row from 400px up. */}
       <div className="mt-4 flex flex-col gap-2 min-[400px]:flex-row min-[400px]:flex-wrap">

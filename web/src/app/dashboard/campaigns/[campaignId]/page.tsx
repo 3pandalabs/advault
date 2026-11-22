@@ -50,6 +50,7 @@ import { BeforeAfterCard } from "./before-after-card";
 import { SeasonCard } from "./season-card";
 import { OfferCard } from "./offer-card";
 import { ChangeOfferCard } from "./change-offer-card";
+import { WhatsAppPrompt } from "@/components/WhatsAppOptIn";
 import { BadgesCard } from "./badges-card";
 import { ExtrasCard } from "./extras-card";
 import { SiteOfferOption, payLabel } from "./site-offer-option";
@@ -958,8 +959,12 @@ export default function CampaignDetailPage({
       )}
 
       {/* "Change my offer" (api lib/offerSwap): launched campaigns only. */}
-      {campaign.googleCampaignResourceName && (campaign.status === "live" || campaign.status === "paused") && (
+      {campaign.googleCampaignResourceName && (campaign.status === "live" || campaign.status === "paused") ? (
         <ChangeOfferCard campaign={campaign} />
+      ) : (
+        // Not launched yet: the optional WhatsApp number (the Change my offer
+        // card carries it once the ad runs). Never blocks anything.
+        <WhatsAppPrompt className="mb-4" />
       )}
 
       {/* Seasonal calendar (lib/categories/seasons): only when a season is near. */}

@@ -44,7 +44,12 @@ export const users = pgTable(
     // Drives the AI script prompt's tone and the fallback template's phrasing —
     // a plumber's 15-second pre-roll reads nothing like a dentist's.
     businessCategory: text("business_category"),
+    // E.164 ("+13323168453", 0048, lib/phone). The WhatsApp sender is matched
+    // exactly on it (lib/offers userForPhone).
     phone: text("phone"),
+    // "Message me on WhatsApp about my ads" (0048). NULL = never message them;
+    // every WhatsApp send needs it (lib/whatsapp whatsAppRecipientAllowed).
+    whatsappOptInAt: timestamp("whatsapp_opt_in_at", { withTimezone: true }),
     // "admin" sees the internal ops view; "advertiser" only ever sees own rows.
     role: text("role").notNull().default("advertiser"),
 

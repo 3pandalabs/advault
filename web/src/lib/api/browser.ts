@@ -145,6 +145,22 @@ export type Me = {
    * re-accept screen while `ok` is false. Absent on an older API.
    */
   terms?: { accepted: string | null; current: string; ok: boolean };
+  /** WhatsApp for offer changes (api migration 0048). Absent on an older API. */
+  whatsapp?: WhatsAppState;
+};
+
+/**
+ * `available`: the WhatsApp offer loop runs for accounts like this one.
+ * `enabled`: available AND the number + opt-in are saved. `publicNumber` /
+ * `waLink` come only when enabled: never show a number that won't answer.
+ */
+export type WhatsAppState = {
+  phone: string | null;
+  optedIn: boolean;
+  available: boolean;
+  enabled: boolean;
+  publicNumber?: string;
+  waLink?: string;
 };
 
 export type Asset = {
@@ -343,6 +359,14 @@ export type BillingOptions = {
 // --- endpoint wrappers -----------------------------------------------------
 
 export const getMe = () => api<Me>("/auth/me");
+
+/**
+ * Saves the WhatsApp number (any format with a country code; the API stores
+ * E.164) and/or the opt-in. `phone: null` removes the number and the opt-in.
+ * Throws ApiError invalid_phone / whatsapp_opt_in_needs_phone.
+ */
+export const updateWhatsApp = (body: { phone?: string | null; whatsappOptIn?: boolean }) =>
+  api<{ whatsapp?: WhatsAppState }>("/auth/me", { method: "PATCH", body: JSON.stringify(body) });
 /** Admins only (403 otherwise). */
 export const setTestAsCustomer = (on: boolean) =>
   api<{ testAsCustomer: boolean }>("/auth/me/test-mode", { method: "PATCH", body: JSON.stringify({ on }) });
@@ -593,6 +617,9 @@ export function register(input: {
   termsVersion?: string;
   /** The ad that brought them, last 30 days (lib/adAttribution, api migration 0045). */
   adCampaignId?: string;
+  /** Optional mobile for WhatsApp, with country code (api migration 0048). */
+  phone?: string;
+  whatsappOptIn?: boolean;
 }) {
   return api<{ accessToken: string; refreshToken: string }>("/auth/register", {
     method: "POST",

@@ -229,7 +229,7 @@ export function inferOfferExpiry(
 
 export const MAX_REMINDERS = 2;
 const REMINDER_AFTER_DAYS = [3, 7];
-const SKIP_AFTER_DAYS = 12;
+export const SKIP_AFTER_DAYS = 12;
 
 export type CycleAction =
   | { action: "prompt" }
