@@ -26,9 +26,9 @@ export type AspectRatio = keyof typeof DIMENSIONS;
 //
 // Overridable for local development, where the fonts live somewhere else
 // entirely (macOS, Debian and Alpine all differ).
-const FONT_REGULAR =
+export const FONT_REGULAR =
   process.env.RENDER_FONT_REGULAR ?? "/usr/share/fonts/dejavu/DejaVuSans.ttf";
-const FONT_BOLD =
+export const FONT_BOLD =
   process.env.RENDER_FONT_BOLD ?? "/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf";
 
 // Every ffmpeg invocation goes through execFile with an argument ARRAY — never

@@ -783,6 +783,8 @@ export type OfferChangeQuote = {
 export type OfferChangeState = {
   eligible: boolean;
   refusal: { error: string; detail?: string } | null;
+  /** 'recut' = our ad re-cut; 'slide' = their own video + an end slide (no new photo). Older APIs omit it. */
+  mode?: "recut" | "slide" | null;
   quote: OfferChangeQuote;
   current: OfferChange | null;
   live: OfferChange | null;

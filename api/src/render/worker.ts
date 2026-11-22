@@ -9,6 +9,8 @@
 // and the loser crash-loops.
 import { isReformatCopy } from "../lib/uploads/reformatPolicy.js";
 import { reformatVideo } from "./reformat.js";
+import { renderOfferSlide } from "./offerSlide.js";
+import { offerSlideOf } from "../lib/offerSwap/policy.js";
 import { deleteUploadObjects } from "../lib/uploads/remove.js";
 import { hostname } from "node:os";
 import { createHash } from "node:crypto";
@@ -24,7 +26,7 @@ import {
   reclaimStalled,
   type RenderJob,
 } from "./jobs.js";
-import { extractThumbnail, renderCreative, type AspectRatio } from "./ffmpeg.js";
+import { extractThumbnail, FONT_BOLD, FONT_REGULAR, renderCreative, type AspectRatio } from "./ffmpeg.js";
 import { TEMPLATE_ENABLED, renderTemplate } from "./template.js";
 import { startSpendSync } from "./spendSync.js";
 import { startAdMetricsSync } from "./adMetricsSync.js";
@@ -364,6 +366,7 @@ async function processJob(job: RenderJob): Promise<void> {
     return;
   }
   if (creative.kind === "upload" && isReformatCopy(creative.renderInfo)) return processReformat(job, creative);
+  if (creative.kind === "upload" && offerSlideOf(creative.renderInfo)) return processOfferSlide(job, creative);
 
   const script = adScriptSchema.parse(creative.script);
   // An offer-change re-cut (lib/offerSwap, render_info.recut): REUSE-ONLY.
@@ -604,6 +607,56 @@ async function processReformat(
     await enqueueYoutubeUpload(creative.id).catch((err) =>
       log("failed to enqueue the youtube upload", { creativeId: creative.id, error: String(err) }),
     );
+  } finally {
+    await rm(workDir, { recursive: true, force: true }).catch((err) => log("failed to clean scratch directory", String(err)));
+  }
+}
+
+/**
+ * An offer change on an uploaded-video ad (lib/offerSwap, render_info.engine
+ * = 'offer_slide'): the owner's video + a "This month's offer" end slide.
+ * ffmpeg only (render/offerSlide.ts), no vendor. NOT sent to YouTube here: it
+ * is a preview until "Put it live" (the swap sweep publishes it).
+ */
+async function processOfferSlide(
+  job: RenderJob,
+  creative: NonNullable<Awaited<ReturnType<typeof loadCreativeForRender>>>,
+): Promise<void> {
+  const slide = offerSlideOf(creative.renderInfo)!;
+  const sourceKey = creative.sourceAssetKeys[0];
+  if (!sourceKey) throw new Error("Offer slide has no source video");
+  const workDir = await mkdtemp(join(WORK_ROOT, "job-"));
+  try {
+    const inputPath = join(workDir, "source.mp4");
+    await writeFile(inputPath, await getObjectBytes(sourceKey));
+    const out = await renderOfferSlide({
+      inputPath,
+      workDir,
+      heading: slide.heading,
+      offer: slide.offer,
+      until: slide.until,
+      slideSeconds: slide.seconds,
+      fonts: { bold: FONT_BOLD, regular: FONT_REGULAR },
+    });
+    const videoKey = creativeVideoKey(creative.campaignId, creative.id);
+    const thumbnailKey = creativeThumbnailKey(creative.campaignId, creative.id);
+    const videoBytes = await readFile(out.videoPath);
+    await putObject(videoKey, videoBytes, "video/mp4");
+    await putObject(thumbnailKey, await readFile(out.thumbnailPath), "image/jpeg");
+    const kept = await completeJob(job, {
+      videoKey,
+      thumbnailKey,
+      durationSeconds: Math.round(out.durationSeconds),
+      sizeBytes: videoBytes.byteLength,
+      renderInfo: { ...(creative.renderInfo ?? {}), at: new Date().toISOString() },
+    });
+    if (!kept) {
+      // The change was superseded or cancelled while it rendered.
+      await deleteUploadObjects([{ id: creative.id, videoKey, thumbnailKey }]);
+      log("offer slide discarded, its change was removed meanwhile", { creativeId: creative.id });
+      return;
+    }
+    log("offer slide complete", { creativeId: creative.id, aspect: creative.aspectRatio, sizeBytes: videoBytes.byteLength });
   } finally {
     await rm(workDir, { recursive: true, force: true }).catch((err) => log("failed to clean scratch directory", String(err)));
   }

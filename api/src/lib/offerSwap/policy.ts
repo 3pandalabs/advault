@@ -99,6 +99,89 @@ export function needsBaseCut(launchedInputs: { offerDetails?: string | null } | 
 }
 
 // ---------------------------------------------------------------------------
+// Uploaded-video ads (2026-11-22): the owner's video + ONE end slide.
+//
+// A launched ad that is the owner's own video (kind 'upload', including the
+// "Made from your video" reformat copies) has nothing of ours to re-cut. An
+// offer change for it is the SAME video followed by a ~4 s "This month's
+// offer" slide, made with ffmpeg only in the renderer (render/offerSlide.ts,
+// render_info.engine = 'offer_slide'). Everything after the render is the
+// usual flow. The base ad is the launch ad itself (the video has no offer of
+// ours baked in), so no base cut is ever made for it.
+// ---------------------------------------------------------------------------
+
+/** How a change is made: re-cut our template ad, or add a slide to their video. */
+export type OfferChangeMode = "recut" | "slide";
+
+export const OFFER_SLIDE_ENGINE = "offer_slide";
+export const OFFER_SLIDE_SECONDS = 4;
+export const OFFER_SLIDE_HEADING = "This month's offer";
+
+/**
+ * Generated launched shapes win (the existing re-cut); else the owner's
+ * uploaded shapes get the slide; else nothing can be changed.
+ */
+export function offerChangeMode(args: { standardShapes: number; uploadShapes: number }): OfferChangeMode | null {
+  if (args.standardShapes > 0) return "recut";
+  if (args.uploadShapes > 0) return "slide";
+  return null;
+}
+
+/** Does this mode need a no-offer base cut made? A slide change never does. */
+export function baseCutNeeded(mode: OfferChangeMode, launchedInputs: { offerDetails?: string | null } | null | undefined): boolean {
+  return mode === "recut" && needsBaseCut(launchedInputs);
+}
+
+/**
+ * The new photo / photo motion options only exist for re-cuts. Sent from the
+ * web for an upload ad: a clear 400. (WhatsApp may attach a photo the owner
+ * sent earlier; for a slide change it is simply not used.)
+ */
+export function photoOptionRefusal(mode: OfferChangeMode, photoAssetId: string | null | undefined, source: "web" | "whatsapp"): "photo_not_for_upload_ads" | null {
+  return mode === "slide" && photoAssetId && source === "web" ? "photo_not_for_upload_ads" : null;
+}
+
+const MONTH_TITLE = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/** "Until Dec 31" for the slide (UTC, like every end date here). */
+export function untilLine(endsAt: Date): string {
+  return `Until ${MONTH_TITLE[endsAt.getUTCMonth()]} ${endsAt.getUTCDate()}`;
+}
+
+export type OfferSlideInfo = {
+  engine: typeof OFFER_SLIDE_ENGINE;
+  /** The launched upload creative the video comes from. */
+  from: string;
+  slide: { heading: string; offer: string; until: string; seconds: number };
+};
+
+/** render_info for one slide creative (the renderer reads it back). */
+export function offerSlideRenderInfo(args: { sourceCreativeId: string; offerText: string; endsAt: Date }): OfferSlideInfo {
+  return {
+    engine: OFFER_SLIDE_ENGINE,
+    from: args.sourceCreativeId,
+    slide: {
+      heading: OFFER_SLIDE_HEADING,
+      offer: args.offerText.replace(/\s+/g, " ").trim(),
+      until: untilLine(args.endsAt),
+      seconds: OFFER_SLIDE_SECONDS,
+    },
+  };
+}
+
+/** The slide's texts when this render_info is an offer slide, else null. */
+export function offerSlideOf(renderInfo: unknown): OfferSlideInfo["slide"] | null {
+  const r = renderInfo as { engine?: unknown; slide?: Partial<OfferSlideInfo["slide"]> } | null | undefined;
+  if (r?.engine !== OFFER_SLIDE_ENGINE || !r.slide || typeof r.slide.offer !== "string") return null;
+  return {
+    heading: typeof r.slide.heading === "string" ? r.slide.heading : OFFER_SLIDE_HEADING,
+    offer: r.slide.offer,
+    until: typeof r.slide.until === "string" ? r.slide.until : "",
+    seconds: typeof r.slide.seconds === "number" && r.slide.seconds > 0 && r.slide.seconds <= 10 ? r.slide.seconds : OFFER_SLIDE_SECONDS,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // The swap state machine.
 //
 //   offer: rendering -> preview -> (awaiting_payment) -> publishing

@@ -1306,14 +1306,50 @@ the dashboard card's "Change my offer" button + status line.
   stays). No base yet (its cut failed): the expired offer ad is PAUSED anyway
   and ops get an urgent ntfy (the campaign shows nothing until a base
   exists): an offer never outlives its date. A disapproved base is paged too.
+- **Uploaded-video ads: the same video + ONE end slide (2026-11-22, owner
+  decision).** When the launched ad has no generated (`standard`) shape but
+  has launched uploads (kind `upload`, the owner's own video and/or the "Made
+  from your video" copy; `changeSources` / pure `offerChangeMode`: generated
+  shapes win, uploads get `slide`, else 409 `no_recut_source`), a change makes
+  one NEW creative per launched shape: kind `upload`, `offer_change_id` set,
+  `review_status` approved on insert (the owner's approved footage + our
+  slide; rights fields copied from the source), source = that shape's
+  launched `video_key`, `render_info = {engine: 'offer_slide', from, slide:
+  {heading: "This month's offer", offer, until: "Until Dec 31", seconds: 4}}`
+  (`offerSlideRenderInfo`). The renderer (`render/offerSlide.ts`, branched
+  in `worker.ts` by `offerSlideOf`) makes it with **ffmpeg only, $0** (no
+  fal / Vertex / Claude / TTS): the video normalised to its own size, fps,
+  SAR 1, yuv420p, 48 kHz stereo (own audio padded/trimmed to the video
+  length), then a ~4 s zinc-950 slide (amber heading + accent bar, the offer
+  wrapped and shrunk to fit 84% of the width, "Until <date>"), silent,
+  joined by the concat filter. Text goes in through drawtext `textfile=`
+  files and the fonts (`FONT_BOLD` / `FONT_REGULAR` from `render/ffmpeg.ts`,
+  i.e. Dockerfile.renderer's DejaVu) are copied next to them, ffmpeg running
+  in the job dir: the graph only names relative files, so nothing typed is
+  parsed as filter syntax. NOT sent to YouTube on render (a preview). From
+  there it is the SAME flow: preview -> two ticks / `claimBlock` /
+  `reevaluateCompliance` (which now also reads `render_info.slide.offer`, as
+  these cuts have no script) -> pay -> publishing -> add_to_google ->
+  approved -> pause the launch ad -> live; end date -> enable the launch ad.
+  **The base is the launch ad itself** (`baseCutNeeded('slide')` = false:
+  `campaigns.base_ad_resource_name` = the launch ad, no base cut ever).
+  The new photo / photo motion don't apply: the web card hides them for
+  `mode: 'slide'` (GET returns `mode`) and a web POST with `photoAssetId`
+  is 400 `photo_not_for_upload_ads`; a WhatsApp photo is ignored for it.
+  The daily preview cap applies as before. Slide cuts are kept out of the
+  owner's upload slots (`routes/uploads.ts`), the reformat copy check, the
+  admin review list and the website video (`isNull(offer_change_id)`).
+  `live_ad_is_upload` is gone (its "Upload a new video instead" was false:
+  uploads to a launched campaign never reach Google). **Not yet proven with
+  a real customer video and Google's review of the slide ad.**
 - **Price (decision D, `lib/pricing`).** `us-offer_change` = $2 (`sku =
   offer_change`); a live evergreen plan (active / past_due) includes
   `OFFER_CHANGES_INCLUDED_PER_MONTH` = 1 per UTC calendar month, enforced by
   the unique index `uq_offer_changes_included_month` (a disapproved / failed
   / cancelled change gives it back). Admins / at_cost: `exempt`. Test mode:
   50 cents (`chargeMinor`). Paid via the shared purchases webhook
-  (`onOfferChangePaid`, idempotent). Customer-uploaded videos stay free and
-  can't be re-cut (409 `live_ad_is_upload`). Revenue reporting picks the
+  (`onOfferChangePaid`, idempotent). An offer change on an uploaded-video ad
+  (below) costs the same as any change. Revenue reporting picks the
   purchases up like any add-on (admins, test customers, internal and
   `marked_test` excluded), labelled "Offer changes ($2)" on `/admin/business`.
 - **WhatsApp (decision F), behind `OFFER_SWAP_WHATSAPP` internal / on.** Off, or Meta
@@ -1335,7 +1371,10 @@ the dashboard card's "Change my offer" button + status line.
 - Account deletion deletes the user's `whatsapp_messages` and cancels changes
   not yet at Google. Tests: `lib/offerSwap/policy.test.ts`,
   `lib/googleAds/adSwap.test.ts`, `routes/offerChanges.test.ts` (PGlite,
-  Google stubbed: approve-then-swap, disapproval, end date -> base, no base),
+  Google stubbed: approve-then-swap, disapproval, end date -> base, no base,
+  an uploaded-video ad through to live and back to its launch ad),
+  `render/offerSlide.test.ts` (layout + ffmpeg args; a real encode, skipped
+  without ffmpeg),
   `lib/offerSwap/whatsapp.test.ts` (PGlite, Meta + STT stubbed).
 
 ## Not used here

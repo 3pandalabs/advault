@@ -59,6 +59,8 @@ async function approvedUploads(campaignId: string) {
         eq(creatives.kind, "upload"),
         eq(creatives.renderStatus, "ready"),
         eq(creatives.reviewStatus, "approved"),
+        // Not an offer change's slide cut (lib/offerSwap): it has a dated offer.
+        isNull(creatives.offerChangeId),
       ),
     )
     .orderBy(desc(creatives.createdAt));

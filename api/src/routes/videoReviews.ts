@@ -1,5 +1,5 @@
 import { queueOtherFormat } from "../lib/uploads/otherFormat.js";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, isNull } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { requireAdminOrAnalyticsToken } from "../auth/adminAccess.js";
@@ -54,7 +54,8 @@ export async function videoReviewRoutes(app: FastifyInstance) {
         .from(creatives)
         .innerJoin(campaigns, eq(creatives.campaignId, campaigns.id))
         .innerJoin(users, eq(users.id, campaigns.userId))
-        .where(and(eq(creatives.kind, "upload"), eq(creatives.reviewStatus, status)))
+        // Offer-change slide cuts (lib/offerSwap) are approved on insert, never reviewed here.
+        .where(and(eq(creatives.kind, "upload"), eq(creatives.reviewStatus, status), isNull(creatives.offerChangeId)))
         // Oldest first for the queue; newest first for the decided lists.
         .orderBy(status === "pending_review" ? creatives.createdAt : desc(creatives.reviewedAt))
         .limit(100);

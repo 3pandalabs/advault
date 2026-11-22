@@ -8,6 +8,7 @@ import { loadOwnedCampaign } from "../lib/ownership.js";
 import { passComplianceGate, recordAttestation } from "../lib/compliance/index.js";
 import {
   cancelOfferChange,
+  changeSources,
   confirmOfferChange,
   createOfferChange,
   eligibilityRefusal,
@@ -42,8 +43,7 @@ export async function offerChangeRoutes(app: FastifyInstance) {
     const campaign = await loadOwnedCampaign(campaignId, req.userId!, reply);
     if (!campaign) return;
     const launched = await launchedCreatives(campaign.id);
-    const templates = launched.filter((c) => c.kind === "standard");
-    const refusal = eligibilityRefusal(campaign, templates, launched);
+    const refusal = eligibilityRefusal(campaign, launched);
     const rows = await offerChangesFor(campaign.id);
     const current = rows.find((r) => ["rendering", "preview", "awaiting_payment", "publishing", "pending_google"].includes(r.status)) ?? null;
     const live = campaign.liveOfferChangeId ? (rows.find((r) => r.id === campaign.liveOfferChangeId) ?? null) : null;
@@ -51,6 +51,9 @@ export async function offerChangeRoutes(app: FastifyInstance) {
     return {
       eligible: !refusal,
       refusal: refusal?.body ?? null,
+      // 'recut' = our template ad re-cut; 'slide' = the owner's own video +
+      // a "This month's offer" end slide (no new photo option).
+      mode: changeSources(launched).mode,
       quote: await quoteOfferChange(req.userId!),
       current: current ? await offerChangeView(current) : null,
       live: live ? await offerChangeView(live) : null,

@@ -103,7 +103,7 @@ beforeEach(() => {
   holder.alerts.length = 0;
 });
 
-async function user(opts: { role?: string; plan?: "evergreen" | null; category?: string } = {}) {
+async function user(opts: { role?: string; plan?: "evergreen" | null; category?: string; upload?: boolean } = {}) {
   const { TERMS_VERSION } = await import("../lib/compliance/texts.js");
   const id = (
     await pg.query<{ id: string }>(`insert into users (email, password_hash, role) values ($1, 'x', $2) returning id`, [
@@ -133,6 +133,25 @@ async function user(opts: { role?: string; plan?: "evergreen" | null; category?:
       [id, acct, opts.category ?? "Cleaning"],
     )
   ).rows[0]!.id;
+  if (opts.upload) {
+    // The owner's own 9:16 video + AdVault's "Made from your video" 16:9 copy,
+    // both approved and in the launch ad.
+    const own = (
+      await pg.query<{ id: string }>(
+        `insert into creatives (campaign_id, aspect_ratio, kind, source_asset_keys, render_status, video_key, duration_seconds, youtube_video_id, youtube_upload_status,
+           google_ad_resource_name, review_status, reviewed_at, rights_attested_by, rights_attested_at)
+         values ($1, '9:16', 'upload', '{}', 'ready', 'uploads/own.mp4', 20, 'ownupload916', 'done', $2, 'approved', now(), $3, now()) returning id`,
+        [campaign, AD, id],
+      )
+    ).rows[0]!.id;
+    await pg.query(
+      `insert into creatives (campaign_id, aspect_ratio, kind, source_asset_keys, render_status, video_key, duration_seconds, youtube_video_id, youtube_upload_status,
+         google_ad_resource_name, review_status, reviewed_at, rights_attested_by, rights_attested_at, render_info)
+       values ($1, '16:9', 'upload', '{uploads/own.mp4}', 'ready', 'copies/own-16x9.mp4', 20, 'copyupload69', 'done', $2, 'approved', now(), $3, now(), $4)`,
+      [campaign, AD, id, JSON.stringify({ engine: "reformat", from: own })],
+    );
+    return { id, campaign };
+  }
   for (const aspect of ["16:9", "9:16"]) {
     await pg.query(
       `insert into creatives (campaign_id, aspect_ratio, script, script_source, source_asset_keys, render_status, video_key, youtube_video_id, youtube_upload_status, google_ad_resource_name, generation_inputs)
@@ -413,6 +432,129 @@ describe("the swap at Google (stubbed)", () => {
     expect(await statusOf(id)).toBe("ended");
     expect(g.ads.get(offerAd)!.status).toBe("PAUSED");
     expect(holder.alerts.some((a) => /no base/i.test(a.title))).toBe(true);
+  });
+});
+
+describe("an uploaded-video ad: the same video + a 'This month's offer' end slide", () => {
+  type SlideRow = {
+    id: string;
+    kind: string;
+    aspect_ratio: string;
+    render_status: string;
+    review_status: string;
+    source_asset_keys: string[];
+    script: unknown;
+    render_info: { engine: string; from: string; slide: { heading: string; offer: string; until: string; seconds: number } };
+  };
+  const slides = async (changeId: string) =>
+    (
+      await pg.query<SlideRow>(
+        `select id, kind, aspect_ratio, render_status, review_status, source_asset_keys, script, render_info from creatives where offer_change_id = $1 order by aspect_ratio`,
+        [changeId],
+      )
+    ).rows;
+
+  it("request -> slide cuts queued -> confirm -> live -> end date -> back to the launch ad (the base)", async () => {
+    const u = await user({ plan: "evergreen", upload: true });
+    const g = fakeGoogle();
+
+    const state = (await get(`/campaigns/${u.campaign}/offer-changes`, u.id)).json();
+    expect(state).toMatchObject({ eligible: true, refusal: null, mode: "slide" });
+
+    const res = await post(`/campaigns/${u.campaign}/offer-changes`, u.id, { offerText: "$25 off any move-out clean", endsOn: "2099-01-01", attestation: ATTEST });
+    // endsOn too far: the usual 92-day rule applies to uploads too.
+    expect(res.json().error).toBe("ends_on_too_far");
+    const endsOn = new Date(Date.now() + 20 * 86_400_000).toISOString().slice(0, 10);
+    const made = await post(`/campaigns/${u.campaign}/offer-changes`, u.id, { offerText: "$25 off any move-out clean", endsOn, attestation: ATTEST });
+    expect(made.statusCode, made.body).toBe(201);
+    const id = made.json().change.id as string;
+
+    // One slide cut per launched shape, from that shape's launched video.
+    const rows = await slides(id);
+    expect(rows).toHaveLength(2);
+    const [wide, tall] = rows as [SlideRow, SlideRow];
+    expect(wide.aspect_ratio).toBe("16:9");
+    expect(wide.source_asset_keys).toEqual(["copies/own-16x9.mp4"]);
+    expect(tall.source_asset_keys).toEqual(["uploads/own.mp4"]);
+    const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const d = new Date(`${endsOn}T00:00:00Z`);
+    for (const r of rows) {
+      expect(r).toMatchObject({ kind: "upload", render_status: "queued", review_status: "approved", script: null });
+      expect(r.render_info).toMatchObject({
+        engine: "offer_slide",
+        slide: { heading: "This month's offer", offer: "$25 off any move-out clean", until: `Until ${months[d.getUTCMonth()]} ${d.getUTCDate()}`, seconds: 4 },
+      });
+    }
+    // Render jobs queued (the renderer's ffmpeg-only path); nothing sent to YouTube.
+    const jobs = await pg.query<{ n: number }>(`select count(*)::int n from render_jobs j join creatives c on c.id = j.creative_id where c.offer_change_id = $1`, [id]);
+    expect(jobs.rows[0]!.n).toBe(2);
+    const yt0 = await pg.query<{ n: number }>(`select count(*)::int n from youtube_upload_jobs j join creatives c on c.id = j.creative_id where c.offer_change_id = $1`, [id]);
+    expect(yt0.rows[0]!.n).toBe(0);
+    // NO base cut: the launch ad (their video) is the base.
+    const base = await pg.query<{ n: number }>(`select count(*)::int n from offer_changes where campaign_id = $1 and kind = 'base'`, [u.campaign]);
+    expect(base.rows[0]!.n).toBe(0);
+    const baseAd = (await pg.query<{ b: string | null }>(`select base_ad_resource_name b from campaigns where id = $1`, [u.campaign])).rows[0]!.b;
+    expect(baseAd).toBe(AD);
+
+    // Rendered -> preview -> Put it live (included) -> YouTube jobs for the new cuts.
+    await pg.query(`update creatives set render_status = 'ready', video_key = 'slide-' || aspect_ratio || '.mp4', thumbnail_key = 't.jpg' where offer_change_id = $1`, [id]);
+    await sweep(g.port);
+    expect(await statusOf(id)).toBe("preview");
+    const ok = await post(`/offer-changes/${id}/confirm`, u.id);
+    expect(ok.statusCode, ok.body).toBe(200);
+    expect(ok.json()).toMatchObject({ status: "publishing", charge: "included" });
+    const yt = await pg.query<{ n: number }>(`select count(*)::int n from youtube_upload_jobs j join creatives c on c.id = j.creative_id where c.offer_change_id = $1`, [id]);
+    expect(yt.rows[0]!.n).toBe(2);
+    await pg.query(`update creatives set youtube_video_id = 'sl' || substr(md5(random()::text), 1, 9) where offer_change_id = $1`, [id]);
+
+    // Same ad group, new ad; the launch ad keeps serving while Google reviews.
+    await sweep(g.port);
+    expect(await statusOf(id)).toBe("pending_google");
+    const add = g.calls.find((c) => c.op === "add")!.arg as { adGroup: string; status: string; videos: unknown[] };
+    expect(add).toMatchObject({ adGroup: "customers/123/adGroups/9", status: "ENABLED" });
+    expect(add.videos).toHaveLength(2);
+    expect(g.ads.get(AD)!.status).toBe("ENABLED");
+    const [{ google_ad_resource_name: offerAd, ends_at }] = (await pg.query<{ google_ad_resource_name: string; ends_at: Date }>(`select google_ad_resource_name, ends_at from offer_changes where id = $1`, [id])).rows;
+    g.ads.get(offerAd)!.policy = "approved";
+    await sweep(g.port);
+    expect(await statusOf(id)).toBe("live");
+    // The launch ad is the base: PAUSED (kept), never removed.
+    expect(g.ads.get(AD)!.status).toBe("PAUSED");
+
+    // End date: one mutate enabling the launch ad and removing the offer ad.
+    await sweep(g.port, new Date(new Date(ends_at).getTime() + 1000));
+    expect(await statusOf(id)).toBe("ended");
+    expect(g.calls.filter((c) => c.op === "status").at(-1)!.arg).toEqual({ enable: [AD], remove: [offerAd] });
+    expect(g.ads.get(AD)!.status).toBe("ENABLED");
+    expect(holder.alerts.some((a) => /no base/i.test(a.title))).toBe(false);
+    const c = await pg.query<{ live_offer_change_id: string | null; status: string }>(`select live_offer_change_id, status from campaigns where id = $1`, [u.campaign]);
+    expect(c.rows[0]).toEqual({ live_offer_change_id: null, status: "live" });
+  });
+
+  it("refuses a new photo from the web (400), never re-reviews, and the slide text is compliance-checked", async () => {
+    const u = await user({ plan: "evergreen", upload: true });
+    const photo = (
+      await pg.query<{ id: string }>(`insert into assets (user_id, kind, r2_key, content_type) values ($1, 'photo', $2, 'image/jpeg') returning id`, [u.id, `assets/${u.id}/p.jpg`])
+    ).rows[0]!.id;
+    const withPhoto = await post(`/campaigns/${u.campaign}/offer-changes`, u.id, { offerText: "$10 off", photoAssetId: photo, attestation: ATTEST });
+    expect(withPhoto.statusCode).toBe(400);
+    expect(withPhoto.json().error).toBe("photo_not_for_upload_ads");
+
+    const id = await makePreview(u, "No credit check financing on every deep clean");
+    await sweep(fakeGoogle().port);
+    expect(await statusOf(id)).toBe("preview");
+    const held = await post(`/offer-changes/${id}/confirm`, u.id);
+    expect(held.statusCode).toBe(409);
+    expect(held.json().error).toBe("needs_review");
+  });
+
+  it("the daily preview cap still applies", async () => {
+    const u = await user({ plan: "evergreen", upload: true });
+    const { MAX_OFFER_PREVIEWS_PER_DAY } = await import("../lib/offerSwap/index.js");
+    for (let i = 0; i < MAX_OFFER_PREVIEWS_PER_DAY; i++) await makePreview(u, `$${10 + i} off any clean`);
+    const capped = await post(`/campaigns/${u.campaign}/offer-changes`, u.id, { offerText: "$99 off", attestation: ATTEST });
+    expect(capped.statusCode).toBe(429);
+    expect(capped.json().error).toBe("offer_change_daily_limit");
   });
 });
 

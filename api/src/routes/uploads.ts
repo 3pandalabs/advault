@@ -1,7 +1,7 @@
 import { lockCampaignUploads, queueOtherFormat } from "../lib/uploads/otherFormat.js";
 import { isReformatCopy, otherAspect, shapeUploadPlan } from "../lib/uploads/reformatPolicy.js";
 import { deleteUploadObjects, type RemovedObjects } from "../lib/uploads/remove.js";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import crypto from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
@@ -84,7 +84,8 @@ function campaignUploads(q: Db | Tx, campaignId: string) {
       thumbnailKey: creatives.thumbnailKey,
     })
     .from(creatives)
-    .where(and(eq(creatives.campaignId, campaignId), eq(creatives.kind, "upload")));
+    // Offer-change slide cuts (lib/offerSwap) are not the owner's uploads.
+    .where(and(eq(creatives.campaignId, campaignId), eq(creatives.kind, "upload"), isNull(creatives.offerChangeId)));
 }
 
 export async function uploadRoutes(app: FastifyInstance) {

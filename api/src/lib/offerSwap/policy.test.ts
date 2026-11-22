@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 import type { AdScript } from "../script/schema.js";
 import {
+  baseCutNeeded,
+  offerChangeMode,
+  offerSlideOf,
+  offerSlideRenderInfo,
+  OFFER_SLIDE_ENGINE,
+  OFFER_SLIDE_SECONDS,
+  photoOptionRefusal,
+  untilLine,
   billingMonthOf,
   classifySwapReply,
   deterministicRecut,
@@ -223,5 +231,46 @@ describe("WhatsApp replies (text / photo / voice / YES)", () => {
     expect(transcriptionAllowed({ bytes: 50_000, seconds: 300, usedToday: 0 })).toBe(false);
     expect(transcriptionAllowed({ bytes: 50_000, usedToday: 6 })).toBe(false);
     expect(transcriptionAllowed({ bytes: 0, usedToday: 0 })).toBe(false);
+  });
+});
+
+describe("uploaded-video ads: the end slide", () => {
+  it("generated shapes re-cut; only uploads get the slide; nothing = no mode", () => {
+    expect(offerChangeMode({ standardShapes: 2, uploadShapes: 0 })).toBe("recut");
+    expect(offerChangeMode({ standardShapes: 1, uploadShapes: 2 })).toBe("recut");
+    expect(offerChangeMode({ standardShapes: 0, uploadShapes: 2 })).toBe("slide");
+    expect(offerChangeMode({ standardShapes: 0, uploadShapes: 0 })).toBeNull();
+  });
+
+  it("a slide change never needs a base cut (the launch ad is the base)", () => {
+    expect(baseCutNeeded("slide", { offerDetails: "20% off" })).toBe(false);
+    expect(baseCutNeeded("slide", null)).toBe(false);
+    expect(baseCutNeeded("recut", { offerDetails: "20% off" })).toBe(true);
+    expect(baseCutNeeded("recut", { offerDetails: "" })).toBe(false);
+  });
+
+  it("the new photo is refused from the web for an upload ad, ignored from WhatsApp", () => {
+    expect(photoOptionRefusal("slide", "a-photo", "web")).toBe("photo_not_for_upload_ads");
+    expect(photoOptionRefusal("slide", "a-photo", "whatsapp")).toBeNull();
+    expect(photoOptionRefusal("slide", null, "web")).toBeNull();
+    expect(photoOptionRefusal("recut", "a-photo", "web")).toBeNull();
+  });
+
+  it("'Until Dec 31' in UTC", () => {
+    expect(untilLine(new Date("2026-12-31T23:59:59Z"))).toBe("Until Dec 31");
+    expect(untilLine(new Date("2027-01-05T00:00:00Z"))).toBe("Until Jan 5");
+  });
+
+  it("render_info round trip; anything else is not a slide", () => {
+    const info = offerSlideRenderInfo({ sourceCreativeId: "c1", offerText: "  $25   off\nmove-outs ", endsAt: new Date("2026-12-15T23:59:59Z") });
+    expect(info).toEqual({
+      engine: OFFER_SLIDE_ENGINE,
+      from: "c1",
+      slide: { heading: "This month's offer", offer: "$25 off move-outs", until: "Until Dec 15", seconds: OFFER_SLIDE_SECONDS },
+    });
+    expect(offerSlideOf(info)).toEqual(info.slide);
+    expect(offerSlideOf({ engine: "reformat", from: "c1" })).toBeNull();
+    expect(offerSlideOf(null)).toBeNull();
+    expect(offerSlideOf({ engine: OFFER_SLIDE_ENGINE, slide: { offer: "x", seconds: 99 } })?.seconds).toBe(OFFER_SLIDE_SECONDS);
   });
 });

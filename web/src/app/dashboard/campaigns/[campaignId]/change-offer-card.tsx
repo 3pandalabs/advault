@@ -27,7 +27,9 @@ import { WhatsAppPrompt } from "@/components/WhatsAppOptIn";
 // presses "Put it live" ($2, or included once a month on Keep it running),
 // and AdVault adds it at Google next to the running ad. The running ad keeps
 // showing until Google approves the new one, then they swap. On the end
-// date the ad goes back to the regular ad and keeps running.
+// date the ad goes back to the regular ad and keeps running. When the
+// running ad is the owner's own video (mode "slide"), the change is that same
+// video with a "This month's offer" slide added at the end (no new photo).
 
 const ERRORS: Record<string, string> = {
   claim_not_allowed: "That wording isn't allowed in an ad.",
@@ -37,7 +39,7 @@ const ERRORS: Record<string, string> = {
   ends_on_too_far: "Pick an end date within the next 3 months.",
   ends_on_invalid: "Pick a valid end date.",
   needs_review: "Some wording is checked by AdVault before it can run. We usually review within a day; then press Put it live again.",
-  live_ad_is_upload: "Your ad is your own video, so we can't change the offer in it. Upload a new video instead (free).",
+  photo_not_for_upload_ads: "Your ad is your own video, so the offer goes on a slide at the end. A new photo isn't used.",
   offer_change_not_available: "Offer changes aren't available for this account.",
   attestation_required: "Tick both boxes first.",
   terms_not_accepted: "Please accept the updated terms first.",
@@ -88,9 +90,11 @@ export function ChangeOfferCard({ campaign }: { campaign: Campaign }) {
   }, [campaign.id, rev]);
 
   if (!state) return null;
-  if (!state.eligible && state.refusal?.error !== "live_ad_is_upload") return null;
+  if (!state.eligible) return null;
 
   const { quote, current, live } = state;
+  // Their own video: the offer goes on an end slide, so no new photo.
+  const slide = state.mode === "slide";
   const priceLine =
     quote.charge === "exempt"
       ? "Free for your account."
@@ -104,7 +108,7 @@ export function ChangeOfferCard({ campaign }: { campaign: Campaign }) {
     setBusy(true);
     setError(null);
     try {
-      const photoAssetId = photo ? (await uploadAsset(photo, "photo")).id : null;
+      const photoAssetId = photo && !slide ? (await uploadAsset(photo, "photo")).id : null;
       await createOfferChange(campaign.id, { offerText: offer.trim(), endsOn: endsOn || null, photoAssetId, attestation });
       setEditing(false);
       setOffer("");
@@ -167,7 +171,9 @@ export function ChangeOfferCard({ campaign }: { campaign: Campaign }) {
               ? `Running now: “${live.offerText}” until ${formatDate(live.endsAt)}. Then your regular ad comes back.`
               : state.lastEnded?.endedAt
                 ? `Back to your regular ad since ${formatDate(state.lastEnded.endedAt)}.`
-                : "Put a new deal in your running ad. Same photos and voice, new offer. Your ad keeps running while Google checks it."}
+                : slide
+                  ? "We'll add a “This month's offer” slide at the end of your video. Your ad keeps running while Google checks it."
+                  : "Put a new deal in your running ad. Same photos and voice, new offer. Your ad keeps running while Google checks it."}
           </CardDescription>
         </div>
         {state.eligible && !editing && !current && (
@@ -176,10 +182,6 @@ export function ChangeOfferCard({ campaign }: { campaign: Campaign }) {
           </Button>
         )}
       </div>
-
-      {state.refusal?.error === "live_ad_is_upload" && (
-        <p className="mt-3 text-sm text-zinc-400">{ERRORS.live_ad_is_upload}</p>
-      )}
 
       {state.lastProblem && (
         <p className="mt-3 text-sm text-red-300">
@@ -210,20 +212,24 @@ export function ChangeOfferCard({ campaign }: { campaign: Campaign }) {
             <div>
               <Label htmlFor="offer-ends">Ends on (optional)</Label>
               <Input id="offer-ends" type="date" min={today()} value={endsOn} onChange={(e) => setEndsOn(e.target.value)} disabled={busy} />
-              <p className="mt-1 text-xs text-zinc-500">No date? We read it from your offer, else the end of the month.</p>
+              <p className="mt-1 text-xs text-zinc-500">
+                No date? We read it from your offer, else the end of the month.{slide ? " The slide shows it as “Until …”." : ""}
+              </p>
             </div>
-            <div>
-              <Label htmlFor="offer-photo">One new photo (optional)</Label>
-              <Input
-                id="offer-photo"
-                type="file"
-                accept="image/jpeg,image/png,image/webp"
-                capture="environment"
-                onChange={(e) => setPhoto(e.target.files?.[0] ?? null)}
-                disabled={busy}
-              />
-              <p className="mt-1 text-xs text-zinc-500">It opens your ad. Leave empty to keep your photos.</p>
-            </div>
+            {!slide && (
+              <div>
+                <Label htmlFor="offer-photo">One new photo (optional)</Label>
+                <Input
+                  id="offer-photo"
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  capture="environment"
+                  onChange={(e) => setPhoto(e.target.files?.[0] ?? null)}
+                  disabled={busy}
+                />
+                <p className="mt-1 text-xs text-zinc-500">It opens your ad. Leave empty to keep your photos.</p>
+              </div>
+            )}
           </div>
           <p className="text-zinc-300">{priceLine} You only pay when you press Put it live.</p>
           <AttestationChecks value={ticks} onChange={setTicks} disabled={busy} />

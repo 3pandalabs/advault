@@ -47,12 +47,17 @@ import { providerFor } from "../payments/index.js";
 import { deleteUploadObjects } from "../uploads/remove.js";
 import { presignDownload } from "../../plugins/r2.js";
 import {
+  baseCutNeeded,
   billingMonthOf,
-  needsBaseCut,
   offerChangeCharge,
+  offerChangeMode,
   offerChangeStage,
+  offerSlideRenderInfo,
+  OFFER_SLIDE_SECONDS,
+  photoOptionRefusal,
   resolveEndsAt,
   type OfferChangeCharge,
+  type OfferChangeMode,
 } from "./policy.js";
 import { recutScript, RECUT_PROMPT_VERSION } from "./recut.js";
 
@@ -121,19 +126,35 @@ function templatesByShape(rows: Creative[]): Creative[] {
   return [...out.values()];
 }
 
+/**
+ * One launched upload per shape (the newest): the owner's own video or the
+ * "Made from your video" copy. The source of a slide change.
+ */
+function uploadsByShape(rows: Creative[]): Creative[] {
+  const out = new Map<string, Creative>();
+  for (const c of rows) if (c.kind === "upload" && c.videoKey && !out.has(c.aspectRatio)) out.set(c.aspectRatio, c);
+  return [...out.values()];
+}
+
+export type ChangeSources = { mode: OfferChangeMode | null; sources: Creative[] };
+
+/** How this campaign's offer is changed, and from which launched creatives. */
+export function changeSources(launched: Creative[]): ChangeSources {
+  const templates = templatesByShape(launched);
+  const uploads = uploadsByShape(launched);
+  const mode = offerChangeMode({ standardShapes: templates.length, uploadShapes: uploads.length });
+  return { mode, sources: mode === "recut" ? templates : mode === "slide" ? uploads : [] };
+}
+
 /** Why this campaign's offer cannot be changed now, or null. */
-export function eligibilityRefusal(campaign: Campaign, templates: Creative[], allLaunched: Creative[]): Refusal | null {
+export function eligibilityRefusal(campaign: Campaign, launched: Creative[]): Refusal | null {
   const down = takenDownRefusal(campaign);
   if (down) return down;
   if (!campaign.googleCampaignResourceName || !campaign.googleAdGroupResourceName) return refuse(409, "campaign_not_launched");
   if (campaign.status !== "live" && campaign.status !== "paused") return refuse(409, "campaign_not_launched");
-  if (templates.length === 0) {
-    // The live ad is the owner's own video (or a cinematic film): there is
-    // nothing of ours to re-cut. They can upload a new video (free).
-    return allLaunched.some((c) => c.kind === "upload")
-      ? refuse(409, "live_ad_is_upload", { detail: "Your ad is your own video, so we can't change the offer in it. Upload a new video instead (free)." })
-      : refuse(409, "no_recut_source");
-  }
+  // Nothing of ours to re-cut and no uploaded video to add a slide to (e.g.
+  // a cinematic film).
+  if (!changeSources(launched).mode) return refuse(409, "no_recut_source");
   return null;
 }
 
@@ -321,6 +342,45 @@ async function queueRecut(args: {
   return made;
 }
 
+/**
+ * Slide creatives for a change on an uploaded-video ad, one per launched
+ * shape: the owner's (already approved) video followed by the "This month's
+ * offer" slide. ffmpeg only, in the renderer (render/offerSlide.ts): no
+ * vendor call. Approved on insert: the owner's approved footage + our slide.
+ */
+async function queueSlides(args: { campaign: Campaign; change: OfferChange; sources: Creative[]; offer: string; endsAt: Date }): Promise<Creative[]> {
+  const made: Creative[] = [];
+  const now = new Date();
+  for (const src of args.sources) {
+    const [row] = await db
+      .insert(creatives)
+      .values({
+        campaignId: args.campaign.id,
+        aspectRatio: src.aspectRatio,
+        kind: "upload",
+        renderStatus: "queued",
+        sourceAssetKeys: [src.videoKey!],
+        durationSeconds: src.durationSeconds != null ? src.durationSeconds + OFFER_SLIDE_SECONDS : null,
+        offerChangeId: args.change.id,
+        reviewStatus: "approved",
+        reviewedBy: src.reviewedBy,
+        reviewedAt: now,
+        rightsAttestedBy: src.rightsAttestedBy,
+        rightsAttestedAt: src.rightsAttestedAt,
+        generationInputs: {
+          slideOf: src.id,
+          offerText: args.offer,
+          endsAt: args.endsAt.toISOString(),
+        },
+        renderInfo: offerSlideRenderInfo({ sourceCreativeId: src.id, offerText: args.offer, endsAt: args.endsAt }),
+      })
+      .returning();
+    await enqueueRender(row!.id);
+    made.push(row!);
+  }
+  return made;
+}
+
 export type CreateChangeInput = {
   campaign: Campaign;
   userId: string;
@@ -339,9 +399,15 @@ export async function createOfferChange(input: CreateChangeInput): Promise<{ ok:
   const warn = input.warn ?? (() => undefined);
   const { campaign } = input;
   const launched = await launchedCreatives(campaign.id);
-  const templates = templatesByShape(launched);
-  const notOk = eligibilityRefusal(campaign, templates, launched);
+  const notOk = eligibilityRefusal(campaign, launched);
   if (notOk) return { ok: false, ...notOk };
+  const { mode, sources } = changeSources(launched) as { mode: OfferChangeMode; sources: Creative[] };
+  const photoRefused = photoOptionRefusal(mode, input.photoAssetId, input.source);
+  if (photoRefused) {
+    return { ok: false, ...refuse(400, photoRefused, { detail: "Your ad is your own video: the offer goes on a slide at the end, so a new photo isn't used." }) };
+  }
+  // A slide change never uses a photo (WhatsApp may attach an earlier one).
+  const photoAssetId = mode === "slide" ? null : (input.photoAssetId ?? null);
 
   const offerText = input.offerText.replace(/\s+/g, " ").trim();
   if (offerText.length < 3) return { ok: false, ...refuse(400, "offer_text_required") };
@@ -369,11 +435,11 @@ export async function createOfferChange(input: CreateChangeInput): Promise<{ ok:
   }
 
   let photoKey: string | null = null;
-  if (input.photoAssetId) {
+  if (photoAssetId) {
     const [a] = await db
       .select({ r2Key: assets.r2Key })
       .from(assets)
-      .where(and(eq(assets.id, input.photoAssetId), eq(assets.userId, input.userId), eq(assets.kind, "photo")))
+      .where(and(eq(assets.id, photoAssetId), eq(assets.userId, input.userId), eq(assets.kind, "photo")))
       .limit(1);
     if (!a) return { ok: false, ...refuse(400, "unknown_assets") };
     photoKey = a.r2Key;
@@ -414,7 +480,7 @@ export async function createOfferChange(input: CreateChangeInput): Promise<{ ok:
         endsAtInferred: ends.inferred,
         source: input.source,
         status: "rendering",
-        newPhotoAssetId: input.photoAssetId ?? null,
+        newPhotoAssetId: photoAssetId,
         offerCycleId: input.offerCycleId ?? null,
       })
       .returning()) as [OfferChange];
@@ -423,11 +489,16 @@ export async function createOfferChange(input: CreateChangeInput): Promise<{ ok:
     throw err;
   }
 
-  await queueRecut({ campaign, change, templates, offer: offerText, endsAt: ends.endsAt, callToAction, photoKey, warn });
+  if (mode === "slide") {
+    await queueSlides({ campaign, change, sources, offer: offerText, endsAt: ends.endsAt });
+  } else {
+    await queueRecut({ campaign, change, templates: sources, offer: offerText, endsAt: ends.endsAt, callToAction, photoKey, warn });
+  }
 
   // The base the campaign returns to when this offer ends: the launch ad if
-  // it had no offer, else a no-offer cut made once (same cheap path).
-  await ensureBase(campaign, templates, launched, warn);
+  // it had no offer (always, for an uploaded video), else a no-offer cut made
+  // once (same cheap path).
+  await ensureBase(campaign, mode, sources, launched, warn);
 
   // REVIEW phrases in the new text or script hold "Put it live" (needs_review)
   // until an admin approves them on /dashboard/admin/reports, like any ad.
@@ -445,11 +516,13 @@ export async function createOfferChange(input: CreateChangeInput): Promise<{ ok:
 
 /**
  * The campaign's base ad. A launch ad with no offer in it IS the base (its
- * resource name is recorded); otherwise a no-offer cut is queued once. Never
- * throws: the offer change itself must not fail on its base.
+ * resource name is recorded); so is the launch ad of an uploaded video (the
+ * owner's video has no offer of ours in it). Otherwise a no-offer cut is
+ * queued once. Never throws: the offer change itself must not fail on its base.
  */
 export async function ensureBase(
   campaign: Campaign,
+  mode: OfferChangeMode,
   templates: Creative[],
   launched: Creative[],
   warn: (msg: string, err?: unknown) => void,
@@ -470,10 +543,12 @@ export async function ensureBase(
     if (existing) return;
     const launchAd = launchedAdOf(launched);
     const inputs = templates[0]?.generationInputs as { offerDetails?: string | null } | null | undefined;
-    if (!needsBaseCut(inputs) && launchAd) {
+    if (!baseCutNeeded(mode, inputs) && launchAd) {
       await db.update(campaigns).set({ baseAdResourceName: launchAd, updatedAt: new Date() }).where(eq(campaigns.id, campaign.id));
       return;
     }
+    // Only our template ad can be re-cut without its offer.
+    if (mode !== "recut") return;
     const [base] = await db
       .insert(offerChanges)
       .values({ campaignId: campaign.id, userId: campaign.userId, kind: "base", status: "rendering", source: "web", charge: "exempt" })
