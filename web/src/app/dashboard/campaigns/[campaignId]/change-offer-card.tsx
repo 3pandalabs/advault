@@ -20,6 +20,7 @@ import { ClaimWarnings, hasBlockedClaim } from "@/components/ClaimWarnings";
 import { AttestationChecks, useAttestation } from "@/components/AttestationChecks";
 import { formatDate } from "@/lib/utils";
 import { WhatsAppPrompt } from "@/components/WhatsAppOptIn";
+import { EstimateProgress } from "./render-progress";
 
 // "Change my offer" (api lib/offerSwap, 2026-11-21) on a launched campaign.
 // A cheap re-cut of the running ad with the new offer: same photos, motion
@@ -64,7 +65,8 @@ export function ChangeOfferCard({ campaign }: { campaign: Campaign }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Bumped to reload; also re-polls while something is being made or is
-  // with Google (5 s while making, 30 s while waiting).
+  // with Google (5 s while making or publishing, so "Ready to check" shows
+  // the moment the API says preview; 30 s while waiting on payment / Google).
   const [rev, setRev] = useState(0);
   const reload = () => setRev((n) => n + 1);
 
@@ -77,7 +79,8 @@ export function ChangeOfferCard({ campaign }: { campaign: Campaign }) {
         setState(s);
         const stage = s.current?.stage;
         if (stage === "making" || stage === "waiting_payment" || stage === "waiting_google") {
-          timer = setTimeout(() => setRev((n) => n + 1), stage === "making" ? 5000 : 30000);
+          const fast = stage === "making" || s.current?.status === "publishing";
+          timer = setTimeout(() => setRev((n) => n + 1), fast ? 5000 : 30000);
         }
       })
       .catch(() => {
@@ -172,7 +175,7 @@ export function ChangeOfferCard({ campaign }: { campaign: Campaign }) {
               : state.lastEnded?.endedAt
                 ? `Back to your regular ad since ${formatDate(state.lastEnded.endedAt)}.`
                 : slide
-                  ? "We'll add a “This month's offer” slide at the end of your video. Your ad keeps running while Google checks it."
+                  ? "Put a new deal in your running ad. We add a “This month's offer” slide at the end of your video. Your ad keeps running while Google checks it."
                   : "Put a new deal in your running ad. Same photos and voice, new offer. Your ad keeps running while Google checks it."}
           </CardDescription>
         </div>
@@ -272,16 +275,39 @@ function CurrentChange({
     waiting_payment: ["Waiting for payment", "pending"],
     waiting_google: ["Waiting for Google's approval", "pending"],
   };
-  const [text, tone] = label[change.stage] ?? ["", "neutral"];
+  // publishing (YouTube upload + adding it at Google, a couple of minutes)
+  // and pending_google (Google's review, hours) share the stage word.
+  const publishing = change.status === "publishing";
+  const [text, tone] = publishing ? (["Sending it to Google", "pending"] as const) : (label[change.stage] ?? ["", "neutral"]);
   return (
     <div className="mt-4 space-y-3 text-sm">
       <div className="flex flex-wrap items-center gap-2">
         <Badge tone={tone}>{text}</Badge>
         <span className="break-words text-zinc-300">“{change.offerText}”{change.endsAt ? ` until ${formatDate(change.endsAt)}` : ""}</span>
       </div>
-      {change.stage === "making" && <p className="text-zinc-400">Usually a few minutes. You can leave this page.</p>}
-      {change.stage === "waiting_google" && (
-        <p className="text-zinc-400">Your current ad keeps running until Google approves the new one, usually within a day. Then they swap by themselves.</p>
+      {change.stage === "making" &&
+        (change.progress ? (
+          <EstimateProgress
+            startedAt={change.progress.startedAt}
+            expectedSeconds={change.progress.expectedSeconds}
+            label="Making your new ad"
+            note="You can leave this page; it keeps going. The video shows here as soon as it's ready."
+          />
+        ) : (
+          <p className="text-zinc-400">Usually a few minutes. You can leave this page.</p>
+        ))}
+      {publishing && change.progress && (
+        <EstimateProgress
+          startedAt={change.progress.startedAt}
+          expectedSeconds={change.progress.expectedSeconds}
+          label="Sending your new ad to Google"
+          note="Your current ad keeps running meanwhile."
+        />
+      )}
+      {change.stage === "waiting_google" && !publishing && (
+        <p className="text-zinc-400">
+          Google is checking your new ad. This can take a few hours, sometimes up to a day. Your current ad keeps running until Google approves it, then they swap by themselves.
+        </p>
       )}
       {change.reviewPhrases.length > 0 && (
         <p className="text-amber-200">AdVault checks “{change.reviewPhrases[0]!.phrase}” before it can run: {change.reviewPhrases[0]!.reason}</p>

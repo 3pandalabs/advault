@@ -11,6 +11,7 @@ import { isReformatCopy } from "../lib/uploads/reformatPolicy.js";
 import { reformatVideo } from "./reformat.js";
 import { renderOfferSlide } from "./offerSlide.js";
 import { offerSlideOf } from "../lib/offerSwap/policy.js";
+import { advanceOfferChangeForCreative } from "../lib/offerSwap/sweep.js";
 import { deleteUploadObjects } from "../lib/uploads/remove.js";
 import { hostname } from "node:os";
 import { createHash } from "node:crypto";
@@ -688,6 +689,9 @@ async function runLoop(slot: number): Promise<void> {
       log("render failed", { jobId: job.id, error: String(err) });
       await failJob(job, err).catch((e) => log("failed to record job failure", String(e)));
     }
+    // A cut of an offer change: move the change on now (preview ready as soon
+    // as its last cut is), not at the next swap sweep. No-op otherwise; never throws.
+    await advanceOfferChangeForCreative(job.creativeId);
   }
 }
 

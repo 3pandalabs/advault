@@ -1251,6 +1251,25 @@ WhatsApp in `whatsapp.ts`. Web: the campaign page's "Change my offer" card
 (`change-offer-card.tsx`, `id="change-offer"`, opened by `?edit=offer`), and
 the dashboard card's "Change my offer" button + status line.
 
+- **Immediate advance + progress bar (2026-11-22).** The renderer no longer
+  waits for the sweep: after every render job (`render/worker.ts`) and every
+  YouTube upload job (`render/youtubeUploads.ts`) it calls
+  `advanceOfferChangeForCreative`, which runs the SAME per-change step as the
+  sweep (`stepChange`) for a change still `rendering` / `publishing`: the
+  last cut ready -> `preview` (+ `sendSwapPreview`), the last cut on YouTube
+  -> `add_to_google` -> `pending_google`. The sweep stays the backstop.
+  Steps are serialised per change in-process (re-read inside the lock) and
+  the status moves are conditional on the status they were decided on
+  (`moveChange`), so sweep + advance never act twice (a cross-process race
+  after an `addAd` pages ops). The GET view carries `mode` and `progress
+  {startedAt, expectedSeconds}` (`offerChangeProgress`: 60 s slide / 240 s
+  re-cut from `createdAt`, 120 s publishing from `confirmedAt`, null
+  otherwise); the card shows `EstimateProgress` (`render-progress.tsx`,
+  `web/src/lib/estimateProgress.ts`), time-based so it survives a refresh,
+  holding at 95% with "Almost there, checking…", and polls every 5 s while
+  making / publishing. `pending_google` has NO bar (Google can take hours):
+  plain "Google is checking… a few hours" text.
+
 - **A change is a cheap RE-CUT, not a new ad.** `queueRecut` copies each
   launched shape's script and photos (the template = launched creatives:
   `offer_change_id` NULL, `google_ad_resource_name` set, kind `standard`) and

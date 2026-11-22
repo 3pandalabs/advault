@@ -85,6 +85,20 @@ async function setChange(id: string, patch: Partial<typeof offerChanges.$inferIn
   await db.update(offerChanges).set({ ...patch, updatedAt: new Date() }).where(eq(offerChanges.id, id));
 }
 
+/**
+ * A status move that only happens from the status it was decided on, so two
+ * actors (the periodic sweep and an immediate advance, or two renderer
+ * replicas) never both act on one step. false = someone else moved it first.
+ */
+async function moveChange(id: string, from: Change["status"], patch: Partial<typeof offerChanges.$inferInsert>): Promise<boolean> {
+  const moved = await db
+    .update(offerChanges)
+    .set({ ...patch, updatedAt: new Date() })
+    .where(and(eq(offerChanges.id, id), eq(offerChanges.status, from)))
+    .returning({ id: offerChanges.id });
+  return moved.length > 0;
+}
+
 const alert = (title: string, message: string, priority: 3 | 4 | 5 = 4) =>
   notifyOps({ title, message, priority, tags: ["advault", "offer-change"] });
 
@@ -137,27 +151,80 @@ export async function runOfferSwapSweep(opts: { now?: Date; google?: GooglePort 
   const port = opts.google ?? realGooglePort;
   const stats: SweepStats = {};
   const open = await db
-    .select()
+    .select({ id: offerChanges.id })
     .from(offerChanges)
-    .where(inArray(offerChanges.status, ["rendering", "publishing", "pending_google", "live"]))
+    .where(inArray(offerChanges.status, OPEN_STATUSES))
     .limit(200);
 
-  for (const change of open) {
+  for (const { id } of open) {
+    const step = await stepChange(id, port, now);
+    if (step && step !== "wait") stats[step] = (stats[step] ?? 0) + 1;
+  }
+  return stats;
+}
+
+const OPEN_STATUSES: Change["status"][] = ["rendering", "publishing", "pending_google", "live"];
+
+// One step per change at a time in this process. The periodic sweep and the
+// immediate advance below both run in the renderer; serialising per change
+// and re-reading the row INSIDE the lock means the second one sees the step
+// the first one took (e.g. pending_google) instead of adding a second ad at
+// Google. moveChange's conditional writes are the cross-process backstop.
+const inFlight = new Map<string, Promise<unknown>>();
+
+async function serialized<T>(id: string, fn: () => Promise<T>): Promise<T> {
+  const run = (inFlight.get(id) ?? Promise.resolve()).catch(() => undefined).then(fn);
+  const tail = run.catch(() => undefined);
+  inFlight.set(id, tail);
+  try {
+    return await run;
+  } finally {
+    if (inFlight.get(id) === tail) inFlight.delete(id);
+  }
+}
+
+/** One step for one change, read fresh; errors are recorded, never thrown. */
+async function stepChange(id: string, port: GooglePort, now: Date, onlyIn: Change["status"][] = OPEN_STATUSES): Promise<SwapStep | "error" | null> {
+  return serialized(id, async () => {
+    const [change] = await db.select().from(offerChanges).where(eq(offerChanges.id, id)).limit(1);
+    if (!change || !onlyIn.includes(change.status)) return null;
     try {
-      const step = await advance(change, port, now);
-      if (step !== "wait") stats[step] = (stats[step] ?? 0) + 1;
+      return await advance(change, port, now);
     } catch (err) {
       // One campaign's failure must not stop the sweep for everyone else.
-      stats.error = (stats.error ?? 0) + 1;
       log("offer change step failed", { changeId: change.id, error: String(err) });
       await setChange(change.id, { error: String(err).slice(0, 1000) });
       if (!change.opsAlertedAt) {
         await alert("AdVault: offer change stuck", `Offer change ${change.id} (campaign ${change.campaignId}, ${change.status}) failed: ${String(err).slice(0, 300)}. The current ad keeps running; the sweep retries.`);
         await setChange(change.id, { opsAlertedAt: now });
       }
+      return "error";
     }
+  });
+}
+
+/**
+ * The immediate advance (2026-11-22). The renderer calls it right after a cut
+ * of an offer change finishes rendering (render/worker.ts) or uploading to
+ * YouTube (render/youtubeUploads.ts), so the owner's preview is ready, and
+ * the new ad goes to Google, as soon as the last cut is done instead of at
+ * the next 10-minute sweep. It runs the SAME step the sweep runs (rendering
+ * -> preview incl. sendSwapPreview, rendering -> publishing for a base cut,
+ * publishing -> add_to_google / parked), only for a change still in
+ * rendering or publishing; the sweep stays the backstop. Never throws.
+ */
+export async function advanceOfferChangeForCreative(
+  creativeId: string,
+  opts: { now?: Date; google?: GooglePort } = {},
+): Promise<SwapStep | "error" | null> {
+  try {
+    const [row] = await db.select({ changeId: creatives.offerChangeId }).from(creatives).where(eq(creatives.id, creativeId)).limit(1);
+    if (!row?.changeId) return null;
+    return await stepChange(row.changeId, opts.google ?? realGooglePort, opts.now ?? new Date(), ["rendering", "publishing"]);
+  } catch (err) {
+    log("immediate advance failed", { creativeId, error: String(err) });
+    return "error";
   }
-  return stats;
 }
 
 async function advance(change: Change, port: GooglePort, now: Date): Promise<SwapStep> {
@@ -199,13 +266,13 @@ async function advance(change: Change, port: GooglePort, now: Date): Promise<Swa
       return step;
 
     case "preview_ready":
-      await setChange(change.id, { status: "preview", error: null });
+      if (!(await moveChange(change.id, change.status, { status: "preview", error: null }))) return "wait";
       await sendSwapPreview({ ...change, status: "preview" }, now);
       return step;
 
     case "render_failed":
     case "upload_failed":
-      await setChange(change.id, { status: "failed", error: step === "render_failed" ? "the new cut did not render" : "the new cut could not be published to YouTube" });
+      if (!(await moveChange(change.id, change.status, { status: "failed", error: step === "render_failed" ? "the new cut did not render" : "the new cut could not be published to YouTube" }))) return "wait";
       await alert("AdVault: offer change failed", `${change.kind === "base" ? "Base cut" : "Offer change"} ${change.id} for "${campaign.businessName}" failed (${step}). The current ad keeps running.`);
       if (change.kind === "offer") {
         await notifyOwner({ userId: change.userId, changeId: change.id, text: swapProblemMessage(), template: TEMPLATES.offerChangeProblem, params: [campaign.businessName], now });
@@ -219,8 +286,11 @@ async function advance(change: Change, port: GooglePort, now: Date): Promise<Swa
         return step;
       }
       const rn = await port.addAd(ctx!, await planFor(port, ctx!, campaign, change, "PAUSED"));
+      if (!(await moveChange(change.id, change.status, { status: "parked", googleAdResourceName: rn, googleAddedAt: now, error: null }))) {
+        await alert("AdVault: base cut raced", `Base cut ${change.id} for "${campaign.businessName}": a second paused ad (${rn}) may have been added by a concurrent sweep. Remove the extra one.`);
+        return "wait";
+      }
       await db.update(creatives).set({ googleAdResourceName: rn }).where(eq(creatives.offerChangeId, change.id));
-      await setChange(change.id, { status: "parked", googleAdResourceName: rn, googleAddedAt: now, error: null });
       await db.update(campaigns).set({ baseAdResourceName: rn, updatedAt: now }).where(eq(campaigns.id, campaign.id));
       return step;
     }
@@ -228,9 +298,13 @@ async function advance(change: Change, port: GooglePort, now: Date): Promise<Swa
     case "add_to_google": {
       const serving = await currentServing(campaign);
       const rn = await port.addAd(ctx!, await planFor(port, ctx!, campaign, change, "ENABLED"));
+      if (!(await moveChange(change.id, change.status, { status: "pending_google", googleAdResourceName: rn, replacedAdResourceName: serving, googleAddedAt: now, error: null }))) {
+        // Only possible across processes: the per-change lock covers one renderer.
+        await alert("AdVault: offer change raced", `Offer change ${change.id} for "${campaign.businessName}": a second ad (${rn}) may have been added at Google by a concurrent sweep. Remove the extra one.`);
+        return "wait";
+      }
       // The new cuts now point at their ad: never re-published or edited.
       await db.update(creatives).set({ googleAdResourceName: rn }).where(eq(creatives.offerChangeId, change.id));
-      await setChange(change.id, { status: "pending_google", googleAdResourceName: rn, replacedAdResourceName: serving, googleAddedAt: now, error: null });
       return step;
     }
 

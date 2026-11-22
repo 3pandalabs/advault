@@ -2,8 +2,11 @@ import { runOfferSwapSweep } from "../lib/offerSwap/sweep.js";
 
 // "Change my offer" (lib/offerSwap): the swap sweep, in the renderer because
 // it already holds the Google credentials and runs the YouTube queue, and the
-// API would run it once per replica. Every step is idempotent at the row
-// level (a status moves forward once), so a double run is harmless.
+// API would run it once per replica. Since 2026-11-22 the renderer also
+// advances a change the moment its cuts finish rendering / uploading
+// (advanceOfferChangeForCreative); this sweep is the backstop. Steps are
+// serialised per change and every status move is conditional on the status
+// it was decided on, so the two never both act on one step.
 const INTERVAL_MS = Number(process.env.OFFER_SWAP_SWEEP_INTERVAL_MS ?? 10 * 60 * 1000);
 
 function log(msg: string, extra?: unknown): void {
