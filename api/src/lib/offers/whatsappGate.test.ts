@@ -276,10 +276,10 @@ describe("signup + PATCH /auth/me + /auth/me whatsapp", () => {
   const patch = (id: string, payload: object) => app.inject({ method: "PATCH", url: "/auth/me", payload, headers: { "x-test-user": id } });
 
   it("register: optional phone saved as E.164; opt-in needs a phone; bad numbers 400", async () => {
-    const ok = await register({ email: "wa1@x.test", password: "0123456789", phone: "+1 (551) 316-9594", whatsappOptIn: true });
+    const ok = await register({ email: "wa1@x.test", password: "0123456789", phone: "+1 (201) 555-0123", whatsappOptIn: true });
     expect(ok.statusCode).toBe(201);
     const row = (await pg.query<{ phone: string; whatsapp_opt_in_at: Date | null }>(`select phone, whatsapp_opt_in_at from users where email = 'wa1@x.test'`)).rows[0]!;
-    expect(row.phone).toBe("+15513169594");
+    expect(row.phone).toBe("+12015550123");
     expect(row.whatsapp_opt_in_at).not.toBeNull();
 
     const noOpt = await register({ email: "wa2@x.test", password: "0123456789", phone: "+91 98765 43210" });
@@ -287,7 +287,7 @@ describe("signup + PATCH /auth/me + /auth/me whatsapp", () => {
     expect((await pg.query(`select whatsapp_opt_in_at from users where email = 'wa2@x.test'`)).rows[0]).toEqual({ whatsapp_opt_in_at: null });
 
     expect((await register({ email: "wa3@x.test", password: "0123456789", whatsappOptIn: true })).json()).toEqual({ error: "whatsapp_opt_in_needs_phone" });
-    const bad = await register({ email: "wa4@x.test", password: "0123456789", phone: "(551) 316-9594" });
+    const bad = await register({ email: "wa4@x.test", password: "0123456789", phone: "(201) 555-0123" });
     expect(bad.statusCode).toBe(400);
     expect(bad.json()).toEqual({ error: "invalid_phone" });
     expect((await pg.query(`select 1 from users where email in ('wa3@x.test','wa4@x.test')`)).rows).toHaveLength(0);
