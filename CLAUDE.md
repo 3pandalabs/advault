@@ -26,7 +26,7 @@ dashboard and the Coolify wiring at once.
 `web/` (Next.js on Cloudflare Workers) · `api/` (Fastify on Coolify/Hetzner) ·
 `android/` · `infra/` (runbooks). Same shape as `3pandalabs/evitevault`. No
 React Native `app/`: `android/` (2026-11-13) is a Bubblewrap **Trusted Web
-Activity** wrapping the web app for Google Play (`com.threepanda.advault`;
+Activity** wrapping the web app for Google Play (`com.threepandalabs.advault`;
 build, signing and listing in `infra/play-store/README.md`), so web deploys
 update the Android app instantly. Keep `web/src/app/manifest.ts`,
 `android/twa-manifest.json` + `android/app/build.gradle`, and the fingerprints

@@ -1,9 +1,9 @@
 # Google Play listing: AdVault
 
-Package `com.threepanda.advault` · Developer: 3PandaLabs LLC (organization account) · Category: **Business** · Free to install · No ads in the app · No purchases through Google Play Billing. AdVault sells YouTube ads for local businesses ($10 per ad made, $19/month to keep it running, plus the customer's ad budget), paid by card through Stripe Checkout. US only. Google isn't requiring Play Billing for US users while the US court order stands (support.google.com/googleplay/android-developer/answer/15582165), and the ad itself runs on YouTube, outside the app. Answer the Play Console payments declaration to match.
+Package `com.threepandalabs.advault` · Developer: 3PandaLabs LLC (organization account) · Category: **Business** · Free to install · No ads in the app · No purchases through Google Play Billing. AdVault sells YouTube ads for local businesses ($10 per ad made, $19/month to keep it running, plus the customer's ad budget), paid by card through Stripe Checkout. US only. Google isn't requiring Play Billing for US users while the US court order stands (support.google.com/googleplay/android-developer/answer/15582165), and the ad itself runs on YouTube, outside the app. Answer the Play Console payments declaration to match.
 
 ## App name (30)
-AdVault: YouTube Ads Maker
+AdVault by 3PandaLabs
 
 ## Short description (80)
 YouTube and Shorts ads for your local business, made from your own photos.

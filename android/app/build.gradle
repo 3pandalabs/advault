@@ -21,7 +21,7 @@ plugins {
 }
 
 def twaManifest = [
-    applicationId: 'com.threepanda.advault',
+    applicationId: 'com.threepandalabs.advault',
     hostName: 'advault.3pandalabs.com', // The domain being opened in the TWA.
     launchUrl: '/dashboard', // The start path for the TWA. Must be relative to the domain.
     name: 'AdVault', // The application name.
@@ -52,9 +52,9 @@ def twaManifest = [
 
 android {
     compileSdkVersion 36
-    namespace "com.threepanda.advault"
+    namespace "com.threepandalabs.advault"
     defaultConfig {
-        applicationId "com.threepanda.advault"
+        applicationId "com.threepandalabs.advault"
         minSdkVersion 24
         targetSdkVersion 36
         versionCode 1
