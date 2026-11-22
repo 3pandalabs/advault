@@ -345,7 +345,7 @@ function CurrentChange({
               Put it live
             </Button>
             <Button variant="ghost" onClick={() => onCancel(change)} disabled={busy}>
-              Not now
+              Discard this preview
             </Button>
           </div>
         </>
