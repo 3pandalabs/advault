@@ -3,16 +3,16 @@
 // country select and the typed number, and catches obvious mistakes early.
 
 export const COUNTRY_CODES = [
-  { code: "1", label: "US / Canada +1" },
+  { code: "1", label: "US/CA +1" },
   { code: "91", label: "India +91" },
   { code: "44", label: "UK +44" },
-  { code: "61", label: "Australia +61" },
+  { code: "61", label: "AU +61" },
   { code: "971", label: "UAE +971" },
 ] as const;
 
 export const DEFAULT_COUNTRY_CODE = "1";
 
-/** "+1" + "(551) 316-9594" -> "+1 (551) 316-9594". A number typed with its own "+" wins. */
+/** "+1" + "(201) 555-0123" -> "+1 (201) 555-0123". A number typed with its own "+" wins. */
 export function composePhone(countryCode: string, number: string): string {
   const n = number.trim();
   if (!n) return "";

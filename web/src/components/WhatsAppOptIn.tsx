@@ -25,7 +25,7 @@ import {
 //   WhatsAppSettings    the full Settings section: edit, opt in/out, remove.
 
 const ERRORS: Record<string, string> = {
-  invalid_phone: "That number doesn't look right. Include the country code, for example +1 (551) 316-9594.",
+  invalid_phone: "That number doesn't look right. Include the country code, for example +1 (201) 555-0123.",
   whatsapp_opt_in_needs_phone: "Add your mobile number first.",
 };
 
@@ -112,7 +112,7 @@ export function PhoneFields({
           type="tel"
           inputMode="tel"
           autoComplete="tel-national"
-          placeholder="(551) 316-9594"
+          placeholder="(201) 555-0123"
           value={number}
           onChange={(e) => onNumber(e.target.value)}
           disabled={disabled}

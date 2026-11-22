@@ -12,7 +12,7 @@ export function normalizePhone(input: string | null | undefined): string | null 
   if (s.startsWith("00")) s = `+${s.slice(2)}`;
   if (!s.startsWith("+")) return null; // country code required
   const rest = s.slice(1);
-  // Only digits and the usual separators: "+1 (551) 316-9594", "+91 98765 43210".
+  // Only digits and the usual separators: "+1 (201) 555-0123", "+91 98765 43210".
   if (!/^[0-9\s().\-]+$/.test(rest)) return null;
   const digits = rest.replace(/[^0-9]/g, "");
   if (digits.length < 8 || digits.length > 15) return null;
@@ -20,7 +20,7 @@ export function normalizePhone(input: string | null | undefined): string | null 
   return `+${digits}`;
 }
 
-/** A WhatsApp sender id ("15513169594") as E.164, or null. */
+/** A WhatsApp sender id ("12015550123") as E.164, or null. */
 export function e164FromWhatsApp(from: string): string | null {
   return normalizePhone(`+${from.replace(/[^0-9]/g, "")}`);
 }

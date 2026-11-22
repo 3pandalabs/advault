@@ -47,7 +47,7 @@ export default function SignupPage() {
     if (!agreed) return;
     const phone = composePhone(countryCode, mobile);
     if (phone && !looksLikePhone(phone)) {
-      setError("That mobile number doesn't look right. Include the country code, for example +1 (551) 316-9594.");
+      setError("That mobile number doesn't look right. Include the country code, for example +1 (201) 555-0123.");
       return;
     }
     if (whatsappOptIn && !phone) {
@@ -76,7 +76,7 @@ export default function SignupPage() {
         err instanceof ApiError && err.code === "registration_failed"
           ? "That account could not be created. If you already have one, log in instead."
           : err instanceof ApiError && err.code === "invalid_phone"
-            ? "That mobile number doesn't look right. Include the country code, for example +1 (551) 316-9594."
+            ? "That mobile number doesn't look right. Include the country code, for example +1 (201) 555-0123."
             : "Could not create your account. Please try again.",
       );
       setBusy(false);
