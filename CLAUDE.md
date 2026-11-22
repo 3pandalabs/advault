@@ -1262,7 +1262,7 @@ the dashboard card's "Change my offer" button + status line.
   the status moves are conditional on the status they were decided on
   (`moveChange`), so sweep + advance never act twice (a cross-process race
   after an `addAd` pages ops). The GET view carries `mode` and `progress
-  {startedAt, expectedSeconds}` (`offerChangeProgress`: 60 s slide / 240 s
+  {startedAt, expectedSeconds}` (`offerChangeProgress`: 75 s slide (voice-over included) / 240 s
   re-cut from `createdAt`, 120 s publishing from `confirmedAt`, null
   otherwise); the card shows `EstimateProgress` (`render-progress.tsx`,
   `web/src/lib/estimateProgress.ts`), time-based so it survives a refresh,
@@ -1336,12 +1336,29 @@ the dashboard card's "Change my offer" button + status line.
   launched `video_key`, `render_info = {engine: 'offer_slide', from, slide:
   {heading: "This month's offer", offer, until: "Until Dec 31", seconds: 4}}`
   (`offerSlideRenderInfo`). The renderer (`render/offerSlide.ts`, branched
-  in `worker.ts` by `offerSlideOf`) makes it with **ffmpeg only, $0** (no
-  fal / Vertex / Claude / TTS): the video normalised to its own size, fps,
-  SAR 1, yuv420p, 48 kHz stereo (own audio padded/trimmed to the video
-  length), then a ~4 s zinc-950 slide (amber heading + accent bar, the offer
-  wrapped and shrunk to fit 84% of the width, "Until <date>"), silent,
-  joined by the concat filter. Text goes in through drawtext `textfile=`
+  in `worker.ts` by `offerSlideOf`) makes it with ffmpeg + ONE voice-over
+  (no fal video / Vertex / Claude): the video normalised to its own size,
+  fps, SAR 1, yuv420p, 48 kHz stereo (own audio padded/trimmed to the video
+  length), then a zinc-950 slide (amber heading + accent bar, the offer
+  wrapped and shrunk to fit 84% of the width, "Until <date>"), joined by
+  the concat filter. **The slide is read out (2026-11-22, owner decision):**
+  `render_info.slide.narration` = `offerSlideNarration` (deterministic, no
+  model: "This month's offer: <offer>. Until December 31st.", one closing
+  full stop, the date left out when the offer already says until/ends,
+  audio tags stripped), synthesized by `render/slideVoice.ts` through the
+  ads' voice path (`synthesizeVoice`: fal ElevenLabs when configured, edge-tts
+  fallback; voice `FAL_VOICE` / Sarah, uploads carry no voice pick) and
+  cached in R2 under the ads' `voiceCacheKey` (provider | voice | text), so
+  both shapes share ONE TTS call (~2-3 cents per change; an in-process
+  single-flight covers concurrent renders, two renderer replicas could
+  still each pay once). The voice is loudnorm'd (I=-16), 48 kHz stereo,
+  starts 0.25 s into the slide; slide = max(4 s, voice + 0.6 s), capped at
+  10 s (`slideSecondsFor`; a longer voice is cut with a short fade, and the
+  web card hints "Shorter offers read better…" over 120 characters). Both
+  providers failing / an unreadable file / a failed mix = the old silent
+  4 s slide, never a failed change. `render_info.slide` records
+  `renderedSeconds` and `voice: {provider, seconds, reused?}` or `voice:
+  null, voiceError` (`seconds` stays the 4 s minimum). Text goes in through drawtext `textfile=`
   files and the fonts (`FONT_BOLD` / `FONT_REGULAR` from `render/ffmpeg.ts`,
   i.e. Dockerfile.renderer's DejaVu) are copied next to them, ffmpeg running
   in the job dir: the graph only names relative files, so nothing typed is
@@ -1392,8 +1409,10 @@ the dashboard card's "Change my offer" button + status line.
   `lib/googleAds/adSwap.test.ts`, `routes/offerChanges.test.ts` (PGlite,
   Google stubbed: approve-then-swap, disapproval, end date -> base, no base,
   an uploaded-video ad through to live and back to its launch ad),
-  `render/offerSlide.test.ts` (layout + ffmpeg args; a real encode, skipped
-  without ffmpeg),
+  `render/offerSlide.test.ts` (layout, slide length, ffmpeg args with and
+  without a voice; real encodes incl. a tone standing in for the voice,
+  skipped without ffmpeg), `render/slideVoice.test.ts` (TTS + R2 stubbed:
+  one paid call per change),
   `lib/offerSwap/whatsapp.test.ts` (PGlite, Meta + STT stubbed).
 
 ## Not used here

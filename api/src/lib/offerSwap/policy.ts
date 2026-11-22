@@ -148,11 +148,53 @@ export function untilLine(endsAt: Date): string {
   return `Until ${MONTH_TITLE[endsAt.getUTCMonth()]} ${endsAt.getUTCDate()}`;
 }
 
+const MONTH_SPOKEN = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+
+function ordinal(n: number): string {
+  const tens = n % 100;
+  if (tens >= 11 && tens <= 13) return `${n}th`;
+  return `${n}${({ 1: "st", 2: "nd", 3: "rd" } as Record<number, string>)[n % 10] ?? "th"}`;
+}
+
+/** "December 31st" for the voice-over (UTC, like untilLine). */
+export function spokenDate(endsAt: Date): string {
+  return `${MONTH_SPOKEN[endsAt.getUTCMonth()]} ${ordinal(endsAt.getUTCDate())}`;
+}
+
+/** Same pattern as lib/ai/voice stripAudioTags: "[warmly] " is a v3 audio tag. */
+const AUDIO_TAG = /\[[a-z ]{2,30}\]\s*/gi;
+/** The offer already says when it ends ("until Friday", "ends Dec 15"). */
+const MENTIONS_END = /\b(until|till|til|thru|through|ends?|ending|expires?|valid to)\b/i;
+
+/**
+ * What the voice-over reads on the slide (2026-11-22, owner decision):
+ * "This month's offer: $25 off any move-out clean. Until December 31st."
+ * Deterministic, no model. Audio tags the owner typed are dropped (their text
+ * is not stage directions), the offer gets one closing full stop, and the
+ * date close is left out when the offer already says when it ends.
+ */
+export function offerSlideNarration(args: { offerText: string; endsAt: Date | null }): string {
+  let offer = args.offerText.replace(AUDIO_TAG, "").replace(/\s+/g, " ").trim();
+  offer = offer.replace(/[\s,;:\-–—]+$/, "");
+  if (!offer) return "";
+  if (!/[.!?…]$/.test(offer)) offer += ".";
+  const close = args.endsAt && !MENTIONS_END.test(offer) ? ` Until ${spokenDate(args.endsAt)}.` : "";
+  return `${OFFER_SLIDE_HEADING}: ${offer}${close}`;
+}
+
 export type OfferSlideInfo = {
   engine: typeof OFFER_SLIDE_ENGINE;
   /** The launched upload creative the video comes from. */
   from: string;
-  slide: { heading: string; offer: string; until: string; seconds: number };
+  slide: {
+    heading: string;
+    offer: string;
+    until: string;
+    /** The minimum; the renderer lengthens it to fit the voice-over (max 10 s). */
+    seconds: number;
+    /** What the voice-over reads (offerSlideNarration). */
+    narration: string;
+  };
 };
 
 /** render_info for one slide creative (the renderer reads it back). */
@@ -165,6 +207,7 @@ export function offerSlideRenderInfo(args: { sourceCreativeId: string; offerText
       offer: args.offerText.replace(/\s+/g, " ").trim(),
       until: untilLine(args.endsAt),
       seconds: OFFER_SLIDE_SECONDS,
+      narration: offerSlideNarration({ offerText: args.offerText, endsAt: args.endsAt }),
     },
   };
 }
@@ -173,11 +216,18 @@ export function offerSlideRenderInfo(args: { sourceCreativeId: string; offerText
 export function offerSlideOf(renderInfo: unknown): OfferSlideInfo["slide"] | null {
   const r = renderInfo as { engine?: unknown; slide?: Partial<OfferSlideInfo["slide"]> } | null | undefined;
   if (r?.engine !== OFFER_SLIDE_ENGINE || !r.slide || typeof r.slide.offer !== "string") return null;
+  const until = typeof r.slide.until === "string" ? r.slide.until : "";
   return {
     heading: typeof r.slide.heading === "string" ? r.slide.heading : OFFER_SLIDE_HEADING,
     offer: r.slide.offer,
-    until: typeof r.slide.until === "string" ? r.slide.until : "",
+    until,
     seconds: typeof r.slide.seconds === "number" && r.slide.seconds > 0 && r.slide.seconds <= 10 ? r.slide.seconds : OFFER_SLIDE_SECONDS,
+    // A slide queued before the voice-over shipped has no narration: read the
+    // offer and the slide's own "Until Dec 31" line.
+    narration:
+      typeof r.slide.narration === "string"
+        ? r.slide.narration
+        : `${offerSlideNarration({ offerText: r.slide.offer, endsAt: null })}${until && !MENTIONS_END.test(r.slide.offer) ? ` ${until}.` : ""}`,
   };
 }
 
@@ -299,11 +349,12 @@ export function offerChangeStage(status: string): OfferChangeStage {
 /**
  * How long a stage usually takes, for the web card's progress bar (an honest
  * estimate: the renderer reports no progress). Measured 2026-11-22: a slide
- * cut (ffmpeg only) is ready in ~45 s; a re-cut (template render, reuse-only)
+ * cut (ffmpeg only) was ready in ~45 s; since it gets a voice-over (one TTS
+ * call, 2026-11-22) allow ~75 s; a re-cut (template render, reuse-only)
  * takes a few minutes; publishing = the YouTube upload of each cut + adding
  * the ad at Google, which since then happens as soon as the uploads finish.
  */
-export const OFFER_CHANGE_EXPECTED_SECONDS = { slide: 60, recut: 240, publishing: 120 } as const;
+export const OFFER_CHANGE_EXPECTED_SECONDS = { slide: 75, recut: 240, publishing: 120 } as const;
 
 /**
  * What the progress bar runs against, or null for a stage with no bar.

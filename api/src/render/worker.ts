@@ -10,6 +10,7 @@
 import { isReformatCopy } from "../lib/uploads/reformatPolicy.js";
 import { reformatVideo } from "./reformat.js";
 import { renderOfferSlide } from "./offerSlide.js";
+import { slideVoice, voiceCacheKey } from "./slideVoice.js";
 import { offerSlideOf } from "../lib/offerSwap/policy.js";
 import { advanceOfferChangeForCreative } from "../lib/offerSwap/sweep.js";
 import { deleteUploadObjects } from "../lib/uploads/remove.js";
@@ -45,7 +46,7 @@ import { falOmni } from "../lib/ai/cinematic/index.js";
 import { enhancePhotos } from "./enhance.js";
 import { plainPhotoIndexes } from "../lib/beforeAfter/policy.js";
 import { defaultVoiceFor } from "../lib/script/schema.js";
-import { synthesizeVoice, voiceProvider } from "../lib/ai/voice/index.js";
+import { DEFAULT_FAL_VOICE, synthesizeVoice, voiceProvider } from "../lib/ai/voice/index.js";
 import {
   creativeThumbnailKey,
   creativeVideoKey,
@@ -288,10 +289,8 @@ const voiceStats = new Map<string, string>();
 // A paid voiceover is kept in R2 under the campaign, keyed by its text and
 // voice, so the campaign's other format (same narration, see
 // lib/creatives/generate.ts) and any redo reuse it instead of paying again.
-function voiceCacheKey(campaignId: string, text: string, voice: string): string {
-  const h = createHash("sha256").update(`${process.env.VOICE_PROVIDER ?? ""}|${voice}|${text}`).digest("hex").slice(0, 32);
-  return `campaigns/${campaignId}/voice/${h}.mp3`;
-}
+// The key (voiceCacheKey) lives in render/slideVoice.ts, shared with the
+// offer slide's voice-over.
 
 async function synthesizeVoiceover(args: {
   script: AdScript;
@@ -615,8 +614,9 @@ async function processReformat(
 
 /**
  * An offer change on an uploaded-video ad (lib/offerSwap, render_info.engine
- * = 'offer_slide'): the owner's video + a "This month's offer" end slide.
- * ffmpeg only (render/offerSlide.ts), no vendor. NOT sent to YouTube here: it
+ * = 'offer_slide'): the owner's video + a "This month's offer" end slide,
+ * read out. ffmpeg (render/offerSlide.ts) + one voice-over per change
+ * (render/slideVoice.ts, R2-cached across both shapes). NOT sent to YouTube here: it
  * is a preview until "Put it live" (the swap sweep publishes it).
  */
 async function processOfferSlide(
@@ -630,6 +630,37 @@ async function processOfferSlide(
   try {
     const inputPath = join(workDir, "source.mp4");
     await writeFile(inputPath, await getObjectBytes(sourceKey));
+
+    // The slide's voice-over (2026-11-22): the ads' voice path, one paid call
+    // per change (both shapes share the R2 cache entry). Upload creatives
+    // carry no voice pick, so FAL_VOICE / the provider default reads it.
+    // Any failure = the old silent slide, recorded in render_info.
+    const voice = await slideVoice(
+      {
+        campaignId: creative.campaignId,
+        text: slide.narration,
+        voice: process.env.FAL_VOICE ?? DEFAULT_FAL_VOICE,
+        currency: creative.currencyCode === "INR" ? "INR" : "USD",
+      },
+      {
+        providerName: () => voiceProvider()?.name ?? null,
+        synthesize: synthesizeVoice,
+        cacheGet: async (key) => ((await headObject(key)) ? await getObjectBytes(key) : null),
+        cachePut: (key, bytes) => putObject(key, bytes, "audio/mpeg").then(() => undefined),
+        log: (msg, data) => log(msg, { creativeId: creative.id, ...(data as object) }),
+      },
+    );
+    if (voice.ok && voice.fellBack) {
+      log("paid slide voice failed; used edge-tts", { creativeId: creative.id, error: voice.fellBack });
+      noteFalFailure("voice", voice.fellBack);
+    }
+    if (!voice.ok) log("slide voice failed; slide stays silent", { creativeId: creative.id, error: voice.error });
+    let voicePath: string | undefined;
+    if (voice.ok) {
+      voicePath = join(workDir, "slide-voice.mp3");
+      await writeFile(voicePath, voice.bytes);
+    }
+
     const out = await renderOfferSlide({
       inputPath,
       workDir,
@@ -638,7 +669,12 @@ async function processOfferSlide(
       until: slide.until,
       slideSeconds: slide.seconds,
       fonts: { bold: FONT_BOLD, regular: FONT_REGULAR },
+      voicePath,
     });
+    const voiceInfo =
+      voice.ok && out.voiceSeconds != null
+        ? { voice: { provider: voice.provider, seconds: Math.round(out.voiceSeconds * 10) / 10, ...(voice.reused ? { reused: true } : {}) } }
+        : { voice: null, voiceError: voice.ok ? (out.voiceError ?? "voice not used") : voice.error };
     const videoKey = creativeVideoKey(creative.campaignId, creative.id);
     const thumbnailKey = creativeThumbnailKey(creative.campaignId, creative.id);
     const videoBytes = await readFile(out.videoPath);
@@ -649,7 +685,17 @@ async function processOfferSlide(
       thumbnailKey,
       durationSeconds: Math.round(out.durationSeconds),
       sizeBytes: videoBytes.byteLength,
-      renderInfo: { ...(creative.renderInfo ?? {}), at: new Date().toISOString() },
+      renderInfo: {
+        ...(creative.renderInfo ?? {}),
+        // `seconds` stays the minimum (a retry starts from it again);
+        // `renderedSeconds` is what this cut's slide actually runs.
+        slide: {
+          ...((creative.renderInfo as { slide?: Record<string, unknown> } | null)?.slide ?? slide),
+          renderedSeconds: out.slideSeconds,
+          ...voiceInfo,
+        },
+        at: new Date().toISOString(),
+      },
     });
     if (!kept) {
       // The change was superseded or cancelled while it rendered.

@@ -5,7 +5,9 @@ import {
   offerChangeMode,
   offerChangeProgress,
   offerSlideOf,
+  offerSlideNarration,
   offerSlideRenderInfo,
+  spokenDate,
   OFFER_SLIDE_ENGINE,
   OFFER_SLIDE_SECONDS,
   photoOptionRefusal,
@@ -267,20 +269,76 @@ describe("uploaded-video ads: the end slide", () => {
     expect(info).toEqual({
       engine: OFFER_SLIDE_ENGINE,
       from: "c1",
-      slide: { heading: "This month's offer", offer: "$25 off move-outs", until: "Until Dec 15", seconds: OFFER_SLIDE_SECONDS },
+      slide: {
+        heading: "This month's offer",
+        offer: "$25 off move-outs",
+        until: "Until Dec 15",
+        seconds: OFFER_SLIDE_SECONDS,
+        narration: "This month's offer: $25 off move-outs. Until December 15th.",
+      },
     });
     expect(offerSlideOf(info)).toEqual(info.slide);
     expect(offerSlideOf({ engine: "reformat", from: "c1" })).toBeNull();
     expect(offerSlideOf(null)).toBeNull();
     expect(offerSlideOf({ engine: OFFER_SLIDE_ENGINE, slide: { offer: "x", seconds: 99 } })?.seconds).toBe(OFFER_SLIDE_SECONDS);
   });
+
+  it("a slide queued before the voice-over still gets a narration (from its own lines)", () => {
+    const old = { engine: OFFER_SLIDE_ENGINE, from: "c1", slide: { heading: "This month's offer", offer: "$25 off move-outs", until: "Until Dec 15", seconds: 4 } };
+    expect(offerSlideOf(old)?.narration).toBe("This month's offer: $25 off move-outs. Until Dec 15.");
+    const noUntil = { engine: OFFER_SLIDE_ENGINE, slide: { offer: "Free quotes", until: "" } };
+    expect(offerSlideOf(noUntil)?.narration).toBe("This month's offer: Free quotes.");
+  });
+});
+
+describe("spokenDate / offerSlideNarration (the slide's voice-over)", () => {
+  it("dates read naturally, UTC, with the right ordinal", () => {
+    const d = (iso: string) => spokenDate(new Date(iso));
+    expect(d("2026-12-31T23:59:59Z")).toBe("December 31st");
+    expect(d("2027-01-01T00:00:00Z")).toBe("January 1st");
+    expect(d("2027-02-02T00:00:00Z")).toBe("February 2nd");
+    expect(d("2027-03-03T00:00:00Z")).toBe("March 3rd");
+    expect(d("2027-04-04T00:00:00Z")).toBe("April 4th");
+    for (const n of [11, 12, 13]) expect(d(`2027-05-${n}T00:00:00Z`)).toBe(`May ${n}th`);
+    expect(d("2027-06-21T00:00:00Z")).toBe("June 21st");
+    expect(d("2027-07-22T00:00:00Z")).toBe("July 22nd");
+    expect(d("2027-08-23T00:00:00Z")).toBe("August 23rd");
+    expect(d("2027-09-30T00:00:00Z")).toBe("September 30th");
+  });
+
+  const endsAt = new Date("2026-12-31T23:59:59Z");
+  it("lead, the offer with one full stop, then the date", () => {
+    expect(offerSlideNarration({ offerText: "$25 off any move-out clean", endsAt })).toBe(
+      "This month's offer: $25 off any move-out clean. Until December 31st.",
+    );
+    // Existing end punctuation is kept, trailing separators dropped, whitespace collapsed.
+    expect(offerSlideNarration({ offerText: "Free  gutter\ncheck!", endsAt })).toBe("This month's offer: Free gutter check! Until December 31st.");
+    expect(offerSlideNarration({ offerText: "20% off repairs.", endsAt })).toBe("This month's offer: 20% off repairs. Until December 31st.");
+    expect(offerSlideNarration({ offerText: "Half-price cuts -", endsAt })).toBe("This month's offer: Half-price cuts. Until December 31st.");
+    expect(offerSlideNarration({ offerText: "BOGO pizza,;", endsAt })).toBe("This month's offer: BOGO pizza. Until December 31st.");
+  });
+
+  it("audio tags the owner typed are stripped (never stage directions)", () => {
+    expect(offerSlideNarration({ offerText: "[excited] $10 off [whispers] today only", endsAt })).toBe(
+      "This month's offer: $10 off today only. Until December 31st.",
+    );
+  });
+
+  it("no second date when the offer already says when it ends; nothing to read = empty", () => {
+    expect(offerSlideNarration({ offerText: "$25 off until Friday", endsAt })).toBe("This month's offer: $25 off until Friday.");
+    expect(offerSlideNarration({ offerText: "Free flush, ends Dec 15", endsAt })).toBe("This month's offer: Free flush, ends Dec 15.");
+    // "weekend" contains "end" but is not the word: the date stays.
+    expect(offerSlideNarration({ offerText: "Weekend brunch 2 for 1", endsAt })).toBe("This month's offer: Weekend brunch 2 for 1. Until December 31st.");
+    expect(offerSlideNarration({ offerText: "Free quote", endsAt: null })).toBe("This month's offer: Free quote.");
+    expect(offerSlideNarration({ offerText: "  [warmly]  ", endsAt })).toBe("");
+  });
 });
 
 describe("offerChangeProgress (the web card's bar)", () => {
   const createdAt = new Date("2026-11-22T10:00:00Z");
   const confirmedAt = new Date("2026-11-22T10:05:00Z");
-  it("making: ~60 s for a slide cut, ~4 min for a re-cut, from createdAt", () => {
-    expect(offerChangeProgress({ mode: "slide", status: "rendering", createdAt, confirmedAt: null })).toEqual({ startedAt: createdAt, expectedSeconds: 60 });
+  it("making: ~75 s for a slide cut (voice-over included), ~4 min for a re-cut, from createdAt", () => {
+    expect(offerChangeProgress({ mode: "slide", status: "rendering", createdAt, confirmedAt: null })).toEqual({ startedAt: createdAt, expectedSeconds: 75 });
     expect(offerChangeProgress({ mode: "recut", status: "rendering", createdAt, confirmedAt: null })).toEqual({ startedAt: createdAt, expectedSeconds: 240 });
   });
   it("publishing runs from Put it live; Google's review and every other stage get no bar", () => {
