@@ -1,5 +1,5 @@
 // Digital Asset Links for the Android app (android/, package
-// com.threepanda.advault). Chrome checks this file before it opens the
+// com.threepandalabs.advault). Chrome checks this file before it opens the
 // site as a Trusted Web Activity; without a matching fingerprint the app shows
 // a browser URL bar, and Play reviewers reject that as a "webview wrapper".
 //
@@ -25,7 +25,7 @@ const statements = [
     relation: ["delegate_permission/common.handle_all_urls"],
     target: {
       namespace: "android_app",
-      package_name: "com.threepanda.advault",
+      package_name: "com.threepandalabs.advault",
       sha256_cert_fingerprints: SHA256_CERT_FINGERPRINTS,
     },
   },

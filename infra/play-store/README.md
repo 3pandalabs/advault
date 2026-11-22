@@ -2,7 +2,7 @@
 
 The Android app is a **Trusted Web Activity** (`android/`, generated with Bubblewrap): Chrome shows `https://advault.3pandalabs.com` full screen, without a URL bar, starting at `/dashboard` (signed out, it goes to `/login`). There's no app code to keep in step. Every web deploy updates the app immediately. Rebuild the AAB only when the name, icon, colours, start URL, shortcuts or version change.
 
-Package `com.threepanda.advault` · listing copy and policy answers: `listing.md`.
+Package `com.threepandalabs.advault` · listing copy and policy answers: `listing.md`.
 
 ## Signing
 
