@@ -122,7 +122,7 @@ export default function TermsPage() {
               monthly charge
             </td>
             <td>
-              One ad kept running in a campaign we run for you, with no monthly offer.
+              One ad kept running in a campaign we run for you.
               <strong> The plan is billed only for months in which an ad is running.</strong>{" "}
               When none of your ads is running (you paused it, it reached its end date, or it was
               never launched) the plan stops at the end of the month you have paid for, and nothing
@@ -162,8 +162,16 @@ export default function TermsPage() {
               Each ad includes the first version and up to two redos; a version that
               fails to render is redone at no charge. A video you upload yourself has no
               charge; it runs after we review it.
+              <strong>Changing your offer:</strong> you can put a new offer into your running
+              ad (we remake it with the new offer and your existing photos, and replace the
+              running ad once Google approves the new one; on the offer&apos;s end date your ad
+              goes back to your regular ad and keeps running). While the plan runs, one offer
+              change each calendar month is included; each further change, and every change
+              without the plan, is a one-off $2 charge, paid when you put it live. If Google
+              does not approve it, your previous ad keeps running and an included change is
+              given back (a paid change is not refunded automatically; ask us).
               Every dollar of your ad budget goes to Google; AdVault earns only the
-              $10 per ad, the $10 website and the plan fee.
+              $10 per ad, the $10 website, the $2 offer changes and the plan fee.
             </td>
           </tr>
         </tbody>

@@ -34,6 +34,9 @@ type CountsRow = {
   creatives_on_youtube: number;
   advertiser_youtube_channels: number;
   live_campaigns_without_ads: number;
+  offer_changes_live: number;
+  offer_changes_waiting_google: number;
+  offer_changes_disapproved_30d: number;
   connected_ad_accounts: number;
   platform_funded_accounts: number;
   customer_funded_accounts: number;
@@ -102,7 +105,9 @@ export async function metricsRoutes(app: FastifyInstance) {
         (select count(*) from creatives where youtube_upload_status = 'failed')::int as failed_youtube_uploads,
         -- Unreviewed/rejected customer uploads are held back on purpose, not stuck.
         (select count(*) from creatives where render_status = 'ready' and youtube_video_id is null
-           and (review_status is null or review_status = 'approved'))::int as rendered_not_on_youtube,
+           and (review_status is null or review_status = 'approved')
+           -- Offer-change previews (lib/offerSwap) publish only when put live.
+           and (offer_change_id is null or offer_change_id in (select id from offer_changes where status = 'publishing')))::int as rendered_not_on_youtube,
         -- Customer-uploaded videos waiting for an admin (a work item, like the refund queue).
         (select count(*) from creatives where review_status = 'pending_review')::int as videos_pending_review,
         (select count(*) from creatives where youtube_video_id is not null)::int as creatives_on_youtube,
@@ -114,6 +119,11 @@ export async function metricsRoutes(app: FastifyInstance) {
            and not exists (select 1 from creatives cr
                             where cr.campaign_id = c.id
                               and cr.google_ad_resource_name is not null))::int as live_campaigns_without_ads,
+        -- "Change my offer" (lib/offerSwap): live offers, ones Google is still
+        -- reviewing, and Google's refusals in the last 30 days.
+        (select count(*) from offer_changes where kind = 'offer' and status = 'live')::int as offer_changes_live,
+        (select count(*) from offer_changes where status in ('publishing','pending_google'))::int as offer_changes_waiting_google,
+        (select count(*) from offer_changes where status = 'disapproved' and updated_at > now() - interval '30 days')::int as offer_changes_disapproved_30d,
         (select count(*) from ad_accounts where status = 'active')::int as connected_ad_accounts,
         (select count(*) from ad_accounts where status = 'active' and billing_mode = 'platform')::int as platform_funded_accounts,
         (select count(*) from ad_accounts where status = 'active' and billing_mode = 'customer')::int as customer_funded_accounts,
@@ -205,6 +215,9 @@ export async function metricsRoutes(app: FastifyInstance) {
         creativesOnYouTube: c.creatives_on_youtube,
         advertiserYoutubeChannels: c.advertiser_youtube_channels,
         liveCampaignsWithoutAds: c.live_campaigns_without_ads,
+        offerChangesLive: c.offer_changes_live,
+        offerChangesWaitingGoogle: c.offer_changes_waiting_google,
+        offerChangesDisapproved30d: c.offer_changes_disapproved_30d,
         connectedAdAccounts: c.connected_ad_accounts,
         // The split that says how much of the org's money is at risk.
         // platformFunded accounts spend from AdVault's payments account and are

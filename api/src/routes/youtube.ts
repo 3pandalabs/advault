@@ -194,6 +194,7 @@ export async function youtubeRoutes(app: FastifyInstance) {
           youtubeVideoId: creatives.youtubeVideoId,
           uploadStatus: creatives.youtubeUploadStatus,
           reviewStatus: creatives.reviewStatus,
+          offerChangeId: creatives.offerChangeId,
         })
         .from(creatives)
         .innerJoin(campaigns, eq(creatives.campaignId, campaigns.id))
@@ -201,6 +202,8 @@ export async function youtubeRoutes(app: FastifyInstance) {
         .limit(1);
 
       if (!creative) return reply.code(404).send({ error: "not_found" });
+      // An offer-change re-cut is published only by "Put it live" (lib/offerSwap).
+      if (creative.offerChangeId) return reply.code(409).send({ error: "creative_is_offer_change" });
 
       if (creative.renderStatus !== "ready") {
         return reply.code(409).send({ error: "not_rendered" });
@@ -247,6 +250,8 @@ export async function youtubeRoutes(app: FastifyInstance) {
           inArray(creatives.youtubeUploadStatus, ["pending", "failed"]),
           // Generated, or an approved upload — never an unreviewed one.
           or(isNull(creatives.reviewStatus), eq(creatives.reviewStatus, "approved")),
+          // Never an offer-change preview nobody put live (lib/offerSwap).
+          isNull(creatives.offerChangeId),
         ),
       );
 

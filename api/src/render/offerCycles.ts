@@ -10,7 +10,7 @@ import {
 import { nextCycleAction, type CycleStatus } from "../lib/offers/policy.js";
 import { dueForRenewal, openNextInvoice, sweepCancellations } from "../lib/subscriptions/index.js";
 import { isMccConfigured, mccAccessToken, pauseCampaign } from "../lib/googleAds/mcc.js";
-import { isWhatsAppConfigured } from "../lib/whatsapp/index.js";
+import { whatsAppSendsEnabled } from "../lib/whatsapp/index.js";
 
 // Three periodic sweeps, all in the renderer container for the same reason
 // spendSync is: it is already a long-lived process, so they need no new
@@ -40,8 +40,8 @@ export async function runOfferCycleSweep(now = new Date()) {
   // monthly cycle at all.
   stats.opened = await openCyclesForEntitledSubscribers(now);
 
-  if (!isWhatsAppConfigured()) {
-    log("WhatsApp not configured — cycles opened, no messages sent", stats);
+  if (!whatsAppSendsEnabled()) {
+    log("WhatsApp sends off (not configured or WHATSAPP_SENDS unset) — cycles opened, no messages sent", stats);
     return stats;
   }
 

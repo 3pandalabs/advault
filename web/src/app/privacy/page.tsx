@@ -119,11 +119,17 @@ export default function PrivacyPage() {
         <li>
           <strong>WhatsApp messages</strong> — only if you turn on the monthly offer
           prompt. We store your phone number and the text of messages between you and
-          AdVault about your offers.
+          AdVault about your offers. If you send a <strong>photo</strong> for your ad, it
+          is saved with your other uploaded photos. If you send a <strong>voice
+          note</strong>, we send the recording to a speech-to-text service (fal.ai) to
+          type out your offer, delete the recording straight after, and keep only the
+          typed-out text with the message.
         </li>
         <li>
           <strong>What we generate for you</strong> — the ad script, the finished video
-          and voiceover, and the YouTube video ID once it is published.
+          and voiceover, and the YouTube video ID once it is published. When you change
+          your offer, we keep each new version of the ad, its offer text and end date,
+          and which version is running.
         </li>
         <li>
           <strong>Technical records</strong> — server logs containing IP addresses and
@@ -406,8 +412,13 @@ export default function PrivacyPage() {
           </tr>
           <tr>
             <td>Meta (WhatsApp)</td>
-            <td>Your phone number and message text</td>
+            <td>Your phone number, message text, and any photo or voice note you send us</td>
             <td>Only if you turn on monthly offer prompts</td>
+          </tr>
+          <tr>
+            <td>fal.ai (speech to text)</td>
+            <td>A WhatsApp voice note you send us about your offer</td>
+            <td>To type out the offer. Only when you send a voice note; the recording is deleted from our storage right after</td>
           </tr>
         </tbody>
         </table>
@@ -444,7 +455,13 @@ export default function PrivacyPage() {
           SiteVault&rsquo;s privacy page).
         </li>
         <li>
-          <strong>Uploaded photos</strong> — until you delete them or your account.
+          <strong>Uploaded photos</strong> (including photos sent by WhatsApp) — until you
+          delete them or your account.
+        </li>
+        <li>
+          <strong>WhatsApp messages</strong> — the text, and the typed-out text of voice
+          notes, for as long as your account is open; deleted when you delete your
+          account. Voice-note recordings are deleted as soon as they are typed out.
         </li>
         <li>
           <strong>Payment and invoice records, and the campaigns and finished ads they

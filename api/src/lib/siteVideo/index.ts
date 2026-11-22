@@ -28,7 +28,8 @@ export async function pushSiteVideo(campaignId: string): Promise<"pushed" | "fai
   const rows = await db
     .select({ aspectRatio: creatives.aspectRatio, videoKey: creatives.videoKey, sizeBytes: creatives.sizeBytes })
     .from(creatives)
-    .where(and(eq(creatives.campaignId, campaignId), ne(creatives.kind, "upload"), eq(creatives.renderStatus, "ready")))
+    // Never an offer-change re-cut (lib/offerSwap): the launch cut goes on the site.
+    .where(and(eq(creatives.campaignId, campaignId), ne(creatives.kind, "upload"), eq(creatives.renderStatus, "ready"), isNull(creatives.offerChangeId)))
     .orderBy(desc(creatives.createdAt));
   const ad = pickSiteVideo(rows) ?? pickSiteVideo(await approvedUploads(campaignId));
   if (!ad?.videoKey) return fail("no_ready_video");

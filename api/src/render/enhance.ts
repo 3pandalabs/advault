@@ -109,6 +109,8 @@ export async function enhancePhotos(args: {
   imagePaths: string[];
   /** Indexes never to edit (the agent's portrait). */
   skip: number[];
+  /** Offer-change re-cut (lib/offerSwap): cached pro photos only, no fal call. */
+  cacheOnly?: boolean;
   workDir: string;
   log: (msg: string, extra?: unknown) => void;
 }): Promise<EnhanceResult> {
@@ -130,6 +132,8 @@ export async function enhancePhotos(args: {
         if (await headObject(proKey)) {
           await writeFile(proPath, await getObjectBytes(proKey));
           result.reused++;
+        } else if (args.cacheOnly) {
+          return;
         } else {
           const bytes = await falEdit(await presignDownload(key), await aspectOf(args.imagePaths[i]));
           await writeFile(proPath, bytes);

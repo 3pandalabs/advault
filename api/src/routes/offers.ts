@@ -1,9 +1,9 @@
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { requireAuth } from "../auth/plugin.js";
 import { db } from "../db/index.js";
-import { offerCycles } from "../db/schema.js";
+import { campaigns, offerCycles } from "../db/schema.js";
 import {
   applyInboundReply,
   approveCycle,
@@ -12,11 +12,12 @@ import {
   sendPreview,
 } from "../lib/offers/index.js";
 import { inferOfferExpiry } from "../lib/offers/policy.js";
-import { hasMonthlyOffers, type ProductLine } from "../lib/pricing/index.js";
+import { hasMonthlyOffers, hasOfferChanges, type ProductLine } from "../lib/pricing/index.js";
+import { handleSwapInbound } from "../lib/offerSwap/whatsapp.js";
 import { liveSubscriptionFor } from "../lib/subscriptions/index.js";
 import {
-  isWhatsAppConfigured,
-  parseInbound,
+  whatsAppSendsEnabled,
+  parseInboundAll,
   verifyChallenge,
   verifyWebhookSignature,
 } from "../lib/whatsapp/index.js";
@@ -55,10 +56,21 @@ export async function offerRoutes(app: FastifyInstance) {
         return reply.code(400).send({ error: "invalid_signature" });
       }
 
-      const messages = parseInbound(raw);
+      const messages = parseInboundAll(raw);
       const outcomes = [];
       for (const msg of messages) {
         try {
+          // Keep it running subscribers: the offer-CHANGE loop (lib/offerSwap,
+          // text / photo / voice note / YES button). Off unless
+          // OFFER_SWAP_WHATSAPP=on; then { handled: false } and the original
+          // loop below runs as before.
+          const swap = await handleSwapInbound(msg, { log: (m, e) => req.log.warn({ err: e }, m) });
+          if (swap.handled) {
+            outcomes.push(swap);
+            continue;
+          }
+          // The original loop reads text only.
+          if (msg.kind !== "text") continue;
           const outcome = await applyInboundReply({
             phone: msg.from,
             body: msg.body,
@@ -110,7 +122,7 @@ export async function offerRoutes(app: FastifyInstance) {
 
       return {
         cycle: cycle ?? null,
-        whatsappEnabled: isWhatsAppConfigured(),
+        whatsappEnabled: whatsAppSendsEnabled(),
       };
     });
 
@@ -141,8 +153,19 @@ export async function offerRoutes(app: FastifyInstance) {
 
         const sub = await liveSubscriptionFor(req.userId!);
         if (!sub) return reply.code(402).send({ error: "no_subscription" });
-        // An offer sets an expiry that pauses the campaign; Keep it running
-        // promises the opposite.
+        // An offer here sets an expiry that PAUSES the campaign; Keep it
+        // running promises the opposite. Its owners change the offer with
+        // "Change my offer" instead (lib/offerSwap: a re-cut swapped into the
+        // live ad, back to the base ad on the end date), so point them there.
+        if (hasOfferChanges(sub.line as ProductLine)) {
+          const [c] = await db
+            .select({ id: campaigns.id })
+            .from(campaigns)
+            .where(and(eq(campaigns.userId, req.userId!), isNotNull(campaigns.googleAdGroupResourceName), inArray(campaigns.status, ["live", "paused"])))
+            .orderBy(desc(campaigns.launchedAt))
+            .limit(1);
+          return reply.code(409).send({ error: "plan_uses_offer_changes", campaignId: c?.id ?? null });
+        }
         if (!hasMonthlyOffers(sub.line as ProductLine)) return reply.code(409).send({ error: "plan_has_no_offers" });
 
         const cycle = await ensureCycleForMonth({

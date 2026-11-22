@@ -64,8 +64,17 @@ export default function OfferPage() {
       await refresh();
     } catch (err) {
       const code = err instanceof ApiError ? err.code : "";
+      // Keep it running changes the offer in the RUNNING ad instead (api
+      // lib/offerSwap): send them to that campaign's "Change my offer".
+      const campaignId = err instanceof ApiError ? (err.body?.campaignId as string | null | undefined) : null;
+      if (code === "plan_uses_offer_changes" && campaignId) {
+        window.location.href = `/dashboard/campaigns/${campaignId}?edit=offer#change-offer`;
+        return;
+      }
       setError(
-        code === "plan_has_no_offers"
+        code === "plan_uses_offer_changes"
+          ? "On Keep it running you change the offer in your running ad: open your campaign and press Change my offer."
+          : code === "plan_has_no_offers"
           ? "Keep it running doesn't include monthly offers. To advertise a new deal, open your campaign and make a new ad with it ($10)."
           : code === "no_subscription"
             ? "Monthly offers come with a monthly-offer plan, coming soon. To advertise a deal now, put it in your campaign's offer and make a new ad."

@@ -7,7 +7,7 @@
 // as "Google: Approved / Under review / Disapproved".
 
 export const AD_POLICY_QUERY =
-  "SELECT campaign.resource_name, ad_group_ad.resource_name, " +
+  "SELECT campaign.resource_name, ad_group_ad.resource_name, ad_group_ad.status, " +
   "ad_group_ad.policy_summary.approval_status, ad_group_ad.policy_summary.review_status, " +
   "ad_group_ad.policy_summary.policy_topic_entries " +
   "FROM ad_group_ad WHERE ad_group_ad.status != 'REMOVED'";
@@ -17,6 +17,7 @@ export type GaqlAdPolicyResult = {
   campaign?: { resourceName?: string };
   adGroupAd?: {
     resourceName?: string;
+    status?: string;
     policySummary?: {
       approvalStatus?: string;
       reviewStatus?: string;
@@ -54,8 +55,9 @@ const SEVERITY: Record<GooglePolicyLabel, number> = {
 };
 
 /**
- * One row per campaign. AdVault puts exactly one ad in each campaign, but if
- * a campaign ever holds more, the worst verdict is the one worth showing.
+ * One row per campaign, from its non-paused ads. A campaign holds one serving
+ * ad, plus briefly a new offer ad while Google reviews it (lib/offerSwap);
+ * then the worst verdict is the one worth showing.
  */
 export function parseAdPolicyResults(results: GaqlAdPolicyResult[] | undefined): AdPolicyRow[] {
   const byCampaign = new Map<string, AdPolicyRow>();
@@ -63,6 +65,10 @@ export function parseAdPolicyResults(results: GaqlAdPolicyResult[] | undefined):
     const campaignResourceName = r.campaign?.resourceName;
     const summary = r.adGroupAd?.policySummary;
     if (!campaignResourceName || !summary) continue;
+    // A PAUSED ad is not serving: since "Change my offer" (lib/offerSwap) a
+    // campaign keeps its paused base ad next to the live one, and its old
+    // verdict must not stand for the ad people actually see.
+    if (r.adGroupAd?.status === "PAUSED") continue;
     const row: AdPolicyRow = {
       campaignResourceName,
       approvalStatus: summary.approvalStatus ?? "UNKNOWN",
