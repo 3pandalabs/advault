@@ -31,7 +31,7 @@ export default function TermsPage() {
   return (
     <LegalPage
       title="Terms of Service"
-      effective="19 November 2026"
+      effective="21 November 2026"
       summary="You pay us to make your ads and, on the managed plan, to run them. You are responsible for the offers you advertise and for honouring them. We do not guarantee results, and nothing here is a promise that advertising will work."
       notice={
         <>
