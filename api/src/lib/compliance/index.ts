@@ -169,6 +169,12 @@ export async function orderAttestation(purchaseId: string) {
 }
 
 /** Every piece of ad text the REVIEW rules look at. */
+/** The offer text of an "This month's offer" end slide (render_info.slide), if any. */
+export function slideTexts(renderInfo: unknown): ComplianceText[] {
+  const offer = (renderInfo as { slide?: { offer?: unknown } } | null | undefined)?.slide?.offer;
+  return typeof offer === "string" && offer.trim() ? [{ field: "slide.offer", text: offer }] : [];
+}
+
 export function complianceTexts(
   campaign: Pick<Campaign, "name" | "businessName" | "callToAction" | "offerDetails">,
   scripts: unknown[],
@@ -206,13 +212,15 @@ export async function reevaluateCompliance(campaignId: string): Promise<Campaign
     const [campaign] = await db.select().from(campaigns).where(eq(campaigns.id, campaignId)).limit(1);
     if (!campaign) return null;
     const scripts = await db
-      .select({ script: creatives.script })
+      .select({ script: creatives.script, renderInfo: creatives.renderInfo })
       .from(creatives)
       .where(eq(creatives.campaignId, campaignId));
-    const found = reviewReasons(
-      categoryKey(campaign.businessCategory),
-      complianceTexts(campaign, scripts.map((s) => s.script)),
-    );
+    const found = reviewReasons(categoryKey(campaign.businessCategory), [
+      ...complianceTexts(campaign, scripts.map((s) => s.script)),
+      // An offer change on an uploaded video has no script: its offer lives
+      // on the end slide (lib/offerSwap, render_info.slide).
+      ...scripts.flatMap((s) => slideTexts(s.renderInfo)),
+    ]);
     const next = nextCompliance(
       { status: campaign.complianceStatus, reasons: campaign.complianceReasons ?? null },
       found,

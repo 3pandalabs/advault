@@ -10,7 +10,7 @@
 // never get a render job.
 
 import { randomUUID } from "node:crypto";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { db } from "../../db/index.js";
 import { campaigns, creatives } from "../../db/schema.js";
 import { enqueueRender } from "../../render/jobs.js";
@@ -46,7 +46,8 @@ export async function queueOtherFormat(sourceId: string): Promise<string | null>
           renderInfo: creatives.renderInfo,
         })
         .from(creatives)
-        .where(and(eq(creatives.campaignId, src.campaignId), eq(creatives.kind, "upload"), eq(creatives.aspectRatio, target)));
+        // Offer-change slide cuts (lib/offerSwap) are not uploads of this shape.
+        .where(and(eq(creatives.campaignId, src.campaignId), eq(creatives.kind, "upload"), eq(creatives.aspectRatio, target), isNull(creatives.offerChangeId)));
       if (!needsReformatCopy(existing)) return null;
       const newId = randomUUID();
       const now = new Date();
