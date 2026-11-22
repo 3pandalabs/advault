@@ -90,14 +90,13 @@ export default function LandingPage() {
   return (
     <main>
       <header className="mx-auto flex w-full max-w-5xl items-center justify-between gap-3 px-4 py-6 sm:px-6">
-        <div className="text-lg font-semibold tracking-tight">
+        {/* At phone width an inline tag squeezes the nav, so it stacks under
+            the name instead (never hidden: brand.md consistency rules). */}
+        <div className="flex flex-col items-start text-lg leading-tight font-semibold tracking-tight sm:block sm:leading-normal">
           <Link href="/">
             <WordmarkName />
           </Link>
-          {/* At phone width the tag wraps under the name and squeezes the nav. */}
-          <span className="hidden sm:inline">
-            <WordmarkTag />
-          </span>
+          <WordmarkTag stackOnPhone />
         </div>
         <nav className="flex shrink-0 items-center gap-1 whitespace-nowrap text-sm sm:gap-2">
           <Link href="#pricing" className="hidden rounded-lg px-3 py-2 text-zinc-300 hover:bg-white/10 sm:inline">

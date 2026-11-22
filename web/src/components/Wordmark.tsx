@@ -10,18 +10,21 @@ export function WordmarkName() {
   );
 }
 
-export function WordmarkTag() {
+/** The tag is never hidden at any width (brand.md consistency rules). Where a
+ * header is too tight at phone width, pass `stackOnPhone` and put the tag on
+ * its own line under the name: the divider then only shows from sm up. */
+export function WordmarkTag({ stackOnPhone = false }: { stackOnPhone?: boolean }) {
   return (
     <>
       <span
         aria-hidden
-        className="mx-2 inline-block h-3.5 w-px translate-y-[1px] bg-current align-middle opacity-20"
+        className={`mx-2 ${stackOnPhone ? "hidden sm:inline-block" : "inline-block"} h-3.5 w-px translate-y-[1px] bg-current align-middle opacity-20`}
       />
       <a
         href="https://3pandalabs.com"
         target="_blank"
         rel="noopener noreferrer"
-        className="align-middle font-mono text-[10px] font-normal tracking-widest text-zinc-500 hover:text-zinc-300 hover:underline"
+        className="align-middle font-mono text-[10px] font-normal uppercase tracking-widest text-zinc-500 hover:text-zinc-300 hover:underline"
       >
         by 3PandaLabs
       </a>

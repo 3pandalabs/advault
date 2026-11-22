@@ -14,6 +14,9 @@ import Link from "next/link";
 // about the company's own legal line is the failure mode this comment exists to
 // prevent.
 //
+// The tagline line under the copyright row is the brand repo's
+// `.footer-tagline` (DECIDED 2026-11-22: on every app's footer).
+//
 // The link back to 3pandalabs.com deliberately lives in the attribution tag
 // (see Wordmark.tsx), not here — same as the other apps.
 //
@@ -47,6 +50,7 @@ export function Footer() {
       <div className="mx-auto flex w-full max-w-5xl flex-wrap items-center justify-between gap-2 text-sm text-zinc-500">
         <span>&copy; 3PandaLabs LLC, USA.</span>
         <span>All rights reserved.</span>
+        <p className="mt-1 basis-full text-xs text-zinc-500">Built by pandas. Loved by people.</p>
       </div>
     </footer>
   );
