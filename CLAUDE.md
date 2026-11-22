@@ -1214,6 +1214,10 @@ credentials (`WHATSAPP_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_APP_SECRET`
 and Meta can be wired, while `whatsAppSendsEnabled()` keeps every send, the
 monthly offer-cycle prompts and the offer-change loop inert. The offer-change
 loop additionally needs `OFFER_SWAP_WHATSAPP` = `internal` or `on`.
+**Hidden in the web UI since 2026-11-22** (`WHATSAPP_UI_ENABLED = false` in
+`web/src/lib/whatsappUi.ts`, owner decision): no page asks for a mobile number
+or mentions the WhatsApp loop until the owner says it is ready; flip the flag
+to bring every surface below back. The API is unchanged.
 **Opt-in + modes (2026-11-21, migration 0048):** `users.phone` is E.164
 (`lib/phone`), `users.whatsapp_opt_in_at` is the tick "Message me on WhatsApp
 about my ads" (signup, Settings, the wizard's last step, the campaign page /

@@ -1,5 +1,7 @@
 "use client";
 
+import { WHATSAPP_UI_ENABLED } from "@/lib/whatsappUi";
+
 import { useEffect, useState } from "react";
 import {
   ApiError,
@@ -108,7 +110,7 @@ export default function OfferPage() {
         </p>
       </div>
 
-      {whatsappEnabled ? (
+      {WHATSAPP_UI_ENABLED && whatsappEnabled ? (
         <p className="rounded-lg border border-white/10 bg-white/[0.02] p-3 text-sm text-zinc-400">
           We&apos;ll message you on WhatsApp at the start of each month. Replying there is quicker
           than this page — it&apos;s the same thing.

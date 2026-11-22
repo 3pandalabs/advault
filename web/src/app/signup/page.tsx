@@ -12,6 +12,7 @@ import { CATEGORIES } from "@/lib/audience";
 import { TERMS_VERSION } from "@/lib/compliance/texts";
 import { rememberedAdCampaignId } from "@/lib/adAttribution";
 import { OptInCheckbox, PhoneFields } from "@/components/WhatsAppOptIn";
+import { WHATSAPP_UI_ENABLED } from "@/lib/whatsappUi";
 import { DEFAULT_COUNTRY_CODE, composePhone, looksLikePhone } from "@/lib/phone";
 
 // Business name and category are collected here rather than later because both
@@ -154,6 +155,7 @@ export default function SignupPage() {
             </FieldHint>
           </div>
 
+          {WHATSAPP_UI_ENABLED && (
           <div className="space-y-3">
             <PhoneFields
               idPrefix="signup-mobile"
@@ -165,6 +167,7 @@ export default function SignupPage() {
             />
             <OptInCheckbox checked={whatsappOptIn} onChange={setWhatsappOptIn} />
           </div>
+          )}
 
           <label className="flex items-start gap-2 text-sm text-zinc-300">
             <input

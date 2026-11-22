@@ -18,6 +18,7 @@ import { formatDate } from "@/lib/utils";
 import { DeleteAccountCard } from "./delete-account";
 import { TestAsCustomerCard } from "./test-mode";
 import { WhatsAppSettings } from "@/components/WhatsAppOptIn";
+import { WHATSAPP_UI_ENABLED } from "@/lib/whatsappUi";
 
 export default function SettingsPage() {
   const [data, setData] = useState<{ configured: boolean; accounts: AdAccount[] } | null>(null);
@@ -287,6 +288,7 @@ export default function SettingsPage() {
         )}
       </Card>
 
+      {WHATSAPP_UI_ENABLED && (
       <Card className="mt-4" id="whatsapp">
         <CardTitle>WhatsApp for offer changes</CardTitle>
         <CardDescription>
@@ -297,6 +299,7 @@ export default function SettingsPage() {
           <WhatsAppSettings />
         </div>
       </Card>
+      )}
 
       <Card className="mt-4">
         <CardTitle>Password</CardTitle>

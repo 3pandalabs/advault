@@ -12,6 +12,7 @@ import {
   looksLikePhone,
   splitPhone,
 } from "@/lib/phone";
+import { WHATSAPP_UI_ENABLED } from "@/lib/whatsappUi";
 
 // WhatsApp for offer changes (api migration 0048, PATCH /auth/me). Three
 // pieces, all driven by /auth/me `whatsapp`:
@@ -46,7 +47,7 @@ export function useWhatsAppState(): [WhatsAppState | undefined, (s: WhatsAppStat
 
 /** The highlighted callout. Renders nothing unless the loop answers this owner. */
 export function WhatsAppOfferNote({ state, className }: { state: WhatsAppState | undefined; className?: string }) {
-  if (!state?.enabled || !state.publicNumber || !state.waLink) return null;
+  if (!WHATSAPP_UI_ENABLED || !state?.enabled || !state.publicNumber || !state.waLink) return null;
   return (
     <div className={cn("rounded-lg border border-emerald-400/40 bg-emerald-400/10 p-3 text-sm text-emerald-100", className)}>
       Next time, just WhatsApp your new offer (text, photo or voice note) to{" "}
@@ -60,7 +61,7 @@ export function WhatsAppOfferNote({ state, className }: { state: WhatsAppState |
 
 /** The one-line version for the dashboard card's status line. */
 export function WhatsAppOfferLine({ state }: { state: WhatsAppState | undefined }) {
-  if (!state?.enabled || !state.publicNumber || !state.waLink) return null;
+  if (!WHATSAPP_UI_ENABLED || !state?.enabled || !state.publicNumber || !state.waLink) return null;
   return (
     <p className="mt-2 text-xs text-emerald-200">
       Next time, just WhatsApp your new offer to{" "}
@@ -151,7 +152,11 @@ export function OptInCheckbox({
  * page view. Shows the note once enabled; nothing when the number is saved
  * and opted in but the loop isn't on for this account yet.
  */
-export function WhatsAppPrompt({ className, title = "Change your offer from WhatsApp" }: { className?: string; title?: string }) {
+export function WhatsAppPrompt(props: { className?: string; title?: string }) {
+  return WHATSAPP_UI_ENABLED ? <PromptBox {...props} /> : null;
+}
+
+function PromptBox({ className, title = "Change your offer from WhatsApp" }: { className?: string; title?: string }) {
   const [state, setState] = useWhatsAppState();
   const [hidden, setHidden] = useState(false);
   if (!state || hidden) return null;
@@ -228,6 +233,10 @@ function PromptForm({
 
 /** Settings → "WhatsApp for offer changes". */
 export function WhatsAppSettings() {
+  return WHATSAPP_UI_ENABLED ? <SettingsBox /> : null;
+}
+
+function SettingsBox() {
   const [state, setState] = useWhatsAppState();
   const [saved, setSaved] = useState(false);
   if (!state) return null;
