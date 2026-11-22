@@ -18,7 +18,7 @@ import { LegalPage } from "@/components/legal/LegalPage";
 const CONTACT = "3pandas@3pandalabs.com";
 
 export const metadata: Metadata = {
-  title: "Content Policy — AdVault",
+  title: "Content Policy",
   description: "What you may advertise with AdVault, what you confirm about every ad, and how ads are reviewed, reported and removed.",
 };
 

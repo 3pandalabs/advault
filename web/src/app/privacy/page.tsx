@@ -36,7 +36,7 @@ import { LegalPage } from "@/components/legal/LegalPage";
 const CONTACT = "privacy@3pandalabs.com";
 
 export const metadata: Metadata = {
-  title: "Privacy Policy — AdVault",
+  title: "Privacy Policy",
   description:
     "What AdVault collects, why, who it is shared with, and how to have it deleted.",
 };

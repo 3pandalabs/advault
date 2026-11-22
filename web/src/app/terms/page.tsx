@@ -22,7 +22,7 @@ import { LegalPage } from "@/components/legal/LegalPage";
 const CONTACT = "legal@3pandalabs.com";
 
 export const metadata: Metadata = {
-  title: "Terms of Service — AdVault",
+  title: "Terms of Service",
   description:
     "The agreement between you and 3PandaLabs LLC for using AdVault: what we do, what you pay, and who is responsible for what.",
 };
