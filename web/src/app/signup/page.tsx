@@ -68,10 +68,12 @@ export default function SignupPage() {
       };
       const tokens = await register(input);
       setTokens(tokens.accessToken, tokens.refreshToken);
-      // Ad account setup first. Sending a new advertiser straight to the
-      // campaign wizard lets them build a whole campaign and only discover at
-      // the launch button that there is nowhere to launch it to.
-      router.push("/dashboard/onboarding");
+      // Straight to making the first ad. The Google Ads account (and its
+      // Mercury card) is created only when the advertiser clicks "Set up my ad
+      // account" on the campaign page. Creating it on sign-up meant every
+      // sign-up, including Google Play's test robots (test@example.com,
+      // 2026-11-22), made a real card and paged ops.
+      router.push("/dashboard/campaigns/new");
     } catch (err) {
       setError(
         err instanceof ApiError && err.code === "registration_failed"

@@ -20,8 +20,9 @@ import { Button } from "@/components/ui/button";
 // Ad account setup — the onboarding branch.
 //
 // Two shapes, one discriminator. The advertiser sees the choice only when this
-// deployment offers both; with one mode configured there is nothing to ask and
-// this page goes straight to provisioning.
+// deployment offers both; with one mode configured it shows a single "Set up my
+// ad account" button. Never provision on page load: that creates a real Google
+// Ads account and Mercury card for anyone (or any bot) that lands here.
 //
 // The part worth understanding before editing: for a customer-funded account,
 // accepting access and entering a card happen in GOOGLE'S UI, and we can
@@ -36,7 +37,7 @@ import { Button } from "@/components/ui/button";
 
 const POLL_MS = 5000;
 
-type Phase = "loading" | "choose" | "provisioning" | "linking" | "done" | "unavailable";
+type Phase = "loading" | "choose" | "confirm" | "provisioning" | "linking" | "done" | "unavailable";
 
 export default function OnboardingPage() {
   const router = useRouter();
@@ -111,8 +112,8 @@ export default function OnboardingPage() {
           setPhase("choose");
           return;
         }
-        // Exactly one mode offered, so there is no question to ask.
-        await provision(opts.modes[0], opts);
+        // Exactly one mode offered: still wait for a click (see top comment).
+        setPhase("confirm");
       } catch {
         if (!cancelled) setError("Could not load your account setup. Please refresh.");
       }
@@ -233,6 +234,23 @@ export default function OnboardingPage() {
             </Button>
           </Card>
         </div>
+      )}
+
+      {phase === "confirm" && options && (
+        <Card className="mt-6">
+          <CardTitle>Set up your ad account</CardTitle>
+          <CardDescription>
+            AdVault creates your Google Ads account and pays Google for your ads. You only do this
+            once, before your first ad goes live.
+          </CardDescription>
+          <Button
+            className="mt-5"
+            disabled={busy}
+            onClick={() => provision(options.modes[0], options)}
+          >
+            Set up my ad account
+          </Button>
+        </Card>
       )}
 
       {phase === "provisioning" && (
