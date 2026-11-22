@@ -16,7 +16,7 @@
 // 2026-11-22 (owner decision): the slide is READ OUT. The voice-over (one TTS
 // call per change through the ads' voice path, render/slideVoice.ts) comes in
 // as a second input, loudness-normalised, starting 0.25 s into the slide; the
-// slide lasts max(4 s, voice + 0.6 s), capped at 10 s (slideSecondsFor). No
+// slide lasts max(4 s, voice + 0.6 s), capped at 16 s (slideSecondsFor). No
 // voice (both providers failed) = the old silent slide, never a failed change.
 //
 // Text goes in through drawtext `textfile=` files written next to the job, and
@@ -184,14 +184,14 @@ export type SlideCommand = {
 
 /** The slide never runs shorter than this, nor longer than SLIDE_MAX_SECONDS. */
 export const SLIDE_MIN_SECONDS = 4;
-export const SLIDE_MAX_SECONDS = 10;
+export const SLIDE_MAX_SECONDS = 16;
 /** Silence before the voice starts; the rest of VOICE_PADDING_SECONDS follows it. */
 export const VOICE_LEAD_SECONDS = 0.25;
 export const VOICE_PADDING_SECONDS = 0.6;
 const LEAD_MS = Math.round(VOICE_LEAD_SECONDS * 1000);
 
 /**
- * How long the slide is: max(min, voice + 0.6 s), capped at 10 s, rounded up
+ * How long the slide is: max(min, voice + 0.6 s), capped at 16 s, rounded up
  * to a tenth of a second. A voice longer than the cap is cut at the end of the
  * slide (with a short fade); the web card warns about long offers before that.
  */
@@ -242,7 +242,7 @@ export function offerSlideCommand(args: {
       ? // The voice: stereo 48 kHz, loudness-normalised (loudnorm resamples
         // internally, hence the second aresample), 0.25 s of lead, padded to
         // the slide and cut at its end with a short fade (only audible when a
-        // voice ran past the 10 s cap).
+        // voice ran past the 16 s cap).
         `[1:a]aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo,loudnorm=I=-16:TP=-1.5:LRA=11,` +
         `aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo,` +
         `adelay=${LEAD_MS}|${LEAD_MS},apad,atrim=duration=${sd},` +

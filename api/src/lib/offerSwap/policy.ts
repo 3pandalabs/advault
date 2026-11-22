@@ -190,7 +190,7 @@ export type OfferSlideInfo = {
     heading: string;
     offer: string;
     until: string;
-    /** The minimum; the renderer lengthens it to fit the voice-over (max 10 s). */
+    /** The minimum; the renderer lengthens it to fit the voice-over (max 16 s). */
     seconds: number;
     /** What the voice-over reads (offerSlideNarration). */
     narration: string;
@@ -221,7 +221,7 @@ export function offerSlideOf(renderInfo: unknown): OfferSlideInfo["slide"] | nul
     heading: typeof r.slide.heading === "string" ? r.slide.heading : OFFER_SLIDE_HEADING,
     offer: r.slide.offer,
     until,
-    seconds: typeof r.slide.seconds === "number" && r.slide.seconds > 0 && r.slide.seconds <= 10 ? r.slide.seconds : OFFER_SLIDE_SECONDS,
+    seconds: typeof r.slide.seconds === "number" && r.slide.seconds > 0 && r.slide.seconds <= 16 ? r.slide.seconds : OFFER_SLIDE_SECONDS,
     // A slide queued before the voice-over shipped has no narration: read the
     // offer and the slide's own "Until Dec 31" line.
     narration:

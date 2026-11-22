@@ -65,7 +65,7 @@ describe("slideLayout", () => {
 });
 
 describe("slideSecondsFor", () => {
-  it("max(4 s, voice + 0.6 s), rounded up to a tenth, capped at 10 s", () => {
+  it("max(4 s, voice + 0.6 s), rounded up to a tenth, capped at 16 s", () => {
     expect(slideSecondsFor(null)).toBe(4);
     expect(slideSecondsFor(undefined)).toBe(4);
     expect(slideSecondsFor(0)).toBe(4);
@@ -75,13 +75,15 @@ describe("slideSecondsFor", () => {
     expect(slideSecondsFor(3.41)).toBe(4.1);
     expect(slideSecondsFor(5.62)).toBe(6.3);
     expect(slideSecondsFor(9.4)).toBe(10);
-    expect(slideSecondsFor(14)).toBe(10);
+    expect(slideSecondsFor(14)).toBe(14.6);
+    expect(slideSecondsFor(15.2)).toBe(15.8);
+    expect(slideSecondsFor(20)).toBe(16);
   });
-  it("the stored minimum is respected, within 4..10", () => {
+  it("the stored minimum is respected, within 4..16", () => {
     expect(slideSecondsFor(null, 5)).toBe(5);
     expect(slideSecondsFor(2, 6)).toBe(6);
     expect(slideSecondsFor(null, 2)).toBe(4);
-    expect(slideSecondsFor(null, 99)).toBe(10);
+    expect(slideSecondsFor(null, 99)).toBe(16);
   });
 });
 
