@@ -17,7 +17,8 @@
 const SHA256_CERT_FINGERPRINTS = [
   // Upload key: C:\Users\Anil\Documents\keys\advault-upload.jks, alias "upload".
   "80:FA:E2:76:43:A7:EC:78:D6:9D:62:F6:AC:2B:AB:E9:91:B2:29:9E:59:89:74:2B:BE:31:82:4F:43:14:7F:03",
-  // Play App Signing key: ADD HERE after the app is created in Play Console.
+  // Play App Signing key (classical), Play Console app 4973181122451946747, added 2026-11-22.
+  "DB:4C:7C:A9:D6:17:12:99:0D:83:F6:19:63:B2:EF:6B:18:3E:70:D1:36:63:2B:16:B6:56:46:A8:E1:F8:65:CE",
 ];
 
 const statements = [
