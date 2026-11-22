@@ -8,6 +8,10 @@ import {
   applyInboundReply,
   approveCycle,
   ensureCycleForMonth,
+  matchPhone,
+  mayMessage,
+  replyToUnmatchedSender,
+  whatsAppUser,
   recordOffer,
   sendPreview,
 } from "../lib/offers/index.js";
@@ -16,7 +20,6 @@ import { hasMonthlyOffers, hasOfferChanges, type ProductLine } from "../lib/pric
 import { handleSwapInbound } from "../lib/offerSwap/whatsapp.js";
 import { liveSubscriptionFor } from "../lib/subscriptions/index.js";
 import {
-  whatsAppSendsEnabled,
   parseInboundAll,
   verifyChallenge,
   verifyWebhookSignature,
@@ -64,6 +67,21 @@ export async function offerRoutes(app: FastifyInstance) {
           // text / photo / voice note / YES button). Off unless
           // OFFER_SWAP_WHATSAPP=on; then { handled: false } and the original
           // loop below runs as before.
+          // No account (or several) for this number: one rate-limited
+          // "add it in Settings" reply while the loop runs, then nothing.
+          const match = await matchPhone(msg.from);
+          if (match.kind !== "one") {
+            outcomes.push(
+              await replyToUnmatchedSender({
+                from: msg.from,
+                body: msg.body,
+                providerRef: msg.providerRef,
+                kind: match.kind,
+                log: (m, e) => req.log.warn({ extra: e }, m),
+              }),
+            );
+            continue;
+          }
           const swap = await handleSwapInbound(msg, { log: (m, e) => req.log.warn({ err: e }, m) });
           if (swap.handled) {
             outcomes.push(swap);
@@ -122,7 +140,8 @@ export async function offerRoutes(app: FastifyInstance) {
 
       return {
         cycle: cycle ?? null,
-        whatsappEnabled: whatsAppSendsEnabled(),
+        // This user would actually get the monthly messages (opt-in, mode).
+        whatsappEnabled: mayMessage(await whatsAppUser(req.userId!)),
       };
     });
 

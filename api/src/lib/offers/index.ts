@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, lte, or, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, lte, or, sql } from "drizzle-orm";
 import { db } from "../../db/index.js";
 import {
   campaigns,
@@ -15,17 +15,23 @@ import {
   classifyReply,
   inferOfferExpiry,
   previewMessage,
-  promptMessage,
-  reminderMessage,
+  SKIP_AFTER_DAYS,
   type CycleStatus,
 } from "./policy.js";
 import {
   whatsAppSendsEnabled,
+  offerSwapMode,
   offerSwapWhatsAppEnabled,
   sendTemplate,
   sendText,
   TEMPLATES,
+  whatsAppPublicNumber,
+  whatsAppRecipientAllowed,
+  type WhatsAppRecipient,
 } from "../whatsapp/index.js";
+import { hasOfferChanges, type ProductLine } from "../pricing/index.js";
+import { liveSubscriptionFor } from "../subscriptions/index.js";
+import { e164FromWhatsApp } from "../phone/index.js";
 
 // The monthly offer loop, database side. The decisions live in ./policy.ts.
 //
@@ -34,10 +40,69 @@ import {
 // those — they are buying "this month's promotion goes out". That is a reason
 // to exist every single month, and it is a conversation rather than a feature.
 
-const MONTH_LABEL = new Intl.DateTimeFormat("en", { month: "long", timeZone: "UTC" });
+const DAY_LABEL = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
 
-function monthLabel(at: Date): string {
-  return MONTH_LABEL.format(at);
+/** "Dec 3": the date the templates show. */
+export function dayLabel(at: Date): string {
+  return DAY_LABEL.format(at);
+}
+
+// ---------------------------------------------------------------------------
+// Who may be messaged (2026-11-21). One rule for every WhatsApp send:
+// WHATSAPP_SENDS=on, a phone, the owner's opt-in, and with
+// OFFER_SWAP_WHATSAPP=internal an internal account (lib/whatsapp).
+// ---------------------------------------------------------------------------
+
+/** May this user be messaged on WhatsApp at all (any loop)? */
+export function mayMessage(u: WhatsAppRecipient | null | undefined): boolean {
+  return whatsAppRecipientAllowed(u, whatsAppSendsEnabled(), offerSwapMode());
+}
+
+/** Does the offer-CHANGE loop run for this user (inbound handled, news sent)? */
+export function offerSwapAllowedFor(u: WhatsAppRecipient | null | undefined): boolean {
+  return offerSwapWhatsAppEnabled() && mayMessage(u);
+}
+
+/**
+ * What the web app shows about WhatsApp for this user. `available`: the
+ * offer-change loop runs for accounts like theirs (sends on, mode, internal
+ * rule, a plan with offer changes); `enabled`: available AND their number +
+ * opt-in are saved. The public number is returned ONLY when enabled, so the
+ * app never advertises a number that won't answer them.
+ */
+export async function whatsAppStateFor(u: WhatsAppRecipient & { id: string }) {
+  const mode = offerSwapMode();
+  let available = offerSwapWhatsAppEnabled() && (mode !== "internal" || u.isInternal);
+  if (available) {
+    const sub = await liveSubscriptionFor(u.id);
+    available = Boolean(sub && hasOfferChanges(sub.line as ProductLine));
+  }
+  const optedIn = Boolean(u.whatsappOptInAt);
+  const enabled = available && offerSwapAllowedFor(u);
+  return {
+    phone: u.phone,
+    optedIn,
+    available,
+    enabled,
+    ...(enabled ? { publicNumber: whatsAppPublicNumber().display, waLink: whatsAppPublicNumber().waLink } : {}),
+  };
+}
+
+export async function whatsAppUser(userId: string) {
+  const [row] = await db
+    .select({
+      id: users.id,
+      phone: users.phone,
+      whatsappOptInAt: users.whatsappOptInAt,
+      isInternal: users.isInternal,
+      deletedAt: users.deletedAt,
+      businessName: users.businessName,
+      displayName: users.displayName,
+    })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+  return row ?? null;
 }
 
 // ---------------------------------------------------------------------------
@@ -133,6 +198,10 @@ export async function openCyclesForEntitledSubscribers(at = new Date()) {
               and(
                 eq(subscriptions.line, "evergreen"),
                 sql`exists (select 1 from campaigns c where c.user_id = ${subscriptions.userId} and c.status in ('live','paused') and c.google_ad_group_resource_name is not null)`,
+                // OFFER_SWAP_WHATSAPP=internal: only 3PandaLabs' own accounts.
+                offerSwapMode() === "internal"
+                  ? sql`exists (select 1 from users u where u.id = ${subscriptions.userId} and u.is_internal)`
+                  : sql`true`,
               ),
             )
           : inArray(subscriptions.line, ["offer", "managed"]),
@@ -160,17 +229,26 @@ export async function cyclesNeedingAttention(limit = 200) {
     .limit(limit);
 }
 
+/**
+ * The user's contact for a send. `phone` is null unless they may be messaged
+ * (mayMessage: sends on, opted in, internal-only in `internal` mode), so
+ * every send in this module is gated by the one rule.
+ */
 async function contactFor(userId: string) {
-  const [row] = await db
-    .select({
-      phone: users.phone,
-      businessName: users.businessName,
-      displayName: users.displayName,
-    })
-    .from(users)
-    .where(eq(users.id, userId))
+  const row = await whatsAppUser(userId);
+  if (!row) return null;
+  return { ...row, phone: mayMessage(row) ? row.phone : null };
+}
+
+/** Since when the owner's current ad has been running (the prompt's {{3}}). */
+async function runningSince(userId: string, fallback: Date): Promise<Date> {
+  const [c] = await db
+    .select({ launchedAt: campaigns.launchedAt })
+    .from(campaigns)
+    .where(and(eq(campaigns.userId, userId), inArray(campaigns.status, ["live", "paused"]), isNotNull(campaigns.launchedAt)))
+    .orderBy(desc(campaigns.launchedAt))
     .limit(1);
-  return row ?? null;
+  return c?.launchedAt ?? fallback;
 }
 
 /**
@@ -190,12 +268,13 @@ export async function sendPrompt(cycleId: string, now = new Date()) {
   if (!whatsAppSendsEnabled()) return { sent: false, reason: "not_configured" as const };
 
   const business = contact.businessName ?? contact.displayName ?? "your business";
-  const label = monthLabel(cycle.periodMonth);
+  // advault_offer_prompt: {{1}} name, {{2}} business, {{3}} running-since date.
+  const params = [contact.displayName ?? "there", business, dayLabel(await runningSince(cycle.userId, cycle.periodMonth))];
 
   const result = await sendTemplate({
     to: contact.phone,
     template: TEMPLATES.monthlyOfferPrompt,
-    params: [business, label],
+    params,
   });
 
   await recordMessage({
@@ -203,7 +282,7 @@ export async function sendPrompt(cycleId: string, now = new Date()) {
     offerCycleId: cycle.id,
     direction: "outbound",
     phone: contact.phone,
-    body: promptMessage(business, label),
+    body: `[template ${TEMPLATES.monthlyOfferPrompt}] ${params.join(" | ")}`,
     providerRef: result.providerRef,
   });
 
@@ -224,12 +303,15 @@ export async function sendReminder(cycleId: string, reminderNumber: number, now 
   if (!whatsAppSendsEnabled()) return { sent: false, reason: "not_configured" as const };
 
   const business = contact.businessName ?? contact.displayName ?? "your business";
-  const label = monthLabel(cycle.periodMonth);
+  // advault_offer_reminder: {{1}} name, {{2}} business, {{3}} reply-by date
+  // (the day the cycle is skipped, SKIP_AFTER_DAYS after the prompt).
+  const replyBy = new Date((cycle.promptedAt ?? now).getTime() + SKIP_AFTER_DAYS * 86_400_000);
+  const params = [contact.displayName ?? "there", business, dayLabel(replyBy)];
 
   const result = await sendTemplate({
     to: contact.phone,
     template: TEMPLATES.offerReminder,
-    params: [business, label],
+    params,
   });
 
   await recordMessage({
@@ -237,7 +319,7 @@ export async function sendReminder(cycleId: string, reminderNumber: number, now 
     offerCycleId: cycle.id,
     direction: "outbound",
     phone: contact.phone,
-    body: reminderMessage(business, label),
+    body: `[template ${TEMPLATES.offerReminder}] ${params.join(" | ")}`,
     providerRef: result.providerRef,
   });
 
@@ -267,35 +349,102 @@ export async function skipCycle(cycleId: string, now = new Date()) {
 // ---------------------------------------------------------------------------
 
 /**
- * Matches an inbound phone number to a user.
+ * Matches a WhatsApp sender (E.164 digits, no plus) to accounts.
  *
- * Compares the last 10 digits, because WhatsApp reports E.164 without a plus
- * and users store their number in whatever shape they typed it. Ten digits is
- * enough to be unique within a country and short enough to survive the country
- * code being present on one side only. An ambiguous match returns null rather
- * than guessing — attributing one shop's offer to another shop's campaign is
- * the worst outcome available here.
+ * EXACT match on the E.164 phone (2026-11-21, migration 0048; the old
+ * last-10-digits match collided between countries, e.g. US and India). A
+ * legacy row typed without a "+" still matches when its digits are the
+ * sender's full number. Deleted accounts never match. More than one match
+ * is reported, never guessed: attributing one shop's offer to another
+ * shop's campaign is the worst outcome available here.
  */
-export async function userForPhone(phone: string) {
-  const digits = phone.replace(/\D/g, "");
-  const tail = digits.slice(-10);
-  if (tail.length < 10) return null;
-
+export async function matchPhone(from: string): Promise<
+  | { kind: "none" }
+  | { kind: "many"; count: number }
+  | { kind: "one"; user: { id: string; phone: string | null; whatsappOptInAt: Date | null; isInternal: boolean; deletedAt: Date | null } }
+> {
+  const e164 = e164FromWhatsApp(from);
+  if (!e164) return { kind: "none" };
+  const digits = e164.slice(1);
   const rows = await db
-    .select({ id: users.id, phone: users.phone })
+    .select({ id: users.id, phone: users.phone, whatsappOptInAt: users.whatsappOptInAt, isInternal: users.isInternal, deletedAt: users.deletedAt })
     .from(users)
-    // `tail` is digits-only by construction above, and is still bound as a
-    // parameter rather than interpolated.
-    // '[^0-9]', not '\D': inside a JS template literal "\D" cooks to a bare
-    // "D", so the old pattern stripped the letter D and no formatted number
-    // ("+1 (555) 201-0001") ever matched (fixed 2026-11-21).
-    .where(sql`right(regexp_replace(coalesce(${users.phone}, ''), '[^0-9]', '', 'g'), 10) = ${tail}`);
+    .where(
+      and(
+        sql`${users.deletedAt} is null`,
+        or(
+          eq(users.phone, e164),
+          // '[^0-9]', not a backslash-D: inside a JS template literal that
+          // cooks to a bare "D" (fixed 2026-11-21). `digits` is a parameter.
+          sql`(${users.phone} not like '+%' and regexp_replace(${users.phone}, '[^0-9]', '', 'g') = ${digits})`,
+        ),
+      ),
+    )
+    .limit(5);
+  if (rows.length === 0) return { kind: "none" };
+  if (rows.length > 1) return { kind: "many", count: rows.length };
+  return { kind: "one", user: rows[0]! };
+}
 
-  return rows.length === 1 ? rows[0] : null;
+/** The one account for a WhatsApp sender, or null (none or ambiguous). */
+export async function userForPhone(phone: string) {
+  const m = await matchPhone(phone);
+  return m.kind === "one" ? m.user : null;
+}
+
+export const UNKNOWN_SENDER_REPLY =
+  "We couldn't find an AdVault account with this number. Add it in Settings at https://advault.3pandalabs.com/dashboard/settings.";
+export const AMBIGUOUS_SENDER_REPLY =
+  "This number is on more than one AdVault account, so we can't tell which ad to change. Please change your offer on your campaign page at https://advault.3pandalabs.com/dashboard.";
+const UNMATCHED_REPLY_EVERY_MS = 24 * 3_600_000;
+
+/**
+ * A sender we can't place (no account, or several). Records the message
+ * (unattributed) and, while the offer-change loop is running, answers ONCE
+ * per number per 24 h. Free text is allowed: their message just opened the
+ * 24-hour window. No reply when the loop is off.
+ */
+export async function replyToUnmatchedSender(args: {
+  from: string;
+  body: string;
+  providerRef: string;
+  kind: "none" | "many";
+  now?: Date;
+  log?: (m: string, e?: unknown) => void;
+}): Promise<{ replied: boolean; duplicate: boolean }> {
+  const now = args.now ?? new Date();
+  const logged = await recordMessage({ direction: "inbound", phone: args.from, body: args.body, providerRef: args.providerRef });
+  if (logged.duplicate) return { replied: false, duplicate: true };
+  if (args.kind === "many") args.log?.("WhatsApp sender matches several accounts", { from: args.from });
+  if (!offerSwapWhatsAppEnabled()) return { replied: false, duplicate: false };
+
+  const e164 = e164FromWhatsApp(args.from);
+  const [recent] = await db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(whatsappMessages)
+    .where(
+      and(
+        eq(whatsappMessages.direction, "outbound"),
+        sql`${whatsappMessages.userId} is null`,
+        inArray(whatsappMessages.phone, e164 ? [args.from, e164] : [args.from]),
+        sql`${whatsappMessages.createdAt} > ${new Date(now.getTime() - UNMATCHED_REPLY_EVERY_MS).toISOString()}`,
+      ),
+    );
+  if ((recent?.n ?? 0) > 0) return { replied: false, duplicate: false };
+
+  const body = args.kind === "many" ? AMBIGUOUS_SENDER_REPLY : UNKNOWN_SENDER_REPLY;
+  try {
+    const r = await sendText({ to: args.from, body });
+    await recordMessage({ direction: "outbound", phone: args.from, body, providerRef: r.providerRef });
+    return { replied: true, duplicate: false };
+  } catch (err) {
+    args.log?.("unmatched-sender WhatsApp reply failed", err);
+    return { replied: false, duplicate: false };
+  }
 }
 
 export type ReplyOutcome =
-  | { handled: false; reason: "unknown_sender" | "no_open_cycle" | "duplicate" | "unclear" }
+  | { handled: false; reason: "unknown_sender" | "not_allowed" | "no_open_cycle" | "duplicate" | "unclear" }
   | { handled: true; action: "offer_recorded" | "approved" | "rejected"; cycleId: string };
 
 /**
@@ -326,6 +475,12 @@ export async function applyInboundReply(args: {
       providerRef: args.providerRef,
     });
     return { handled: false, reason: "unknown_sender" };
+  }
+  // Not opted in (or not internal while OFFER_SWAP_WHATSAPP=internal):
+  // recorded against them, nothing acted on and nothing sent.
+  if (!mayMessage(user)) {
+    const logged = await recordMessage({ userId: user.id, direction: "inbound", phone: args.phone, body: args.body, providerRef: args.providerRef });
+    return { handled: false, reason: logged.duplicate ? "duplicate" : "not_allowed" };
   }
 
   const [cycle] = await db

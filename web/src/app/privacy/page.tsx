@@ -117,9 +117,13 @@ export default function PrivacyPage() {
           directly to the payment provider and never reach our servers.
         </li>
         <li>
-          <strong>WhatsApp messages</strong> — only if you turn on the monthly offer
-          prompt. We store your phone number and the text of messages between you and
-          AdVault about your offers. If you send a <strong>photo</strong> for your ad, it
+          <strong>WhatsApp messages</strong> — only if you give us your mobile number
+          (at sign-up or in Settings, optional) and tick &ldquo;Message me on WhatsApp
+          about my ads&rdquo;. We store the number, the time you ticked the box, and the
+          text of messages between you and AdVault about your ads; you can untick it or
+          remove the number in Settings any time, or reply STOP. If you message us from a
+          number that isn&apos;t on an account, we keep that message and may reply once
+          to say how to add the number. If you send a <strong>photo</strong> for your ad, it
           is saved with your other uploaded photos. If you send a <strong>voice
           note</strong>, we send the recording to a speech-to-text service (fal.ai) to
           type out your offer, delete the recording straight after, and keep only the

@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { requireAuth } from "../auth/plugin.js";
@@ -14,6 +14,8 @@ import { env } from "../env.js";
 import { acceptedTermsVersion, recordTermsAcceptance } from "../lib/compliance/index.js";
 import { TERMS_VERSION } from "../lib/compliance/texts.js";
 import { knownCampaignId } from "../lib/siteVisits/index.js";
+import { normalizePhone } from "../lib/phone/index.js";
+import { whatsAppStateFor } from "../lib/offers/index.js";
 
 // Password reset (2026-11-18): email a single-use, 30-minute link, then set a
 // new password. Reuses lib/passwordReset — the same core the SiteVault-proxied
@@ -47,6 +49,10 @@ export async function authRoutes(app: FastifyInstance) {
           // The campaign whose ad brought them (0045, lib/siteVisits): the web
           // app remembers utm_campaign for 30 days. Unknown ids are ignored.
           adCampaignId: z.string().max(64).optional(),
+          // Optional mobile for WhatsApp (0048): any format with a country
+          // code, stored as E.164. The opt-in tick needs a phone.
+          phone: z.string().max(40).optional(),
+          whatsappOptIn: z.boolean().optional(),
         }),
       },
     },
@@ -57,7 +63,13 @@ export async function authRoutes(app: FastifyInstance) {
         businessCategory?: string;
         termsVersion?: string;
         adCampaignId?: string;
+        phone?: string;
+        whatsappOptIn?: boolean;
       };
+      const rawPhone = body.phone?.trim() ? body.phone : null;
+      const phone = rawPhone ? normalizePhone(rawPhone) : null;
+      if (rawPhone && !phone) return reply.code(400).send({ error: "invalid_phone" });
+      if (body.whatsappOptIn && !phone) return reply.code(400).send({ error: "whatsapp_opt_in_needs_phone" });
       const signupCampaignId = await knownCampaignId(body.adCampaignId);
 
       const [user] = await db
@@ -69,6 +81,8 @@ export async function authRoutes(app: FastifyInstance) {
           businessName: body.businessName,
           businessCategory: body.businessCategory,
           signupCampaignId,
+          phone,
+          whatsappOptInAt: body.whatsappOptIn && phone ? new Date() : null,
         })
         .onConflictDoNothing({ target: users.email })
         .returning({ id: users.id, role: users.role });
@@ -229,6 +243,7 @@ export async function authRoutes(app: FastifyInstance) {
         // 3PandaLabs' own account (0032): the dashboard shows "Internal · <label>".
         isInternal: users.isInternal,
         internalLabel: users.internalLabel,
+        whatsappOptInAt: users.whatsappOptInAt,
         createdAt: users.createdAt,
         // Shared 3PandaLabs account: where it was made, and whether it has a
         // SiteVault website (the dashboard links one).
@@ -239,12 +254,15 @@ export async function authRoutes(app: FastifyInstance) {
       .where(eq(users.id, req.userId!))
       .limit(1);
     if (!user) return reply.code(404).send({ error: "not_found" });
-    const { sitevaultFirstUsedAt, testOwnerId, ...rest } = user;
+    const { sitevaultFirstUsedAt, testOwnerId, whatsappOptInAt, ...rest } = user;
     // Terms of Service (lib/compliance): the dashboard blocks on a re-accept
     // screen while accepted !== current.
     const accepted = await acceptedTermsVersion(req.userId!);
     return {
       ...rest,
+      // WhatsApp for offer changes (0048): number, opt-in, and whether the
+      // loop answers them (the public number only when it does).
+      whatsapp: await whatsAppStateFor({ id: user.id, phone: user.phone, whatsappOptInAt, isInternal: user.isInternal }),
       usesSitevault: sitevaultFirstUsedAt !== null,
       isTestCustomer: testOwnerId !== null,
       terms: { accepted, current: TERMS_VERSION, ok: accepted === TERMS_VERSION },
@@ -278,18 +296,52 @@ export async function authRoutes(app: FastifyInstance) {
           displayName: z.string().min(1).max(120).nullish(),
           businessName: z.string().min(1).max(160).nullish(),
           businessCategory: z.string().min(1).max(80).nullish(),
-          phone: z.string().min(1).max(40).nullish(),
+          // E.164 after normalizePhone; null (or "") removes it and the opt-in.
+          phone: z.string().max(40).nullish(),
+          // "Message me on WhatsApp about my ads": true stamps
+          // whatsapp_opt_in_at (needs a phone), false clears it.
+          whatsappOptIn: z.boolean().optional(),
         }),
       },
     },
     async (req, reply) => {
-      const body = req.body as Record<string, string | null | undefined>;
+      const { whatsappOptIn, phone: rawPhone, ...profile } = req.body as Record<string, string | null | undefined> & {
+        whatsappOptIn?: boolean;
+      };
       // Only the profile fields above — email and role are deliberately absent,
       // so this route can never escalate a role or hijack an address.
       // zod strips anything else, so `{}` or `{ email }` arrive empty; drizzle
       // throws on an empty set(), which was a 500.
-      const set = Object.fromEntries(Object.entries(body).filter(([, v]) => v !== undefined));
-      if (Object.keys(set).length === 0) return reply.code(400).send({ error: "nothing_to_update" });
+      const set: Record<string, unknown> = Object.fromEntries(Object.entries(profile).filter(([, v]) => v !== undefined));
+      if (rawPhone !== undefined) {
+        if (rawPhone === null || !rawPhone.trim()) {
+          set.phone = null;
+          set.whatsappOptInAt = null; // no number, no WhatsApp
+        } else {
+          const phone = normalizePhone(rawPhone);
+          if (!phone) return reply.code(400).send({ error: "invalid_phone" });
+          set.phone = phone;
+        }
+      }
+      if (whatsappOptIn !== undefined) {
+        if (whatsappOptIn) {
+          let phone = set.phone as string | null | undefined;
+          if (phone === undefined) {
+            const [cur] = await db.select({ phone: users.phone }).from(users).where(eq(users.id, req.userId!)).limit(1);
+            phone = cur?.phone ?? null;
+          }
+          if (!phone) return reply.code(400).send({ error: "whatsapp_opt_in_needs_phone" });
+          const [cur] = await db.select({ at: users.whatsappOptInAt }).from(users).where(eq(users.id, req.userId!)).limit(1);
+          if (!cur?.at) set.whatsappOptInAt = new Date(); // keep the first consent time
+        } else {
+          set.whatsappOptInAt = null;
+        }
+      }
+      if (Object.keys(set).length === 0) {
+        // Opting in again when already opted in is a no-op, not an error.
+        if (whatsappOptIn === true) set.whatsappOptInAt = sql`${users.whatsappOptInAt}`;
+        else return reply.code(400).send({ error: "nothing_to_update" });
+      }
       const [user] = await db
         .update(users)
         .set(set)
@@ -301,9 +353,15 @@ export async function authRoutes(app: FastifyInstance) {
           businessName: users.businessName,
           businessCategory: users.businessCategory,
           phone: users.phone,
+          whatsappOptInAt: users.whatsappOptInAt,
           role: users.role,
+          isInternal: users.isInternal,
         });
-      return user;
+      const { whatsappOptInAt, isInternal, ...rest } = user!;
+      return {
+        ...rest,
+        whatsapp: await whatsAppStateFor({ id: user!.id, phone: user!.phone, whatsappOptInAt, isInternal }),
+      };
     },
   );
 

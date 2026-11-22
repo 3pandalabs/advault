@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { formatDate } from "@/lib/utils";
 import { DeleteAccountCard } from "./delete-account";
 import { TestAsCustomerCard } from "./test-mode";
+import { WhatsAppSettings } from "@/components/WhatsAppOptIn";
 
 export default function SettingsPage() {
   const [data, setData] = useState<{ configured: boolean; accounts: AdAccount[] } | null>(null);
@@ -284,6 +285,17 @@ export default function SettingsPage() {
             )}
           </div>
         )}
+      </Card>
+
+      <Card className="mt-4" id="whatsapp">
+        <CardTitle>WhatsApp for offer changes</CardTitle>
+        <CardDescription>
+          Your mobile number, so you can WhatsApp us a new offer (text, photo or voice note) and we make the new ad.
+          We only message you if you tick the box. Reply STOP any time.
+        </CardDescription>
+        <div className="mt-4">
+          <WhatsAppSettings />
+        </div>
       </Card>
 
       <Card className="mt-4">

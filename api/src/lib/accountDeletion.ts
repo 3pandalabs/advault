@@ -168,6 +168,7 @@ export async function deleteAccount(userId: string): Promise<DeleteResult> {
         businessName: null,
         businessCategory: null,
         phone: null,
+        whatsappOptInAt: null,
         deletedAt: now,
       })
       .where(and(eq(users.id, userId), isNull(users.deletedAt)));

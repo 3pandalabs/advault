@@ -846,7 +846,8 @@ the live ad at Google after approval, and back to the BASE ad on the end date,
 never a pause. `POST /offers/current` answers evergreen 409
 `plan_uses_offer_changes` `{campaignId}` (was `plan_has_no_offers`). Offer
 cycles open for evergreen only when the WhatsApp change loop is on
-(`OFFER_SWAP_WHATSAPP=on`) and the owner has a launched campaign. Use
+(`OFFER_SWAP_WHATSAPP` = `on`, or `internal` for internal accounts) and the
+owner has a launched campaign. Use
 `hasMonthlyOffers` / `hasOfferChanges` rather than comparing line names.
 
 **Every ad is bought one at a time** (`new_ad` purchase, $10 first and
@@ -1212,7 +1213,20 @@ credentials (`WHATSAPP_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_APP_SECRET`
 `WHATSAPP_VERIFY_TOKEN`) may sit on advault-api/renderer so the webhook verifies
 and Meta can be wired, while `whatsAppSendsEnabled()` keeps every send, the
 monthly offer-cycle prompts and the offer-change loop inert. The offer-change
-loop additionally needs `OFFER_SWAP_WHATSAPP=on`. Templates are registered as
+loop additionally needs `OFFER_SWAP_WHATSAPP` = `internal` or `on`.
+**Opt-in + modes (2026-11-21, migration 0048):** `users.phone` is E.164
+(`lib/phone`), `users.whatsapp_opt_in_at` is the tick "Message me on WhatsApp
+about my ads" (signup, Settings, the wizard's last step, the campaign page /
+Change my offer card; all `components/WhatsAppOptIn.tsx`). ONE rule for every
+outbound, `whatsAppRecipientAllowed` (via `mayMessage` / `offerSwapAllowedFor`
+in `lib/offers`): sends on + phone + opt-in + not deleted, and with
+`OFFER_SWAP_WHATSAPP=internal` an `is_internal` account. `internal` = the loop
+runs, for our own accounts only (monthly cycles too: `contactFor` hides the
+phone of anyone else). The web shows "Next time, just WhatsApp your new offer
+to <WHATSAPP_PUBLIC_NUMBER>" only when `/auth/me` `whatsapp.enabled`; never
+advertise a number that won't answer. Senders match EXACTLY on E.164
+(`matchPhone`, legacy no-"+" rows on full digits); unknown / ambiguous senders
+get one reply per 24 h. Tests: `lib/offers/whatsappGate.test.ts`. Templates are registered as
 `en_US` (`WHATSAPP_TEMPLATE_LANGUAGE`, default `en_US`); the names live in
 `WHATSAPP_TEMPLATE_*` env vars and must match approved templates whose
 variables match what the code sends — check before turning sends on.
@@ -1298,7 +1312,7 @@ the dashboard card's "Change my offer" button + status line.
   can't be re-cut (409 `live_ad_is_upload`). Revenue reporting picks the
   purchases up like any add-on (admins, test customers, internal and
   `marked_test` excluded), labelled "Offer changes ($2)" on `/admin/business`.
-- **WhatsApp (decision F), behind `OFFER_SWAP_WHATSAPP=on`.** Off, or Meta
+- **WhatsApp (decision F), behind `OFFER_SWAP_WHATSAPP` internal / on.** Off, or Meta
   unconfigured: `handleSwapInbound` returns `{handled: false}` and every
   notify is a no-op; the web card works fully without it. On: text, photo
   (+ caption; saved as an asset), voice note (fal Whisper `lib/ai/stt.ts`,
@@ -1306,9 +1320,11 @@ the dashboard card's "Change my offer" button + status line.
   after, the transcript kept on the message) or the YES / Not now buttons.
   Preview = the 9:16 cut as a video message + a button message, only inside
   the 24 h window; news after that (live / back to base / problem) is free
-  text inside the window, else the templates `offer_change_live`,
-  `offer_change_ended`, `offer_change_problem`. The monthly prompt is the
-  existing offer cycle (template `monthly_offer_prompt`, 2-reminder cap).
+  text inside the window, else the templates `advault_offer_change_live`,
+  `advault_offer_change_ended`, `advault_offer_change_problem`. The monthly
+  prompt is the existing offer cycle (templates `advault_offer_prompt` /
+  `advault_offer_reminder`: {{1}} name, {{2}} business, {{3}} running-since /
+  reply-by date; 2-reminder cap).
   Fixed with it: `userForPhone` wrote the regex as a backslash-D inside a JS
   template literal, which cooks to a bare `D`, so no formatted phone number
   had ever matched; it is `[^0-9]` now.

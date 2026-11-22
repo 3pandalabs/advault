@@ -9,6 +9,7 @@ import { PGlite } from "@electric-sql/pglite";
 import { drizzle } from "drizzle-orm/pglite";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import * as schema from "../../db/schema.js";
+import { normalizePhone } from "../phone/index.js";
 
 const holder = vi.hoisted(() => {
   const dummy: Record<string, string> = {
@@ -119,11 +120,11 @@ const changeFor = async (campaign: string) =>
 async function user(opts: { role?: string; plan?: "evergreen" | null; category?: string; phone?: string } = {}) {
   const { TERMS_VERSION } = await import("../compliance/texts.js");
   const id = (
-    await pg.query<{ id: string }>(`insert into users (email, password_hash, role, phone) values ($1, 'x', $2, $3) returning id`, [
-      `${Math.random().toString(36).slice(2)}@x.test`,
-      opts.role ?? "advertiser",
-      opts.phone ?? null,
-    ])
+    // Stored as the API stores it (E.164) and opted in to WhatsApp (0048).
+    await pg.query<{ id: string }>(
+      `insert into users (email, password_hash, role, phone, whatsapp_opt_in_at) values ($1, 'x', $2, $3, case when $3::text is null then null else now() end) returning id`,
+      [`${Math.random().toString(36).slice(2)}@x.test`, opts.role ?? "advertiser", opts.phone ? normalizePhone(opts.phone) : null],
+    )
   ).rows[0]!.id;
   await pg.query(`insert into terms_acceptances (user_id, version) values ($1, $2)`, [id, TERMS_VERSION]);
   if (opts.plan === "evergreen") {

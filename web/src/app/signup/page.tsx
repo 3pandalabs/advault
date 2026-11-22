@@ -11,6 +11,8 @@ import { WordmarkName, WordmarkTag } from "@/components/Wordmark";
 import { CATEGORIES } from "@/lib/audience";
 import { TERMS_VERSION } from "@/lib/compliance/texts";
 import { rememberedAdCampaignId } from "@/lib/adAttribution";
+import { OptInCheckbox, PhoneFields } from "@/components/WhatsAppOptIn";
+import { DEFAULT_COUNTRY_CODE, composePhone, looksLikePhone } from "@/lib/phone";
 
 // Business name and category are collected here rather than later because both
 // feed the ad script directly — asking for them up front means the first
@@ -31,6 +33,11 @@ export default function SignupPage() {
   // Explicit Terms acceptance (2026-11-20): recorded in terms_acceptances with
   // the version, IP and user agent (api lib/compliance).
   const [agreed, setAgreed] = useState(false);
+  // Optional WhatsApp number (api migration 0048). The opt-in is unticked by
+  // default and needs a number; a number may be saved without it.
+  const [countryCode, setCountryCode] = useState(DEFAULT_COUNTRY_CODE);
+  const [mobile, setMobile] = useState("");
+  const [whatsappOptIn, setWhatsappOptIn] = useState(false);
 
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
     setForm((f) => ({ ...f, [k]: e.target.value }));
@@ -38,12 +45,26 @@ export default function SignupPage() {
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!agreed) return;
+    const phone = composePhone(countryCode, mobile);
+    if (phone && !looksLikePhone(phone)) {
+      setError("That mobile number doesn't look right. Include the country code, for example +1 (551) 316-9594.");
+      return;
+    }
+    if (whatsappOptIn && !phone) {
+      setError("Add your mobile number for WhatsApp, or untick the WhatsApp box.");
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
       // termsVersion: the version this checkbox showed (POST /auth/register).
       // adCampaignId: the ad that brought this browser here, last 30 days.
-      const input = { ...form, termsVersion: TERMS_VERSION, adCampaignId: rememberedAdCampaignId() };
+      const input = {
+        ...form,
+        termsVersion: TERMS_VERSION,
+        adCampaignId: rememberedAdCampaignId(),
+        ...(phone ? { phone, whatsappOptIn } : {}),
+      };
       const tokens = await register(input);
       setTokens(tokens.accessToken, tokens.refreshToken);
       // Ad account setup first. Sending a new advertiser straight to the
@@ -54,7 +75,9 @@ export default function SignupPage() {
       setError(
         err instanceof ApiError && err.code === "registration_failed"
           ? "That account could not be created. If you already have one, log in instead."
-          : "Could not create your account. Please try again.",
+          : err instanceof ApiError && err.code === "invalid_phone"
+            ? "That mobile number doesn't look right. Include the country code, for example +1 (551) 316-9594."
+            : "Could not create your account. Please try again.",
       );
       setBusy(false);
     }
@@ -129,6 +152,18 @@ export default function SignupPage() {
               At least 10 characters. Keep it somewhere safe — password reset is not available
               yet.
             </FieldHint>
+          </div>
+
+          <div className="space-y-3">
+            <PhoneFields
+              idPrefix="signup-mobile"
+              countryCode={countryCode}
+              number={mobile}
+              onCountryCode={setCountryCode}
+              onNumber={setMobile}
+              label="Mobile number (for WhatsApp, optional)"
+            />
+            <OptInCheckbox checked={whatsappOptIn} onChange={setWhatsappOptIn} />
           </div>
 
           <label className="flex items-start gap-2 text-sm text-zinc-300">

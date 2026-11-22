@@ -33,23 +33,78 @@ const GRAPH = process.env.WHATSAPP_API_URL ?? "https://graph.facebook.com/v21.0"
 const TEMPLATE_LANGUAGE = process.env.WHATSAPP_TEMPLATE_LANGUAGE ?? "en_US";
 
 export const TEMPLATES = {
-  monthlyOfferPrompt: process.env.WHATSAPP_TEMPLATE_OFFER_PROMPT ?? "monthly_offer_prompt",
-  offerReminder: process.env.WHATSAPP_TEMPLATE_OFFER_REMINDER ?? "monthly_offer_reminder",
+  // Registered on Meta 2026-11-21 (en_US). Params, in order:
+  //   advault_offer_prompt    {{1}} name, {{2}} business, {{3}} running-since date
+  //   advault_offer_reminder  {{1}} name, {{2}} business, {{3}} reply-by date
+  monthlyOfferPrompt: process.env.WHATSAPP_TEMPLATE_OFFER_PROMPT ?? "advault_offer_prompt",
+  offerReminder: process.env.WHATSAPP_TEMPLATE_OFFER_REMINDER ?? "advault_offer_reminder",
   // "Change my offer" (lib/offerSwap). Sent only when the owner's 24-hour
   // window is closed (Google's approval often takes longer than a day);
   // inside the window the same news goes as free text.
-  offerChangeLive: process.env.WHATSAPP_TEMPLATE_OFFER_CHANGE_LIVE ?? "offer_change_live",
-  offerChangeEnded: process.env.WHATSAPP_TEMPLATE_OFFER_CHANGE_ENDED ?? "offer_change_ended",
-  offerChangeProblem: process.env.WHATSAPP_TEMPLATE_OFFER_CHANGE_PROBLEM ?? "offer_change_problem",
+  // Params: live {{1}} business, {{2}} end date; ended {{1}} business;
+  // problem {{1}} business. To be registered as advault_offer_change_*.
+  offerChangeLive: process.env.WHATSAPP_TEMPLATE_OFFER_CHANGE_LIVE ?? "advault_offer_change_live",
+  offerChangeEnded: process.env.WHATSAPP_TEMPLATE_OFFER_CHANGE_ENDED ?? "advault_offer_change_ended",
+  offerChangeProblem: process.env.WHATSAPP_TEMPLATE_OFFER_CHANGE_PROBLEM ?? "advault_offer_change_problem",
 } as const;
 
 /**
- * The WhatsApp offer-CHANGE loop (lib/offerSwap/whatsapp.ts): Meta configured
- * AND switched on with OFFER_SWAP_WHATSAPP=on. Off, every part of it is a
- * no-op and evergreen owners use the web page only.
+ * OFFER_SWAP_WHATSAPP (2026-11-21): `off` (default) | `internal` | `on`.
+ *   off       the offer-CHANGE loop is off; evergreen owners use the web page.
+ *   internal  the loop runs, and EVERY WhatsApp send (this loop and the
+ *             monthly offer cycles) goes only to users with
+ *             users.is_internal = true (3PandaLabs' own accounts; admins only
+ *             if they are internal too).
+ *   on        everyone.
+ * In every mode a send also needs WHATSAPP_SENDS=on and the user's opt-in
+ * (users.whatsapp_opt_in_at), see whatsAppRecipientAllowed.
+ */
+export type OfferSwapMode = "off" | "internal" | "on";
+
+export function offerSwapMode(): OfferSwapMode {
+  const v = (process.env.OFFER_SWAP_WHATSAPP ?? "").trim().toLowerCase();
+  return v === "on" ? "on" : v === "internal" ? "internal" : "off";
+}
+
+/**
+ * The WhatsApp offer-CHANGE loop (lib/offerSwap/whatsapp.ts) is running for
+ * SOMEONE: sends on AND OFFER_SWAP_WHATSAPP internal or on. Per user, use
+ * offerSwapAllowedFor (lib/offers), which adds the internal + opt-in rules.
  */
 export function offerSwapWhatsAppEnabled(): boolean {
-  return whatsAppSendsEnabled() && process.env.OFFER_SWAP_WHATSAPP === "on";
+  return whatsAppSendsEnabled() && offerSwapMode() !== "off";
+}
+
+export type WhatsAppRecipient = {
+  phone: string | null;
+  whatsappOptInAt: Date | null;
+  isInternal: boolean;
+  deletedAt?: Date | null;
+};
+
+/**
+ * May we send this user anything on WhatsApp? Pure (the caller passes the
+ * switches): sends on, a phone, the opt-in, not deleted, and in `internal`
+ * mode an internal account. The ONE rule for every outbound.
+ */
+export function whatsAppRecipientAllowed(
+  u: WhatsAppRecipient | null | undefined,
+  sendsOn: boolean,
+  mode: OfferSwapMode,
+): boolean {
+  if (!u || !sendsOn) return false;
+  if (!u.phone || !u.whatsappOptInAt || u.deletedAt) return false;
+  if (mode === "internal" && !u.isInternal) return false;
+  return true;
+}
+
+/**
+ * The number owners WhatsApp their offer to, shown in the web app only when
+ * their loop is on. One constant: WHATSAPP_PUBLIC_NUMBER (display form).
+ */
+export function whatsAppPublicNumber(): { display: string; waLink: string } {
+  const display = process.env.WHATSAPP_PUBLIC_NUMBER?.trim() || "+1 (332) 316-8453";
+  return { display, waLink: `https://wa.me/${display.replace(/[^0-9]/g, "")}` };
 }
 
 /**

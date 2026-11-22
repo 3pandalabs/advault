@@ -112,6 +112,7 @@ export function WebsiteCard({
   const [checkStartedAt] = useState(() => Date.now());
   useEffect(() => {
     if (!isSiteVault) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- resets the check when the link stops being SiteVault
       setSiteReady(true);
       return;
     }
@@ -804,7 +805,7 @@ function WebsiteBuilding({ startedAt }: { startedAt: number }) {
           style={{ width: `${Math.round(fraction * 100)}%` }}
         />
       </span>
-      <span className="mt-1 block text-xs text-zinc-500">Usually under a minute. The link appears here when it's live.</span>
+      <span className="mt-1 block text-xs text-zinc-500">Usually under a minute. The link appears here when it&apos;s live.</span>
     </span>
   );
 }

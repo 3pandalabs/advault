@@ -17,7 +17,7 @@ import {
   quoteOfferChange,
   resumeCheckout,
 } from "../lib/offerSwap/index.js";
-import { offerSwapWhatsAppEnabled } from "../lib/whatsapp/index.js";
+import { offerSwapAllowedFor, whatsAppUser } from "../lib/offers/index.js";
 
 // "Change my offer" (2026-11-21, lib/offerSwap): the web half. Every step
 // of the WhatsApp loop is reachable here too, and this works fully without
@@ -60,7 +60,9 @@ export async function offerChangeRoutes(app: FastifyInstance) {
         return p && (!current || p.createdAt > current.createdAt) ? { id: p.id, status: p.status, offerText: p.offerText, error: p.error } : null;
       })(),
       hasBase: Boolean(campaign.baseAdResourceName),
-      whatsappEnabled: offerSwapWhatsAppEnabled(),
+      // The loop runs for THIS owner (mode, internal rule, opt-in); the web
+      // shows the "WhatsApp your offer" note from /auth/me `whatsapp`.
+      whatsappEnabled: offerSwapAllowedFor(await whatsAppUser(req.userId!)),
     };
   });
 
