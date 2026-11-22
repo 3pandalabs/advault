@@ -112,7 +112,8 @@ export function stripAudioTags(text: string): string {
 
 const FAL_ENDPOINT = "fal-ai/elevenlabs/tts/eleven-v3";
 // ElevenLabs premade voices by name, as the demos use them.
-const FAL_VOICE = process.env.FAL_VOICE ?? "Sarah";
+export const DEFAULT_FAL_VOICE = "Sarah";
+const FAL_VOICE = process.env.FAL_VOICE ?? DEFAULT_FAL_VOICE;
 const FAL_TIMEOUT_MS = 120_000;
 
 export const falElevenLabs: VoiceProvider = {

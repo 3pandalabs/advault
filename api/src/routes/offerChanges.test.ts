@@ -484,6 +484,8 @@ describe("an uploaded-video ad: the same video + a 'This month's offer' end slid
         engine: "offer_slide",
         slide: { heading: "This month's offer", offer: "$25 off any move-out clean", until: `Until ${months[d.getUTCMonth()]} ${d.getUTCDate()}`, seconds: 4 },
       });
+      // What the slide's voice-over will read (one TTS call, in the renderer).
+      expect((r.render_info.slide as { narration?: string }).narration).toMatch(/^This month's offer: \$25 off any move-out clean\. Until [A-Z][a-z]+ \d{1,2}(st|nd|rd|th)\.$/);
     }
     // Render jobs queued (the renderer's ffmpeg-only path); nothing sent to YouTube.
     const jobs = await pg.query<{ n: number }>(`select count(*)::int n from render_jobs j join creatives c on c.id = j.creative_id where c.offer_change_id = $1`, [id]);
@@ -568,14 +570,14 @@ describe("immediate advance (no waiting for the 10-minute sweep)", () => {
   const addsFor = (g: ReturnType<typeof fakeGoogle>, changeId: string) =>
     g.calls.filter((c) => c.op === "add" && (c.arg as { name: string }).name.includes(changeId.slice(0, 8)));
 
-  it("slide ad: the change is a preview as soon as its LAST cut renders; the bar is 60 s from createdAt", async () => {
+  it("slide ad: the change is a preview as soon as its LAST cut renders; the bar is 75 s from createdAt", async () => {
     const u = await user({ plan: "evergreen", upload: true });
     const g = fakeGoogle();
     const made = await post(`/campaigns/${u.campaign}/offer-changes`, u.id, { offerText: "$25 off any move-out clean", attestation: ATTEST });
     expect(made.statusCode, made.body).toBe(201);
     const id = made.json().change.id as string;
     const current = (await get(`/campaigns/${u.campaign}/offer-changes`, u.id)).json().current;
-    expect(current).toMatchObject({ stage: "making", mode: "slide", progress: { expectedSeconds: 60 } });
+    expect(current).toMatchObject({ stage: "making", mode: "slide", progress: { expectedSeconds: 75 } });
     expect(Date.parse(current.progress.startedAt)).toBe(Date.parse(current.createdAt));
 
     const [a, b] = await cutsOf(id);

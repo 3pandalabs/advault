@@ -6,11 +6,18 @@
 //   $25 off any move-out clean  (white, bold, wrapped to fit the shape)
 //   Until Dec 31                (zinc)
 //
-// ffmpeg only: no AI, no vendor, $0 (same rule as render/reformat.ts). Both
+// ffmpeg for the video (no AI, same rule as render/reformat.ts); the only paid
+// call is the slide's voice-over, ~2-3 cents, once per change. Both
 // segments are normalised to the SOURCE's size, frame rate, SAR 1, yuv420p and
 // 48 kHz stereo before the concat filter joins them, so concat never sees
 // mismatched streams. The video part keeps its own audio (padded/trimmed to
-// the video length); the slide is silent.
+// the video length).
+//
+// 2026-11-22 (owner decision): the slide is READ OUT. The voice-over (one TTS
+// call per change through the ads' voice path, render/slideVoice.ts) comes in
+// as a second input, loudness-normalised, starting 0.25 s into the slide; the
+// slide lasts max(4 s, voice + 0.6 s), capped at 10 s (slideSecondsFor). No
+// voice (both providers failed) = the old silent slide, never a failed change.
 //
 // Text goes in through drawtext `textfile=` files written next to the job, and
 // the fonts are copied in beside them, with ffmpeg run IN that directory: the
@@ -175,12 +182,35 @@ export type SlideCommand = {
   args: string[];
 };
 
+/** The slide never runs shorter than this, nor longer than SLIDE_MAX_SECONDS. */
+export const SLIDE_MIN_SECONDS = 4;
+export const SLIDE_MAX_SECONDS = 10;
+/** Silence before the voice starts; the rest of VOICE_PADDING_SECONDS follows it. */
+export const VOICE_LEAD_SECONDS = 0.25;
+export const VOICE_PADDING_SECONDS = 0.6;
+const LEAD_MS = Math.round(VOICE_LEAD_SECONDS * 1000);
+
+/**
+ * How long the slide is: max(min, voice + 0.6 s), capped at 10 s, rounded up
+ * to a tenth of a second. A voice longer than the cap is cut at the end of the
+ * slide (with a short fade); the web card warns about long offers before that.
+ */
+export function slideSecondsFor(voiceSeconds: number | null | undefined, minSeconds = SLIDE_MIN_SECONDS): number {
+  const min = Math.min(SLIDE_MAX_SECONDS, Math.max(SLIDE_MIN_SECONDS, minSeconds));
+  if (!(typeof voiceSeconds === "number" && voiceSeconds > 0 && Number.isFinite(voiceSeconds))) return min;
+  // Rounded to 1 ms first so float noise (3.4 + 0.6) never adds a tenth.
+  const want = Math.ceil(Math.round((voiceSeconds + VOICE_PADDING_SECONDS) * 1000) / 100) / 10;
+  return Math.min(SLIDE_MAX_SECONDS, Math.max(min, want));
+}
+
 export function offerSlideCommand(args: {
   inputPath: string;
   outputPath: string;
   probe: SourceProbe;
   layout: SlideLayout;
   slideSeconds: number;
+  /** The voice-over for the slide (any format ffmpeg reads); absent = silent slide. */
+  voicePath?: string;
 }): SlideCommand {
   const { width: W, height: H, fps, hasAudio, durationSeconds } = args.probe;
   const vd = durationSeconds.toFixed(3);
@@ -208,13 +238,23 @@ export function offerSlideCommand(args: {
       `setsar=1`,
       `format=yuv420p[v1]`,
     ].join(","),
-    `anullsrc=r=48000:cl=stereo,atrim=duration=${sd}[a1]`,
+    args.voicePath
+      ? // The voice: stereo 48 kHz, loudness-normalised (loudnorm resamples
+        // internally, hence the second aresample), 0.25 s of lead, padded to
+        // the slide and cut at its end with a short fade (only audible when a
+        // voice ran past the 10 s cap).
+        `[1:a]aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo,loudnorm=I=-16:TP=-1.5:LRA=11,` +
+        `aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo,` +
+        `adelay=${LEAD_MS}|${LEAD_MS},apad,atrim=duration=${sd},` +
+        `afade=t=out:st=${Math.max(0, args.slideSeconds - 0.15).toFixed(3)}:d=0.15,asetpts=PTS-STARTPTS[a1]`
+      : `anullsrc=r=48000:cl=stereo,atrim=duration=${sd}[a1]`,
     `[v0][a0][v1][a1]concat=n=2:v=1:a=1[v][a]`,
   ].join(";");
   return {
     textFiles,
     args: [
       "-i", args.inputPath,
+      ...(args.voicePath ? ["-i", args.voicePath] : []),
       "-filter_complex", graph,
       "-map", "[v]", "-map", "[a]",
       "-c:v", "libx264", "-preset", "veryfast", "-crf", "21", "-threads", "2",
@@ -244,25 +284,85 @@ export async function probeSource(path: string): Promise<SourceProbe> {
   return parseProbe(JSON.parse(out));
 }
 
+/** Length of an audio file in seconds, or null when ffprobe can't read one. */
+export async function audioSeconds(path: string): Promise<number | null> {
+  try {
+    const out = await run("ffprobe", ["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", path]);
+    const n = Number(out.trim());
+    return Number.isFinite(n) && n > 0 ? n : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function renderOfferSlide(args: {
   inputPath: string;
   workDir: string;
   heading: string;
   offer: string;
   until: string;
+  /** The minimum slide length (render_info.slide.seconds, 4). */
   slideSeconds: number;
   fonts: { bold: string; regular: string };
-}): Promise<{ videoPath: string; thumbnailPath: string; durationSeconds: number }> {
+  /** The voice-over; absent, unreadable or failing in ffmpeg = a silent slide. */
+  voicePath?: string;
+}): Promise<{
+  videoPath: string;
+  thumbnailPath: string;
+  durationSeconds: number;
+  slideSeconds: number;
+  /** Seconds of the voice used, or null for a silent slide (voiceError says why when one was given). */
+  voiceSeconds: number | null;
+  voiceError?: string;
+}> {
   const probe = await probeSource(args.inputPath);
   const layout = slideLayout({ width: probe.width, height: probe.height, heading: args.heading, offer: args.offer, until: args.until });
   const videoPath = join(args.workDir, "offer-slide.mp4");
   const thumbnailPath = join(args.workDir, "offer-slide.jpg");
-  const cmd = offerSlideCommand({ inputPath: args.inputPath, outputPath: videoPath, probe, layout, slideSeconds: args.slideSeconds });
   await copyFile(args.fonts.bold, join(args.workDir, SLIDE_FONT_FILES.bold));
   await copyFile(args.fonts.regular, join(args.workDir, SLIDE_FONT_FILES.regular));
-  for (const f of cmd.textFiles) await writeFile(join(args.workDir, f.name), f.text, "utf8");
-  await run("ffmpeg", ["-y", "-hide_banner", "-loglevel", "error", ...cmd.args], args.workDir);
+
+  let voiceSeconds: number | null = null;
+  let voiceError: string | undefined;
+  if (args.voicePath) {
+    voiceSeconds = await audioSeconds(args.voicePath);
+    if (voiceSeconds == null) voiceError = "voice file unreadable";
+  }
+  const encode = async (withVoice: boolean): Promise<number> => {
+    const slideSeconds = slideSecondsFor(withVoice ? voiceSeconds : null, args.slideSeconds);
+    const cmd = offerSlideCommand({
+      inputPath: args.inputPath,
+      outputPath: videoPath,
+      probe,
+      layout,
+      slideSeconds,
+      voicePath: withVoice ? args.voicePath : undefined,
+    });
+    for (const f of cmd.textFiles) await writeFile(join(args.workDir, f.name), f.text, "utf8");
+    await run("ffmpeg", ["-y", "-hide_banner", "-loglevel", "error", ...cmd.args], args.workDir);
+    return slideSeconds;
+  };
+  let slideSeconds: number;
+  if (voiceSeconds != null) {
+    try {
+      slideSeconds = await encode(true);
+    } catch (err) {
+      // The voice must never cost the change: encode the silent slide instead.
+      voiceError = `voice mix failed: ${(err instanceof Error ? err.message : String(err)).slice(0, 200)}`;
+      voiceSeconds = null;
+      slideSeconds = await encode(false);
+    }
+  } else {
+    slideSeconds = await encode(false);
+  }
   const at = Math.min(1, probe.durationSeconds / 2).toFixed(2);
   await run("ffmpeg", ["-y", "-hide_banner", "-loglevel", "error", "-ss", at, "-i", videoPath, "-frames:v", "1", "-q:v", "3", thumbnailPath]);
-  return { videoPath, thumbnailPath, durationSeconds: probe.durationSeconds + args.slideSeconds };
+  return {
+    videoPath,
+    thumbnailPath,
+    durationSeconds: probe.durationSeconds + slideSeconds,
+    slideSeconds,
+    voiceSeconds,
+    ...(voiceError ? { voiceError } : {}),
+  };
 }

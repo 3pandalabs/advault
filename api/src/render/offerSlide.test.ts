@@ -3,11 +3,20 @@
 // font are on this machine (skipped otherwise).
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { offerSlideCommand, parseProbe, probeSource, renderOfferSlide, slideLayout, wrapText, type SourceProbe } from "./offerSlide.js";
+import {
+  offerSlideCommand,
+  parseProbe,
+  probeSource,
+  renderOfferSlide,
+  slideLayout,
+  slideSecondsFor,
+  wrapText,
+  type SourceProbe,
+} from "./offerSlide.js";
 
 const probe916: SourceProbe = { width: 1080, height: 1920, fps: "30", hasAudio: true, durationSeconds: 12.5 };
 
@@ -52,6 +61,27 @@ describe("slideLayout", () => {
     const last = l.texts.at(-1)!;
     expect(last.y + last.size).toBeLessThanOrEqual(1080);
     expect(l.texts.length - 2).toBeLessThanOrEqual(8);
+  });
+});
+
+describe("slideSecondsFor", () => {
+  it("max(4 s, voice + 0.6 s), rounded up to a tenth, capped at 10 s", () => {
+    expect(slideSecondsFor(null)).toBe(4);
+    expect(slideSecondsFor(undefined)).toBe(4);
+    expect(slideSecondsFor(0)).toBe(4);
+    expect(slideSecondsFor(Number.NaN)).toBe(4);
+    expect(slideSecondsFor(2.1)).toBe(4);
+    expect(slideSecondsFor(3.4)).toBe(4);
+    expect(slideSecondsFor(3.41)).toBe(4.1);
+    expect(slideSecondsFor(5.62)).toBe(6.3);
+    expect(slideSecondsFor(9.4)).toBe(10);
+    expect(slideSecondsFor(14)).toBe(10);
+  });
+  it("the stored minimum is respected, within 4..10", () => {
+    expect(slideSecondsFor(null, 5)).toBe(5);
+    expect(slideSecondsFor(2, 6)).toBe(6);
+    expect(slideSecondsFor(null, 2)).toBe(4);
+    expect(slideSecondsFor(null, 99)).toBe(10);
   });
 });
 
@@ -100,6 +130,26 @@ describe("offerSlideCommand", () => {
     expect(cmd.args.slice(0, 2)).toEqual(["-i", "/w/source.mp4"]);
     expect(cmd.args.at(-1)).toBe("/w/out.mp4");
     expect(cmd.args).toEqual(expect.arrayContaining(["-map", "[v]", "[a]", "libx264", "aac"]));
+  });
+
+  it("with a voice: a second input, normalised to 48 kHz stereo, loudnorm, 0.25 s lead, padded and cut to the slide", () => {
+    const cmd = offerSlideCommand({ inputPath: "/w/source.mp4", outputPath: "/w/out.mp4", probe: probe916, layout, slideSeconds: 6.2, voicePath: "/w/voice.mp3" });
+    expect(cmd.args.slice(0, 4)).toEqual(["-i", "/w/source.mp4", "-i", "/w/voice.mp3"]);
+    const graph = cmd.args[cmd.args.indexOf("-filter_complex") + 1]!;
+    expect(graph).toContain("[1:a]aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo,loudnorm=I=-16:TP=-1.5:LRA=11,");
+    expect(graph).toContain("adelay=250|250,apad,atrim=duration=6.200,afade=t=out:st=6.050:d=0.15,asetpts=PTS-STARTPTS[a1]");
+    expect(graph).not.toContain("atrim=duration=6.200[a1]");
+    expect(graph).toContain("color=c=0x09090b:s=1080x1920:r=30:d=6.200");
+    // The video part keeps its own audio, the slide carries the voice.
+    expect(graph).toContain("[0:a]aresample=48000");
+    expect(graph).toContain("[v0][a0][v1][a1]concat=n=2:v=1:a=1[v][a]");
+    expect(cmd.args.filter((a) => a === "-map")).toHaveLength(2);
+  });
+
+  it("without a voice the slide is silent and there is one input", () => {
+    const cmd = offerSlideCommand({ inputPath: "/w/source.mp4", outputPath: "/w/out.mp4", probe: probe916, layout, slideSeconds: 4 });
+    expect(cmd.args.filter((a) => a === "-i")).toHaveLength(1);
+    expect(cmd.args.join(" ")).not.toContain("[1:a]");
   });
 
   it("a silent source gets silence under its video part", () => {
@@ -167,4 +217,87 @@ describe.skipIf(!canEncode)("a real encode (ffmpeg on this machine)", () => {
       }
     }, 60_000);
   }
+
+  /** Each audio stream as "sample_rate,channels". */
+  function audioStreams(path: string): string[] {
+    return execFileSync("ffprobe", ["-v", "error", "-select_streams", "a", "-show_entries", "stream=sample_rate,channels", "-of", "csv=p=0", path], {
+      encoding: "utf8",
+    })
+      .trim()
+      .split(/\r?\n/)
+      .filter(Boolean);
+  }
+
+  for (const [w, h, withAudio] of [
+    [360, 640, true],
+    [640, 360, false],
+  ] as const) {
+    it(`${w}x${h} ${withAudio ? "with" : "without"} source audio + a 5 s voice: slide = 5.6 s, ONE 48 kHz stereo track`, async () => {
+      const dir = await mkdtemp(join(tmpdir(), "offer-slide-voice-"));
+      try {
+        const src = join(dir, "src.mp4");
+        execFileSync("ffmpeg", [
+          "-y", "-hide_banner", "-loglevel", "error",
+          "-f", "lavfi", "-i", `testsrc=size=${w}x${h}:rate=25:duration=2`,
+          ...(withAudio ? ["-f", "lavfi", "-i", "sine=frequency=440:sample_rate=44100:duration=2"] : []),
+          "-c:v", "libx264", "-pix_fmt", "yuv420p", ...(withAudio ? ["-c:a", "aac", "-ac", "1"] : []),
+          "-shortest", src,
+        ]);
+        // A generated tone stands in for the TTS voice (mono 22.05 kHz, like some TTS output).
+        const voicePath = join(dir, "voice.wav");
+        execFileSync("ffmpeg", ["-y", "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "sine=frequency=220:sample_rate=22050:duration=5", "-ac", "1", voicePath]);
+        const out = await renderOfferSlide({
+          inputPath: src,
+          workDir: dir,
+          heading: "This month's offer",
+          offer: "$25 off any move-out clean",
+          until: "Until Dec 31",
+          slideSeconds: 4,
+          fonts: { bold: FONT!, regular: FONT! },
+          voicePath,
+        });
+        expect(out.voiceError).toBeUndefined();
+        expect(out.voiceSeconds).toBeGreaterThan(4.9);
+        expect(out.slideSeconds).toBe(5.6);
+        const p = await probeSource(out.videoPath);
+        expect(p.width).toBe(w);
+        expect(p.height).toBe(h);
+        // Output length = source (2 s) + slide (5.6 s).
+        expect(p.durationSeconds).toBeGreaterThan(7.4);
+        expect(p.durationSeconds).toBeLessThan(7.9);
+        expect(audioStreams(out.videoPath)).toEqual(["48000,2"]);
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
+    }, 60_000);
+  }
+
+  it("an unreadable voice file never fails the slide: silent 4 s slide + voiceError", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "offer-slide-badvoice-"));
+    try {
+      const src = join(dir, "src.mp4");
+      execFileSync("ffmpeg", ["-y", "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc=size=360x640:rate=25:duration=2", "-c:v", "libx264", "-pix_fmt", "yuv420p", src]);
+      const voicePath = join(dir, "voice.mp3");
+      await writeFile(voicePath, "not audio");
+      const out = await renderOfferSlide({
+        inputPath: src,
+        workDir: dir,
+        heading: "This month's offer",
+        offer: "Free quotes",
+        until: "Until Dec 31",
+        slideSeconds: 4,
+        fonts: { bold: FONT!, regular: FONT! },
+        voicePath,
+      });
+      expect(out.voiceSeconds).toBeNull();
+      expect(out.voiceError).toMatch(/unreadable/);
+      expect(out.slideSeconds).toBe(4);
+      const p = await probeSource(out.videoPath);
+      expect(p.durationSeconds).toBeGreaterThan(5.8);
+      expect(p.durationSeconds).toBeLessThan(6.3);
+      expect(audioStreams(out.videoPath)).toEqual(["48000,2"]);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  }, 60_000);
 });

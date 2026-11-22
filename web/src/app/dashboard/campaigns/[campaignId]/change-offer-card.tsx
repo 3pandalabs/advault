@@ -31,6 +31,9 @@ import { EstimateProgress } from "./render-progress";
 // date the ad goes back to the regular ad and keeps running. When the
 // running ad is the owner's own video (mode "slide"), the change is that same
 // video with a "This month's offer" slide added at the end (no new photo).
+// Since 2026-11-22 the slide is read out (one voice-over); long offers get a
+// gentle hint, never a block (the slide caps at ~10 s).
+const LONG_SLIDE_OFFER_CHARS = 120;
 
 const ERRORS: Record<string, string> = {
   claim_not_allowed: "That wording isn't allowed in an ad.",
@@ -175,7 +178,7 @@ export function ChangeOfferCard({ campaign }: { campaign: Campaign }) {
               : state.lastEnded?.endedAt
                 ? `Back to your regular ad since ${formatDate(state.lastEnded.endedAt)}.`
                 : slide
-                  ? "Put a new deal in your running ad. We add a “This month's offer” slide at the end of your video. Your ad keeps running while Google checks it."
+                  ? "Put a new deal in your running ad. We add a “This month's offer” slide, read out, at the end of your video. Your ad keeps running while Google checks it."
                   : "Put a new deal in your running ad. Same photos and voice, new offer. Your ad keeps running while Google checks it."}
           </CardDescription>
         </div>
@@ -210,6 +213,9 @@ export function ChangeOfferCard({ campaign }: { campaign: Campaign }) {
               disabled={busy}
             />
             <ClaimWarnings category={campaign.businessCategory} text={offer} />
+            {slide && offer.trim().length > LONG_SLIDE_OFFER_CHARS && (
+              <p className="mt-1 text-xs text-amber-300">Shorter offers read better on the slide and in the voice-over.</p>
+            )}
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
             <div>
