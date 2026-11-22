@@ -58,6 +58,7 @@ vi.mock("../whatsapp/index.js", async (orig) => {
     ...real,
     offerSwapWhatsAppEnabled: () => true,
     isWhatsAppConfigured: () => true,
+    whatsAppSendsEnabled: () => true,
     sendText: rec("text"),
     sendButtons: rec("buttons"),
     sendVideo: rec("video"),

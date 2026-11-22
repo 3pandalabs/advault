@@ -28,6 +28,10 @@ const GRAPH = process.env.WHATSAPP_API_URL ?? "https://graph.facebook.com/v21.0"
 // Template names as registered in Meta's console. Changing a template's content
 // there requires re-approval; changing its NAME requires a new template, so
 // these are effectively permanent once live.
+// Our templates are registered as en_US on the messaging account; a language
+// code that doesn't match the registered one fails with #132001.
+const TEMPLATE_LANGUAGE = process.env.WHATSAPP_TEMPLATE_LANGUAGE ?? "en_US";
+
 export const TEMPLATES = {
   monthlyOfferPrompt: process.env.WHATSAPP_TEMPLATE_OFFER_PROMPT ?? "monthly_offer_prompt",
   offerReminder: process.env.WHATSAPP_TEMPLATE_OFFER_REMINDER ?? "monthly_offer_reminder",
@@ -45,7 +49,17 @@ export const TEMPLATES = {
  * no-op and evergreen owners use the web page only.
  */
 export function offerSwapWhatsAppEnabled(): boolean {
-  return isWhatsAppConfigured() && process.env.OFFER_SWAP_WHATSAPP === "on";
+  return whatsAppSendsEnabled() && process.env.OFFER_SWAP_WHATSAPP === "on";
+}
+
+/**
+ * Master switch for anything we SEND on WhatsApp (2026-11-21). Credentials can
+ * be on the server (so the webhook verifies and Meta can be wired up) while
+ * nothing goes out: every send, the monthly offer-cycle prompts and the
+ * offer-change loop need WHATSAPP_SENDS=on as well. Off = inert.
+ */
+export function whatsAppSendsEnabled(): boolean {
+  return isWhatsAppConfigured() && process.env.WHATSAPP_SENDS === "on";
 }
 
 export function isWhatsAppConfigured(): boolean {
@@ -61,7 +75,7 @@ export class WhatsAppNotConfigured extends Error {
 export type SendResult = { providerRef: string };
 
 async function post(body: unknown): Promise<SendResult> {
-  if (!isWhatsAppConfigured()) throw new WhatsAppNotConfigured();
+  if (!whatsAppSendsEnabled()) throw new WhatsAppNotConfigured();
 
   const res = await fetch(`${GRAPH}/${PHONE_NUMBER_ID}/messages`, {
     method: "POST",
@@ -96,7 +110,7 @@ export async function sendTemplate(args: {
     type: "template",
     template: {
       name: args.template,
-      language: { code: args.languageCode ?? "en" },
+      language: { code: args.languageCode ?? TEMPLATE_LANGUAGE },
       components: args.params.length
         ? [
             {

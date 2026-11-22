@@ -20,7 +20,7 @@ import {
   type CycleStatus,
 } from "./policy.js";
 import {
-  isWhatsAppConfigured,
+  whatsAppSendsEnabled,
   offerSwapWhatsAppEnabled,
   sendTemplate,
   sendText,
@@ -187,7 +187,7 @@ export async function sendPrompt(cycleId: string, now = new Date()) {
 
   const contact = await contactFor(cycle.userId);
   if (!contact?.phone) return { sent: false, reason: "no_phone" as const };
-  if (!isWhatsAppConfigured()) return { sent: false, reason: "not_configured" as const };
+  if (!whatsAppSendsEnabled()) return { sent: false, reason: "not_configured" as const };
 
   const business = contact.businessName ?? contact.displayName ?? "your business";
   const label = monthLabel(cycle.periodMonth);
@@ -221,7 +221,7 @@ export async function sendReminder(cycleId: string, reminderNumber: number, now 
 
   const contact = await contactFor(cycle.userId);
   if (!contact?.phone) return { sent: false, reason: "no_phone" as const };
-  if (!isWhatsAppConfigured()) return { sent: false, reason: "not_configured" as const };
+  if (!whatsAppSendsEnabled()) return { sent: false, reason: "not_configured" as const };
 
   const business = contact.businessName ?? contact.displayName ?? "your business";
   const label = monthLabel(cycle.periodMonth);
@@ -444,7 +444,7 @@ export async function sendPreview(cycleId: string, now = new Date()) {
   }
 
   const contact = await contactFor(cycle.userId);
-  if (!contact?.phone || !isWhatsAppConfigured()) {
+  if (!contact?.phone || !whatsAppSendsEnabled()) {
     return { sent: false, reason: "not_configured" as const };
   }
 
@@ -477,7 +477,7 @@ export async function approveCycle(cycleId: string, now = new Date()) {
     .returning();
 
   const contact = await contactFor(cycle.userId);
-  if (contact?.phone && cycle.offerExpiresAt && isWhatsAppConfigured()) {
+  if (contact?.phone && cycle.offerExpiresAt && whatsAppSendsEnabled()) {
     const body = approvedMessage(cycle.offerExpiresAt);
     const result = await sendText({ to: contact.phone, body });
     await recordMessage({

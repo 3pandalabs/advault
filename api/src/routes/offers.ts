@@ -16,7 +16,7 @@ import { hasMonthlyOffers, hasOfferChanges, type ProductLine } from "../lib/pric
 import { handleSwapInbound } from "../lib/offerSwap/whatsapp.js";
 import { liveSubscriptionFor } from "../lib/subscriptions/index.js";
 import {
-  isWhatsAppConfigured,
+  whatsAppSendsEnabled,
   parseInboundAll,
   verifyChallenge,
   verifyWebhookSignature,
@@ -122,7 +122,7 @@ export async function offerRoutes(app: FastifyInstance) {
 
       return {
         cycle: cycle ?? null,
-        whatsappEnabled: isWhatsAppConfigured(),
+        whatsappEnabled: whatsAppSendsEnabled(),
       };
     });
 

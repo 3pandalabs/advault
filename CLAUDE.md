@@ -1207,6 +1207,16 @@ Two constraints that are easy to get wrong:
   reports the number, and enough reports cost the WhatsApp business account —
   the channel, not one customer.
 
+**Nothing is sent unless `WHATSAPP_SENDS=on` (2026-11-21).** The Meta
+credentials (`WHATSAPP_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_APP_SECRET`,
+`WHATSAPP_VERIFY_TOKEN`) may sit on advault-api/renderer so the webhook verifies
+and Meta can be wired, while `whatsAppSendsEnabled()` keeps every send, the
+monthly offer-cycle prompts and the offer-change loop inert. The offer-change
+loop additionally needs `OFFER_SWAP_WHATSAPP=on`. Templates are registered as
+`en_US` (`WHATSAPP_TEMPLATE_LANGUAGE`, default `en_US`); the names live in
+`WHATSAPP_TEMPLATE_*` env vars and must match approved templates whose
+variables match what the code sends — check before turning sends on.
+
 `inferOfferExpiry()` ALWAYS returns a date, falling back to end of month. That
 property matters more than the parsing: an offer campaign outliving its deadline
 spends the advertiser's budget sending people to a deal the shop will not
