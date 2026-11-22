@@ -1353,8 +1353,10 @@ the dashboard card's "Change my offer" button + status line.
   single-flight covers concurrent renders, two renderer replicas could
   still each pay once). The voice is loudnorm'd (I=-16), 48 kHz stereo,
   starts 0.25 s into the slide; slide = max(4 s, voice + 0.6 s), capped at
-  10 s (`slideSecondsFor`; a longer voice is cut with a short fade, and the
-  web card hints "Shorter offers read better…" over 120 characters). Both
+  16 s (`slideSecondsFor`; raised from 10 s on 2026-11-22 after a 15.2 s
+  voice-over was cut; a longer voice is still cut with a short fade). The
+  web card shows "Read out on the slide in about N seconds" (estimate: about
+  14 characters a second plus ~42 for the lead/date) and a warning past 16. Both
   providers failing / an unreadable file / a failed mix = the old silent
   4 s slide, never a failed change. `render_info.slide` records
   `renderedSeconds` and `voice: {provider, seconds, reused?}` or `voice:

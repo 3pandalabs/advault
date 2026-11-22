@@ -32,8 +32,15 @@ import { EstimateProgress } from "./render-progress";
 // running ad is the owner's own video (mode "slide"), the change is that same
 // video with a "This month's offer" slide added at the end (no new photo).
 // Since 2026-11-22 the slide is read out (one voice-over); long offers get a
-// gentle hint, never a block (the slide caps at ~10 s).
-const LONG_SLIDE_OFFER_CHARS = 120;
+// estimate of how long it is read out, and a warning (not a block) past the
+// slide's 16 s cap (api render/offerSlide.ts SLIDE_MAX_SECONDS).
+const SLIDE_MAX_SECONDS = 16;
+// The narration is "This month's offer: <offer>. Until December 31st." (about
+// 42 characters around the offer); ElevenLabs reads about 14 characters a
+// second (a 218-character narration measured 15.2 s on 2026-11-22).
+function readOutSeconds(offer: string): number {
+  return Math.round((offer.trim().length + 42) / 14 + 0.6);
+}
 
 const ERRORS: Record<string, string> = {
   claim_not_allowed: "That wording isn't allowed in an ad.",
@@ -213,9 +220,15 @@ export function ChangeOfferCard({ campaign }: { campaign: Campaign }) {
               disabled={busy}
             />
             <ClaimWarnings category={campaign.businessCategory} text={offer} />
-            {slide && offer.trim().length > LONG_SLIDE_OFFER_CHARS && (
-              <p className="mt-1 text-xs text-amber-300">Shorter offers read better on the slide and in the voice-over.</p>
-            )}
+            {slide && offer.trim().length >= 3 &&
+              (readOutSeconds(offer) > SLIDE_MAX_SECONDS ? (
+                <p className="mt-1 text-xs text-amber-300">
+                  Read out in about {readOutSeconds(offer)} seconds: too long for the {SLIDE_MAX_SECONDS}-second slide, so the end
+                  would be cut off. Please shorten it.
+                </p>
+              ) : (
+                <p className="mt-1 text-xs text-zinc-500">Read out on the slide in about {Math.max(4, readOutSeconds(offer))} seconds.</p>
+              ))}
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
             <div>
