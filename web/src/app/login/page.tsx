@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import { ApiError, login, setTokens } from "@/lib/api/browser";
 import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
@@ -10,12 +10,21 @@ import { Card } from "@/components/ui/card";
 import { WordmarkName, WordmarkTag } from "@/components/Wordmark";
 import { safeNextPath } from "@/lib/safeNext";
 
+const noSubscribe = () => () => {};
+
 export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // Came from SiteVault's one-tap link as an admin (auth/handoff): say why
+  // they are here, instead of a bare login page that looks like a failure.
+  const fromSitevaultAdmin = useSyncExternalStore(
+    noSubscribe,
+    () => new URLSearchParams(window.location.search).get("handoff") === "admin",
+    () => false,
+  );
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -52,6 +61,12 @@ export default function LoginPage() {
 
       <Card>
         <h1 className="text-xl font-semibold">Log in</h1>
+        {fromSitevaultAdmin && (
+          <p role="status" className="mt-3 rounded-lg border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-sm text-amber-200">
+            Admins sign in here directly. One-tap sign-in from SiteVault is for customers only, to keep admin
+            accounts safe.
+          </p>
+        )}
         <form onSubmit={onSubmit} className="mt-6 space-y-4">
           <div>
             <Label htmlFor="email">Email</Label>

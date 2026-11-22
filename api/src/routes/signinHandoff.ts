@@ -13,8 +13,10 @@
 //                                 plain SiteVault link.
 //
 // Every refusal is the same 401 `handoff_refused`, so a caller learns nothing
-// about why; the web page then sends the person to the normal /login. The
-// reason is logged, never the token.
+// about why; the web page then sends the person to the normal /login. The one
+// exception is a fully valid token for an admin: 401 `handoff_admin`, so the
+// login page can say "admins sign in here directly". The reason is logged,
+// never the token.
 
 import { eq } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
@@ -46,11 +48,16 @@ export async function signinHandoffRoutes(app: FastifyInstance) {
       .where(eq(users.id, t.uid))
       .limit(1);
     if (!user || user.deletedAt) return refuse("no_user");
-    // Admins sign in by hand; a test customer is only entered from its admin
-    // (as /auth/login refuses it too).
-    if (user.role === "admin") return refuse("admin");
-    if (user.testOwnerId) return refuse("test_customer");
     if (!t.email || t.email.trim().toLowerCase() !== user.email.toLowerCase()) return refuse("email_mismatch");
+    // Admins sign in by hand. Only here, with a valid, unused token for this
+    // exact user, do we say why (`handoff_admin`), so the login page can tell
+    // the admin instead of looking broken; it reveals nothing to anyone else.
+    if (user.role === "admin") {
+      req.log.warn({ reason: "admin" }, "signin_handoff_refused");
+      return reply.code(401).send({ error: "handoff_admin" });
+    }
+    // A test customer is only entered from its admin (as /auth/login refuses it too).
+    if (user.testOwnerId) return refuse("test_customer");
     req.log.info({ userId: user.id }, "signed in from sitevault");
     return issueTokens({ id: user.id, role: user.role, testOwnerId: user.testOwnerId });
   });

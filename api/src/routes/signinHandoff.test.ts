@@ -165,7 +165,11 @@ describe("POST /auth/handoff (SiteVault -> AdVault)", () => {
   });
 
   it("refuses admins (they sign in by hand) and test customers", async () => {
-    expect((await exchange(fromSitevault(admin, "boss@x.test"))).statusCode).toBe(401);
+    const asAdmin = await exchange(fromSitevault(admin, "boss@x.test"));
+    expect(asAdmin.statusCode).toBe(401);
+    expect(asAdmin.json()).toEqual({ error: "handoff_admin" });
+    // A wrong email for the admin is the generic refusal: "admin" is only said for a fully valid token.
+    expect((await exchange(fromSitevault(admin, "someone@x.test"))).json()).toEqual({ error: "handoff_refused" });
     expect((await exchange(fromSitevault(testCustomer, "tc-1@test-customer.invalid"))).statusCode).toBe(401);
   });
 
