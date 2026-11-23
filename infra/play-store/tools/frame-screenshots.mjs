@@ -20,7 +20,7 @@ mkdirSync(OUT, { recursive: true });
 const CAPTIONS = {
   "01-home.png": ["Your business on YouTube", "Ads made from your own photos"],
   "02-demos.png": ["See what you get", "Real ads, made for local businesses"],
-  "03-pricing.png": ["Simple pricing", "$10 per ad. $19 a month to keep it running"],
+  "03-pricing.png": ["Simple pricing", "From $55 a month. Pause anytime"],
   "04-photos.png": ["Snap or pick a few photos", "Your shop, your team, your work"],
   "05-campaign.png": ["Pick your area and budget", "We launch it on YouTube for you"],
   "06-results.png": ["See views, clicks and spend", "Every day, right in the app"],
