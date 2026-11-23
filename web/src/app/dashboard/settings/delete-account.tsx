@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ApiError,
   clearTokens,
@@ -15,6 +15,14 @@ import { Button } from "@/components/ui/button";
 // privacy policy promises it. The API does the work (api/ROUTES.md "Account
 // deletion"); this only explains what will happen and asks for the password.
 export function DeleteAccountCard() {
+  // SiteVault's "Delete my account" lands here as /dashboard/settings#delete-account
+  // (sign-in is the shared 3PandaLabs account). The card renders after the page's
+  // data loads, so the browser's own hash scroll can miss it.
+  useEffect(() => {
+    if (window.location.hash === "#delete-account") {
+      document.getElementById("delete-account")?.scrollIntoView({ block: "start" });
+    }
+  }, []);
   const [open, setOpen] = useState(false);
   const [preview, setPreview] = useState<DeletionPreview | null>(null);
   const [password, setPassword] = useState("");
@@ -70,7 +78,7 @@ export function DeleteAccountCard() {
     new Intl.NumberFormat("en-US", { style: "currency", currency }).format(minor / 100);
 
   return (
-    <Card className="mt-4 border-red-400/20">
+    <Card id="delete-account" className="mt-4 scroll-mt-24 border-red-400/20">
       <CardTitle>Delete account</CardTitle>
       <CardDescription>
         Permanently deletes your account. This cannot be undone.
