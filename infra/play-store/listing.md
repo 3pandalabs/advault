@@ -38,7 +38,7 @@ Made by 3PandaLabs.
 - Account deletion URL: https://advault.3pandalabs.com/privacy#delete-account (public; says Settings → Delete account in the app or on the web, or email privacy@3pandalabs.com for people who can't sign in)
 
 ## Graphics (infra/play-store/)
-- `graphics/icon-512.png`: hi-res icon (512×512, opaque)
+- `graphics/play-icon-512.png`: the Play store icon in use since 2026-11-22 ("AdVault by 3PandaLabs" wordmark, same as the Facebook/LinkedIn profile picture, from brand/meta-kit/advault-profile.png). `graphics/icon-512.png` (the "A" mark) is still the phone launcher icon inside the app.
 - `graphics/feature-graphic.png`: 1024×500
 - Phone screenshots: 2–8, 1080×1920. See README.md.
 
