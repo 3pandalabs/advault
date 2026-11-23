@@ -18,7 +18,6 @@ HOW IT WORKS
 • We write the script and make the video, in both Shorts (9:16) and YouTube (16:9) shapes.
 • Choose where your customers are and how much to spend a month.
 • We launch it on YouTube and keep it running. You see times shown, clicks and spend in the app.
-• Already have a video? Upload it instead, free. We review it before it goes live.
 
 SIMPLE PRICING
 • From $55 a month to keep your ad running: $20 for AdVault plus your ad budget (from $35), which goes to Google.
