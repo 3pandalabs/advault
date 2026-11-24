@@ -10,8 +10,8 @@
 // retried by the next sweep. When the plan stops, nothing more is pushed and
 // the site keeps what was covered, then follows SiteVault's own rules.
 //
-// Pure rule in ./policy.ts. Needs SiteVault's `plan-cover` route (follow-up in
-// 3pandalabs/sitevault); until then every push answers 404 and is retried.
+// Pure rule in ./policy.ts. SiteVault's side: `planCoverInternal` (sitevault
+// web/src/index.ts), which refuses dates more than 45 days away.
 
 import { and, desc, eq, inArray, isNotNull } from "drizzle-orm";
 import { db } from "../../db/index.js";

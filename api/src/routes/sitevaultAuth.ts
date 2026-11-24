@@ -3,6 +3,8 @@ import { eq } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { users } from "../db/schema.js";
+import { sendMail } from "../lib/mailer.js";
+import { allowContact, contactBody, contactMail } from "../lib/contact.js";
 import { verifySecret } from "../auth/password.js";
 import { createSitevaultAccount, markAppUsed, type Db } from "../lib/sharedAccount/index.js";
 import { changePassword, confirmPasswordReset, requestPasswordReset } from "../lib/passwordReset/index.js";
@@ -14,6 +16,7 @@ import { changePassword, confirmPasswordReset, requestPasswordReset } from "../l
 //
 //   POST /internal/sitevault/verify-login  is this email + password a valid account?
 //   POST /internal/sitevault/accounts      create an account signed up on SiteVault
+//   POST /internal/sitevault/contact       email us SiteVault's contact form
 //   POST /internal/sitevault/usage         stamp the account's first SiteVault use
 //
 // The database is passed in (index.ts registers with the real one) so the
@@ -39,6 +42,23 @@ export async function sitevaultAuthRoutes(app: FastifyInstance, opts: { db: Db }
   app.addHook("onRequest", async (req, reply) => {
     if (!bearerOk(req.headers.authorization)) return reply.code(401).send({ ok: false, error: "unauthorized" });
   });
+
+  // SiteVault's /contact form: emailed to us, stored nowhere. SiteVault limits
+  // each visitor; the hourly total is shared with AdVault's own form.
+  app.post(
+    "/internal/sitevault/contact",
+    { schema: { body: contactBody.omit({ website: true }).extend({ userId: z.string().uuid().optional() }) } },
+    async (req, reply) => {
+      const { userId, ...m } = req.body as { userId?: string; name: string; email: string; subject: string; message: string };
+      if (!allowContact(null, Date.now())) return reply.code(429).send({ ok: false, error: "rate_limited" });
+      const res = await sendMail([contactMail(m, userId, "SiteVault")], (msg) => req.log.info(msg)).catch((err) => {
+        req.log.error(err);
+        return null;
+      });
+      if (!res?.delivered) return reply.code(503).send({ ok: false, error: "mailer_unavailable" });
+      return reply.code(204).send();
+    },
+  );
 
   // SiteVault sign-in with the shared login. Answers only yes (with the user
   // id) or no: never a token, never whether the email exists.

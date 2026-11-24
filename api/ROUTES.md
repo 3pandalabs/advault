@@ -370,3 +370,4 @@ constraint) maps to 400 `invalid_request`.
 ## Contact
 
 - `POST /contact` (public) `{name, email, subject, message, website?}` -> 204 once the email is accepted. `website` is a honeypot. 400 invalid, 429 `rate_limited`, 503 `mailer_unavailable`. Signed-in callers (optional bearer) are named in the email. Nothing is stored.
+- `POST /internal/sitevault/contact` (bearer `SITEVAULT_INTERNAL_TOKEN`) `{name, email, subject, message, userId?}` -> 204: SiteVault's contact form, emailed to `SITEVAULT_CONTACT_EMAIL` (default 3pandas@). Same hourly total as `POST /contact`.

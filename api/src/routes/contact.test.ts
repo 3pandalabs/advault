@@ -6,7 +6,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("../lib/compliance/index.js", () => ({
   clientIp: (req: { headers: Record<string, string> }) => req.headers["cf-connecting-ip"] ?? null,
 }));
-const { contactRoutes, resetContactLimits, CONTACT_PER_HOUR, CONTACT_PER_IP_PER_HOUR } = await import("./contact.js");
+const { contactRoutes } = await import("./contact.js");
+const { resetContactLimits, CONTACT_PER_HOUR, CONTACT_PER_IP_PER_HOUR } = await import("../lib/contact.js");
 
 const good = { name: "Sam Lee", email: "sam@example.com", subject: "My ad", message: "Hello <b>there</b>" };
 const fetchMock = vi.fn();
