@@ -45,7 +45,7 @@ export default function PrivacyPage() {
   return (
     <LegalPage
       title="Privacy Policy"
-      effective="21 November 2026"
+      effective="24 November 2026"
       summary="We collect what we need to make your ad and run your campaign, and nothing else. We do not sell your data, we do not track you around the internet, and this site sets no cookies at all."
     >
       <h2>Who we are</h2>
@@ -154,6 +154,12 @@ export default function PrivacyPage() {
           report page. We keep the reason and details given, the email address if the
           person chose to leave one, and their IP address and user agent (used to stop
           the form being abused).
+        </li>
+        <li>
+          <strong>Messages you send us</strong> — our contact form emails us your name, email
+          address, subject and message (and which account you were signed in to, if any) so
+          we can reply. Your IP address is held in memory for up to an hour to stop the form
+          being abused; AdVault&rsquo;s database keeps no copy of the message.
         </li>
         <li>
           <strong>Visits from an AdVault ad</strong> — when you arrive on this site by

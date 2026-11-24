@@ -54,6 +54,8 @@ const PUBLIC = new Set<string>([
   "GET /reports/ad/:publicId",
   "POST /reports",
   "POST /track/visit",
+  // The web contact form.
+  "POST /contact",
 ]);
 
 type Route = { method: HTTPMethods; url: string };

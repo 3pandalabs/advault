@@ -1422,7 +1422,11 @@ the dashboard card's "Change my offer" button + status line.
 No Temporal (the DB job queue covers the only async work), no mobile app, no
 Supabase.
 
-**Outbound email: password reset only** (2026-11-18). The shared
+**Outbound email: password reset and the contact form** (2026-11-18; contact
+form 2026-11-24: public `POST /contact`, `routes/contact.ts`, emails
+`CONTACT_EMAIL` (default advault@3pandalabs.com) with Reply-To = the sender,
+stores nothing, 5/hour per IP and 20/hour overall because the mailer quota is
+shared with password resets; NOT fail-soft: 503 when the mail did not go out). The shared
 `3pandalabs/mailer` gateway sends through Resend. Under "Option A", the one
 verified sender domain is now the neutral `3pandalabs.com`, so reset mail goes
 from `passwordReset@3pandalabs.com` with a per-product `fromName` — a reset from
