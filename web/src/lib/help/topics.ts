@@ -11,7 +11,7 @@ const faq = (starts: string) => {
   return item;
 };
 
-const ADS = { label: "My ads", href: "/dashboard" };
+const ADS = { label: "Campaigns", href: "/dashboard" };
 const BALANCE = { label: "Balance", href: "/dashboard/wallet" };
 const PLAN = { label: "Subscription", href: "/dashboard/subscription" };
 
@@ -25,14 +25,14 @@ export const TOPICS: HelpTopic[] = [
   {
     id: "audience",
     q: "Can I change my target audience?",
-    a: "Yes. Once your ad is launched, open it from My ads and use \"Who should see it\" to change who sees it. Narrowing it can make your ad show less. ZIP codes are chosen before launch; to change them after, send us a message. US real estate ads follow fair-housing rules, so they can't be narrowed by ZIP code, age or gender.",
+    a: "Yes. Once your ad is launched, open it from Campaigns and use \"Who should see it\" to change who sees it. Narrowing it can make your ad show less. ZIP codes are chosen before launch; to change them after, send us a message. US real estate ads follow fair-housing rules, so they can't be narrowed by ZIP code, age, gender or parental status.",
     keys: ["audience", "target", "targeting", "target audience", "change audience", "age", "gender", "men women", "who see", "zip", "zip code", "area", "location", "radius", "neighborhood", "city"],
     links: [ADS],
   },
   {
     id: "schedule",
     q: "Can I choose the days and hours my ad shows?",
-    a: "Yes. Open your launched ad from My ads and use \"When it shows\".",
+    a: "Yes. Open your launched ad from Campaigns and use \"When it shows\".",
     keys: ["schedule", "hours", "days hours", "day show", "time show", "weekend", "evening", "when show", "time day"],
     links: [ADS],
   },
@@ -46,7 +46,7 @@ export const TOPICS: HelpTopic[] = [
   {
     id: "pause",
     q: "How do I pause or restart my ad?",
-    a: "Open your ad from My ads and press Pause. Press Resume to start it again. With no ad running, the $20 plan stops at the end of the month you've paid for.",
+    a: "Open your ad from Campaigns and press Pause my ad. Press Resume my ad to start it again. With no ad running, the $20 plan stops at the end of the month you've paid for.",
     keys: ["pause", "resume", "restart", "stop ad", "turn off", "switch off", "hold ad"],
     links: [ADS],
   },
@@ -59,7 +59,7 @@ export const TOPICS: HelpTopic[] = [
   {
     id: "topup",
     q: "How do I add to my ad budget?",
-    a: "Open Balance to add money anytime, from $35. Your monthly ad budget is changed on the Subscription page. Every dollar of ad budget goes to Google.",
+    a: "Open Balance to add a one-time top-up anytime, from $35, or to change your monthly ad budget. A new monthly amount applies from your next payment. Every dollar of ad budget goes to Google.",
     keys: ["top up", "topup", "add budget", "add money", "increase budget", "more budget", "change budget", "budget", "balance", "wallet", "fund"],
     links: [BALANCE, PLAN],
   },
@@ -67,7 +67,7 @@ export const TOPICS: HelpTopic[] = [
   {
     id: "results",
     q: "Where do I see how my ad is doing?",
-    a: "Open your ad from My ads: \"How your ad is doing\" shows times shown, clicks and what you've spent. Google's first numbers take a little while after launch.",
+    a: "Open your ad from Campaigns: \"How your ad is doing\" shows times shown, clicks and what you've spent. Google's first numbers take a little while after launch.",
     keys: ["result", "performance", "stats", "statistics", "report", "click", "working", "ad doing", "analytics", "numbers", "track"],
     links: [ADS],
   },
@@ -75,7 +75,7 @@ export const TOPICS: HelpTopic[] = [
   {
     id: "editsite",
     q: "How do I edit my website?",
-    a: "If AdVault made your website, open \"Your website\" from your dashboard and change the text, photos, style and hours there.",
+    a: "If AdVault made your website, open Website at the top of your dashboard and change the text, photos, style and hours there.",
     keys: ["edit website", "change website", "update website", "website photo", "website style", "website hours", "web address"],
     links: [{ label: "Your website", href: "/dashboard/website" }],
   },
@@ -84,7 +84,7 @@ export const TOPICS: HelpTopic[] = [
   {
     id: "offer",
     q: "Can I change the offer in my running ad?",
-    a: "Yes. Open your ad from My ads and use \"Change my offer\". You see a preview before anything goes live, and Google checks the new ad first. One change a month is included with the plan; more are $2 each.",
+    a: "Yes. Open your ad from Campaigns and use \"Change my offer\". You see a preview before anything goes live, and Google checks the new ad first. One change a month is included with the plan; extra changes, or changes without the plan, are $2 each.",
     keys: ["offer", "change offer", "new offer", "discount", "promotion", "coupon", "deal", "sale"],
     links: [ADS],
   },
@@ -93,7 +93,7 @@ export const TOPICS: HelpTopic[] = [
   {
     id: "start",
     q: "How do I make an ad?",
-    a: "Create an account, add a few photos, your business and your offer, and pick the area. We make the video, you check it, then you launch it on YouTube.",
+    a: "Create an account, add a few photos, your business and your offer, and pick the area. The ad is $10, paid before we make it. You check the video, then launch it on YouTube.",
     keys: ["start", "begin", "make ad", "create ad", "how work", "get started", "sign up", "signup", "create account", "register", "how advault work"],
     links: [{ label: "Make an ad", href: "/dashboard/campaigns/new" }, { label: "Create an account", href: "/signup" }],
   },
@@ -120,7 +120,7 @@ export const TOPICS: HelpTopic[] = [
   {
     id: "delete",
     q: "How do I delete my account?",
-    a: "Open Settings and choose Delete account. It shows what happens to your ads and any unused ad budget before you confirm.",
+    a: "Open Settings and choose Delete account. It shows what happens to your ads and any unused ad budget before you confirm. It also ends your SiteVault sign-in, because the account is shared.",
     keys: ["delete account", "close account", "remove account", "delete data", "delete"],
     links: [{ label: "Settings", href: "/dashboard/settings" }],
   },

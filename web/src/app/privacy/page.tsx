@@ -64,7 +64,9 @@ export default function PrivacyPage() {
       <h2>What we collect</h2>
       <p>
         Almost all of it is information you type into AdVault yourself. We do not buy data
-        about you, and we collect nothing at all before you create an account.
+        about you. Before you create an account we collect only what you choose to send us
+        (the contact form or an ad report), ordinary server logs, and the anonymous ad-visit
+        count described below.
       </p>
       <ul>
         <li>
@@ -117,8 +119,8 @@ export default function PrivacyPage() {
           directly to the payment provider and never reach our servers.
         </li>
         <li>
-          <strong>WhatsApp messages</strong> — only if you give us your mobile number
-          (at sign-up or in Settings, optional) and tick &ldquo;Message me on WhatsApp
+          <strong>WhatsApp messages</strong> — not offered in the app at the moment.
+          When it is, only if you give us your mobile number (optional) and tick &ldquo;Message me on WhatsApp
           about my ads&rdquo;. We store the number, the time you ticked the box, and the
           text of messages between you and AdVault about your ads; you can untick it or
           remove the number in Settings any time, or reply STOP. If you message us from a
@@ -414,16 +416,20 @@ export default function PrivacyPage() {
           </tr>
           <tr>
             <td>Resend (through our 3PandaLabs mailer)</td>
-            <td>Your email address, and a one-time link</td>
+            <td>
+              Your email address, and a one-time link; or, if you use the contact form, your name,
+              email address, subject and message
+            </td>
             <td>
               To send a password-reset email when you ask for one, from
-              passwordReset@3pandalabs.com. We send no marketing email
+              passwordReset@3pandalabs.com; or to deliver your contact-form message to us. We send
+              no marketing email
             </td>
           </tr>
           <tr>
             <td>Meta (WhatsApp)</td>
             <td>Your phone number, message text, and any photo or voice note you send us</td>
-            <td>Only if you turn on monthly offer prompts</td>
+            <td>Not offered at the moment; only if you turn on WhatsApp messages</td>
           </tr>
           <tr>
             <td>fal.ai (speech to text)</td>

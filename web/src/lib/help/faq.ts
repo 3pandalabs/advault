@@ -10,7 +10,7 @@ const SHOWN_WORDS = `${EST.low.toLocaleString("en-US")} to ${EST.high.toLocaleSt
 export const FAQ = [
   {
     q: "I don't have a website. Can I still advertise?",
-    a: "Yes. Make your ad without one; Google needs a link before the ad goes live, so press Make me a website on your campaign and we build a one-page website from your ad in minutes: your photos, offer and video, with call and directions buttons. It's $10 once, and Pro (visitor stats) stays included while your AdVault plan runs.",
+    a: "Yes. Make your ad without one; Google needs a link before the ad goes live, so press Make me a website on your campaign. The website builder opens already filled in with your business, offer and photos, you change anything you like, and your site gets call and directions buttons. You can show your ad video on it when you launch. It's $10 once, and Pro (visitor stats) stays included while your AdVault plan runs.",
   },
   {
     q: "Do I need a Google Ads or YouTube account?",
@@ -18,7 +18,7 @@ export const FAQ = [
   },
   {
     q: "What does it cost to keep my ad running?",
-    a: `From $55 a month. The first month: your ad $10 (made once), your website $10, the AdVault plan $0 (first month included) and your ad budget, from $35. Every month after, while your ad runs: the $20 plan plus your monthly ad budget (from $35), recharged each month; change it anytime. $35 makes it $55 a month, $100 makes it $120. 100% of the ad budget goes to Google, and AdVault earns only the $10s and the $20. ${ADD_MORE_LINE}`,
+    a: `From $55 a month. The first month: your ad $10 (made once), your website $10, the AdVault plan $0 (first month included) and your ad budget, from $35. Every month after, while your ad runs: the $20 plan plus your monthly ad budget (from $35), recharged each month; you can change the amount anytime, and it applies from your next monthly payment. $35 makes it $55 a month, $100 makes it $120. 100% of the ad budget goes to Google. AdVault earns only its own fees: $10 per ad, $10 for a website, the $20 plan, and $2 extras you choose (an extra offer change, or your offer on your website). ${ADD_MORE_LINE}`,
   },
   {
     q: "Can I pay just once?",
@@ -34,15 +34,15 @@ export const FAQ = [
   },
   {
     q: "Is there a contract?",
-    a: "No. Stop renewing anytime in one click on your Subscription page, or pause: no fee and no ad-budget recharge while paused. When no ad is running, the $20 plan stops at the end of the month you've paid for, and you're never charged for a month with no ad running. Resume and it starts again. Or pay just once and never renew. The videos we made are yours to keep.",
+    a: "No. Stop renewing anytime in one click on your Subscription page, or pause: no fee and no ad-budget recharge while paused. When no ad is running, the $20 plan stops at the end of the month you've paid for. An ad that stopped only because its budget ran out still counts as running: the next month's budget switches it back on, so pause it if you want the plan to stop. Resume and it starts again. Or pay just once and never renew. The videos we made are yours to keep.",
   },
   {
     q: "Can I change my ad later?",
-    a: "Yes. A new ad is $10, the same as the first. Make one when you have a new offer, a new season or new photos.",
+    a: "Yes. If only the offer changes, use Change my offer on your running ad: one change a month is included with the plan, and each extra change (or any change without the plan) is $2. A completely new ad, with new photos or a new idea, is $10, the same as the first.",
   },
   {
     q: "I already have a video. Can I use it?",
-    a: "Yes, and there is no $10 fee for it, because we did not make it. Upload it instead of photos. We check every uploaded video before it runs, including that it has no copyrighted music.",
+    a: "Uploading your own video isn't open to everyone right now. Send us a message from the Contact us page and we'll help. We check every video before it runs, including that it has no copyrighted music.",
   },
   {
     q: "I'm a real estate agent. Is that allowed?",
