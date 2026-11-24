@@ -18,6 +18,8 @@ export type Message = {
   subject: string;
   html: string;
   text: string;
+  /** One of the gateway's APP_SENDERS for advault; unset = its default (password resets). */
+  from?: string;
   fromName?: string;
   replyTo?: string;
 };

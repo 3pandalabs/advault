@@ -41,7 +41,7 @@ const sent = () => JSON.parse(fetchMock.mock.calls[0]![1].body).messages[0];
 describe("POST /contact", () => {
   it("emails us with the sender as Reply-To, HTML escaped", async () => {
     expect((await post(good)).statusCode).toBe(204);
-    expect(sent()).toMatchObject({ to: "advault@3pandalabs.com", replyTo: "sam@example.com", subject: "AdVault contact: My ad" });
+    expect(sent()).toMatchObject({ to: "advault@3pandalabs.com", from: "advault@3pandalabs.com", replyTo: "sam@example.com", subject: "AdVault contact: My ad" });
     expect(sent().html).toContain("Hello &lt;b&gt;there&lt;/b&gt;");
     expect(sent().text).toContain("(not signed in)");
   });

@@ -42,6 +42,8 @@ export function contactMail(b: z.infer<typeof contactBody>, userId?: string): Me
   const subject = oneLine(b.subject);
   return {
     to: process.env.CONTACT_EMAIL || "advault@3pandalabs.com",
+    // Not the password-reset default; allowed in the mailer's APP_SENDERS.
+    from: "advault@3pandalabs.com",
     replyTo: b.email,
     fromName: "AdVault contact form",
     subject: `AdVault contact: ${subject}`,
