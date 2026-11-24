@@ -21,7 +21,7 @@ export const WEBSITE_OWNERSHIP_TEXT =
 export const WEBSITE_OWNERSHIP_VERSION = "2026-11-15.v1";
 
 /** The Terms of Service version in force (matches the effective date on /terms). */
-export const TERMS_VERSION = "2026-11-25";
+export const TERMS_VERSION = "2026-11-24";
 
 /** What the client sends with every order, generate, redo, upload and launch. */
 export type Attestation = { accuracy: true; media: true; version: string };
