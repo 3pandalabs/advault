@@ -216,18 +216,26 @@ export default function LandingPage() {
       </section>
 
       <section className="mx-auto w-full max-w-5xl px-6 pb-16">
-        <h2 className="mb-5 text-2xl font-semibold tracking-tight">Questions</h2>
-        <div className="divide-y divide-white/10 rounded-xl border border-white/10">
-          {FAQ.map((f) => (
-            <details key={f.q} className="group px-5 py-4">
-              <summary className="cursor-pointer list-none font-medium text-zinc-200 marker:hidden">
-                <span className="mr-2 inline-block text-amber-300 transition group-open:rotate-90">›</span>
-                {f.q}
-              </summary>
-              <p className="mt-2 pl-5 text-sm text-zinc-400">{f.a}</p>
-            </details>
-          ))}
-        </div>
+        {/* Collapsed until asked for; each question inside opens on its own. */}
+        <details className="group/faq">
+          <summary className="flex cursor-pointer list-none items-center justify-between rounded-xl border border-white/10 px-5 py-4 [&::-webkit-details-marker]:hidden">
+            <h2 className="text-2xl font-semibold tracking-tight">FAQ</h2>
+            <span aria-hidden="true" className="text-2xl text-amber-300 transition group-open/faq:rotate-90">
+              ›
+            </span>
+          </summary>
+          <div className="mt-3 divide-y divide-white/10 rounded-xl border border-white/10">
+            {FAQ.map((f) => (
+              <details key={f.q} className="group px-5 py-4">
+                <summary className="cursor-pointer list-none font-medium text-zinc-200 marker:hidden">
+                  <span className="mr-2 inline-block text-amber-300 transition group-open:rotate-90">›</span>
+                  {f.q}
+                </summary>
+                <p className="mt-2 pl-5 text-sm text-zinc-400">{f.a}</p>
+              </details>
+            ))}
+          </div>
+        </details>
       </section>
 
       <section className="mx-auto w-full max-w-5xl px-6 pb-16">
