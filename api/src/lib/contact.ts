@@ -37,10 +37,10 @@ export const contactBody = z.object({
 
 type ContactInput = Pick<z.infer<typeof contactBody>, "name" | "email" | "subject" | "message">;
 
-/** `SiteVault` messages go to the org inbox SiteVault publishes. */
+/** `SiteVault` messages go to the address SiteVault publishes. */
 const PRODUCTS = {
   AdVault: { to: () => process.env.CONTACT_EMAIL || "advault@3pandalabs.com", from: "advault@3pandalabs.com" },
-  SiteVault: { to: () => process.env.SITEVAULT_CONTACT_EMAIL || "3pandas@3pandalabs.com", from: "sitevault@3pandalabs.com" },
+  SiteVault: { to: () => process.env.SITEVAULT_CONTACT_EMAIL || "sitevault@3pandalabs.com", from: "sitevault@3pandalabs.com" },
 };
 
 export function contactMail(b: ContactInput, userId?: string, product: keyof typeof PRODUCTS = "AdVault"): Message {
