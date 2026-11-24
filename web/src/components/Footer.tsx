@@ -1,3 +1,4 @@
+import { FollowUs } from "@/components/FollowUs";
 import Link from "next/link";
 
 // Copied verbatim from 3pandalabs/brand `footer/` — do not reword.
@@ -46,8 +47,12 @@ export function Footer() {
         <Link href="/report" className="text-zinc-400 hover:text-zinc-200">
           Report an ad
         </Link>
+        <Link href="/contact" className="text-zinc-400 hover:text-zinc-200">
+          Contact us
+        </Link>
       </div>
       <div className="mx-auto flex w-full max-w-5xl flex-wrap items-center justify-between gap-2 text-sm text-zinc-500">
+        <FollowUs />
         <span>&copy; 3PandaLabs LLC, USA.</span>
         <span>All rights reserved.</span>
         <p className="mt-1 basis-full text-xs text-zinc-500">Built by pandas. Loved by people.</p>
