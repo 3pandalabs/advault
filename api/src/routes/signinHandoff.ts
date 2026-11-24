@@ -64,7 +64,7 @@ export async function signinHandoffRoutes(app: FastifyInstance) {
 
   app.post(
     "/auth/sitevault-handoff",
-    { preHandler: requireAuth, schema: { body: z.object({ to: z.string().max(500).optional() }).optional() } },
+    { onRequest: requireAuth, schema: { body: z.object({ to: z.string().max(500).optional() }).optional() } },
     async (req, reply) => {
       // The URL signs the user in on SiteVault: never cache it.
       reply.header("cache-control", "no-store");

@@ -59,7 +59,7 @@ export async function adminCashflowRoutes(app: FastifyInstance) {
   app.get(
     "/admin/cashflow",
     {
-      preHandler: requireAdminOrAnalyticsToken,
+      onRequest: requireAdminOrAnalyticsToken,
       schema: {
         querystring: z.object({
           since: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),

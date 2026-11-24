@@ -48,7 +48,7 @@ const columns = {
 export async function adminUserRoutes(app: FastifyInstance) {
   app.get(
     "/admin/users",
-    { preHandler: [requireAuth, requireDbAdmin], schema: { querystring: listQuery } },
+    { onRequest: [requireAuth, requireDbAdmin], schema: { querystring: listQuery } },
     async (req) => {
       const q = (req.query as z.infer<typeof listQuery>).q ?? "";
       const live = isNull(users.deletedAt);
@@ -72,7 +72,7 @@ export async function adminUserRoutes(app: FastifyInstance) {
   // AdVault as a normal full-price customer. The flag changes NO price, gate
   // or launch; it only keeps the account out of revenue / traction numbers,
   // tags Stripe (`internal=1`) and prefixes "INTERNAL · " on ops-facing names.
-  app.get("/admin/internal-accounts", { preHandler: [requireAuth, requireDbAdmin] }, async () => {
+  app.get("/admin/internal-accounts", { onRequest: [requireAuth, requireDbAdmin] }, async () => {
     const rows = await db
       .select(columns)
       .from(users)
@@ -83,7 +83,7 @@ export async function adminUserRoutes(app: FastifyInstance) {
 
   app.post(
     "/admin/internal-accounts",
-    { preHandler: [requireAuth, requireDbAdmin], schema: { body: internalBody } },
+    { onRequest: [requireAuth, requireDbAdmin], schema: { body: internalBody } },
     async (req, reply) => {
       const { email, internal, label } = req.body as z.infer<typeof internalBody>;
       const [target] = await db
@@ -109,7 +109,7 @@ export async function adminUserRoutes(app: FastifyInstance) {
   // price, gate or launch; it only keeps the account out of real customers,
   // revenue and traction numbers. Unlike a test customer (test_owner_id) it
   // can still sign in and launch for real.
-  app.get("/admin/test-accounts", { preHandler: [requireAuth, requireDbAdmin] }, async () => {
+  app.get("/admin/test-accounts", { onRequest: [requireAuth, requireDbAdmin] }, async () => {
     const rows = await db
       .select(columns)
       .from(users)
@@ -120,7 +120,7 @@ export async function adminUserRoutes(app: FastifyInstance) {
 
   app.post(
     "/admin/test-accounts",
-    { preHandler: [requireAuth, requireDbAdmin], schema: { body: testBody } },
+    { onRequest: [requireAuth, requireDbAdmin], schema: { body: testBody } },
     async (req, reply) => {
       const { email, test } = req.body as z.infer<typeof testBody>;
       const [target] = await db
@@ -141,7 +141,7 @@ export async function adminUserRoutes(app: FastifyInstance) {
   app.post(
     "/admin/users/:id/role",
     {
-      preHandler: [requireAuth, requireDbAdmin],
+      onRequest: [requireAuth, requireDbAdmin],
       schema: { params: z.object({ id: z.string().uuid() }), body: roleBody },
     },
     async (req, reply) => {

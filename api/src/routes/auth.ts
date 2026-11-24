@@ -226,7 +226,7 @@ export async function authRoutes(app: FastifyInstance) {
     },
   );
 
-  app.get("/auth/me", { preHandler: requireAuth }, async (req, reply) => {
+  app.get("/auth/me", { onRequest: requireAuth }, async (req, reply) => {
     const [user] = await db
       .select({
         id: users.id,
@@ -274,7 +274,7 @@ export async function authRoutes(app: FastifyInstance) {
   // to terms_acceptances with IP and user agent; never updates a row.
   app.post(
     "/auth/me/terms",
-    { preHandler: requireAuth, schema: { body: z.object({ version: z.string().max(40) }) } },
+    { onRequest: requireAuth, schema: { body: z.object({ version: z.string().max(40) }) } },
     async (req, reply) => {
       const { version } = req.body as { version: string };
       if (version !== TERMS_VERSION) {
@@ -290,7 +290,7 @@ export async function authRoutes(app: FastifyInstance) {
   app.patch(
     "/auth/me",
     {
-      preHandler: requireAuth,
+      onRequest: requireAuth,
       schema: {
         body: z.object({
           displayName: z.string().min(1).max(120).nullish(),
@@ -371,7 +371,7 @@ export async function authRoutes(app: FastifyInstance) {
   // on, so the admin can always switch back.
   app.patch(
     "/auth/me/test-mode",
-    { preHandler: requireAuth, schema: { body: z.object({ on: z.boolean() }) } },
+    { onRequest: requireAuth, schema: { body: z.object({ on: z.boolean() }) } },
     async (req, reply) => {
       const { on } = req.body as { on: boolean };
       const [me] = await db.select({ role: users.role }).from(users).where(eq(users.id, req.userId!)).limit(1);
@@ -386,18 +386,18 @@ export async function authRoutes(app: FastifyInstance) {
     },
   );
 
-  app.delete("/auth/sessions", { preHandler: requireAuth }, async (req, reply) => {
+  app.delete("/auth/sessions", { onRequest: requireAuth }, async (req, reply) => {
     await db.delete(sessions).where(eq(sessions.userId, req.userId!));
     return reply.code(204).send();
   });
 
   // ---- account deletion (api/ROUTES.md "Account deletion") ----
 
-  app.get("/auth/me/deletion", { preHandler: requireAuth }, async (req) => deletionPreview(req.userId!));
+  app.get("/auth/me/deletion", { onRequest: requireAuth }, async (req) => deletionPreview(req.userId!));
 
   app.post(
     "/auth/me/delete",
-    { preHandler: requireAuth, schema: { body: z.object({ password: z.string().min(1).max(200) }) } },
+    { onRequest: requireAuth, schema: { body: z.object({ password: z.string().min(1).max(200) }) } },
     async (req, reply) => {
       const userId = req.userId!;
       const [user] = await db

@@ -1,0 +1,8 @@
+# Workers static assets serve these files without running the Worker, so
+# next.config.ts headers() never reaches them. Keep in step with it.
+/*
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Referrer-Policy: strict-origin-when-cross-origin
+  Strict-Transport-Security: max-age=86400
+  Content-Security-Policy: frame-ancestors 'none'

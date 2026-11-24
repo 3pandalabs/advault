@@ -356,7 +356,7 @@ export async function billingRoutes(app: FastifyInstance) {
     secured.post(
       "/admin/wallet/credit",
       {
-        preHandler: requireAdmin,
+        onRequest: requireAdmin,
         schema: {
           body: z.object({
             userId: z.string().uuid(),

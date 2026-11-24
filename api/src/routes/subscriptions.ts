@@ -385,7 +385,7 @@ export async function subscriptionRoutes(app: FastifyInstance) {
     secured.post(
       "/admin/subscription/invoices/:invoiceId/mark-paid",
       {
-        preHandler: requireAdmin,
+        onRequest: requireAdmin,
         schema: { params: z.object({ invoiceId: z.string().uuid() }) },
       },
       async (req) => {

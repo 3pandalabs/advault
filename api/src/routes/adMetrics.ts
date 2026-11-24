@@ -23,14 +23,14 @@ const rangeQuery = z.object({ days: z.coerce.number().optional() });
 export async function adMetricsRoutes(app: FastifyInstance) {
   // The dashboard list's stats row: every launched campaign of the caller's
   // own, totals since launch, one query. Never anyone else's campaigns.
-  app.get("/campaigns/stats", { preHandler: requireAuth }, async (req) => {
+  app.get("/campaigns/stats", { onRequest: requireAuth }, async (req) => {
     return { note: NOTE, campaigns: await ownerCampaignStats(req.userId!) };
   });
 
   app.get(
     "/campaigns/:campaignId/metrics",
     {
-      preHandler: requireAuth,
+      onRequest: requireAuth,
       schema: { params: z.object({ campaignId: z.string().uuid() }), querystring: rangeQuery },
     },
     async (req, reply) => {
@@ -55,7 +55,7 @@ export async function adMetricsRoutes(app: FastifyInstance) {
   app.get(
     "/campaigns/:campaignId/results",
     {
-      preHandler: requireAuth,
+      onRequest: requireAuth,
       schema: {
         params: z.object({ campaignId: z.string().uuid() }),
         querystring: z.object({ range: z.enum(["7d", "30d", "all"]).default("7d") }),
@@ -73,7 +73,7 @@ export async function adMetricsRoutes(app: FastifyInstance) {
 
   app.get(
     "/admin/metrics",
-    { preHandler: requireAdminOrAnalyticsToken, schema: { querystring: rangeQuery } },
+    { onRequest: requireAdminOrAnalyticsToken, schema: { querystring: rangeQuery } },
     async (req) => {
       const days = clampRangeDays((req.query as { days?: number }).days);
       const since = isoDaysAgo(days - 1);
@@ -86,7 +86,7 @@ export async function adMetricsRoutes(app: FastifyInstance) {
   app.get(
     "/admin/recent-renders",
     {
-      preHandler: requireAdminOrAnalyticsToken,
+      onRequest: requireAdminOrAnalyticsToken,
       schema: { querystring: z.object({ limit: z.coerce.number().int().min(1).max(50).default(10) }) },
     },
     async (req) => {
@@ -125,7 +125,7 @@ export async function adMetricsRoutes(app: FastifyInstance) {
   app.get(
     "/admin/ad-production",
     {
-      preHandler: requireAdminOrAnalyticsToken,
+      onRequest: requireAdminOrAnalyticsToken,
       schema: {
         querystring: z.object({
           since: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
