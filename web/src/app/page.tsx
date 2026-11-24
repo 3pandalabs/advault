@@ -21,12 +21,12 @@ const STEPS = [
     body: "Name, what you do, your offer, and the ZIP codes you serve. Real estate agents give the listing address instead.",
   },
   {
-    title: "Upload three photos",
-    body: "Your shop, your team, your work. We write the script, add a voiceover and captions, and make the video. Already have a video? Upload it instead.",
+    title: "Upload a few photos",
+    body: "Up to five: your shop, your team, your work. We write the script, add a voiceover and captions, and make the video. Already have a video? Contact us.",
   },
   {
-    title: "Top up and go live",
-    body: "Top up from $35. Your ad shows on YouTube and Shorts to people near you until your budget runs out. You never open Google Ads.",
+    title: "Pick a budget and go live",
+    body: "From $35, recharged each month or just once. Your ad shows on YouTube and Shorts to people near you while your budget lasts. You never open Google Ads.",
   },
 ];
 
@@ -77,7 +77,7 @@ export default function LandingPage() {
           Your business on YouTube, seen by people nearby.
         </h1>
         <p className="mt-6 max-w-2xl text-lg text-zinc-300">
-          Send us three photos. We make your video ad and run it on YouTube and Shorts for
+          Send us a few photos. We make your video ad and run it on YouTube and Shorts for
           people near you. No agency, no video team, no Google Ads.
         </p>
         <p className="mt-4 text-xl font-semibold tracking-tight">
@@ -175,7 +175,7 @@ export default function LandingPage() {
           <h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">
             Ready to get your business on YouTube?
           </h2>
-          <p className="mt-2 text-zinc-400">Three photos and a few minutes. We handle the rest.</p>
+          <p className="mt-2 text-zinc-400">A few photos and a few minutes. We handle the rest.</p>
           <Link
             href="/signup"
             className="mt-6 inline-block rounded-xl bg-amber-400 px-6 py-3 text-base font-semibold text-zinc-950 hover:bg-amber-300"

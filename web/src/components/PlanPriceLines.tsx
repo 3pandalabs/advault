@@ -71,7 +71,8 @@ export function PlanPriceLines({
         </li>
       </ul>
       <p className="mt-3 text-xs text-zinc-400">
-        Every dollar of your ad budget goes to Google. AdVault earns only the $10s and the $20. Pause anytime: no fee
+        Every dollar of your ad budget goes to Google. AdVault earns only its own fees: $10 per
+        ad, $10 for a website, the $20 plan and any $2 extras you choose. Pause anytime: no fee
         and no recharge while paused.
       </p>
       <p className="mt-1 text-xs text-zinc-400">

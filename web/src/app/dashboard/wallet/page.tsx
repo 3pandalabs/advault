@@ -89,7 +89,7 @@ export default function WalletPage() {
 
         <CardDescription className="mt-4">
           Your ad runs until this runs out. You only pay for
-          what Google delivers, and you can never be charged more than you added. Unused
+          what Google delivers, and we pause your ad when the balance runs out. Unused
           budget stays here for your next ad, and if you leave we refund it.
         </CardDescription>
       </Card>

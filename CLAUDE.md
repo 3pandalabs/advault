@@ -1445,6 +1445,16 @@ reuse `lib/passwordReset` unchanged. Still no render-complete notification; the
 dashboard polls. Reset tokens are personal data: `lib/accountDeletion.ts`
 deletes them with the account.
 
+## The panda helper (2026-11-24, `web/src/lib/help`)
+
+`PandaHelper` (root layout; hidden on /auth, /oauth and admin pages) looks like
+an AI chat but is word matching over text we wrote: no model, no network,
+nothing stored. FAQ answers come from `lib/help/faq.ts` (shared with /faq), the
+rest from `topics.ts`. Unanswered questions go to /contact through
+sessionStorage, never the URL. It says "Automatic answers"; keep that. When a
+price or a screen changes, change its answer too and run
+`node scripts/help-check.mjs` in `web/`.
+
 ## The privacy policy is a factual document, not boilerplate
 
 `web/src/app/privacy/page.tsx` describes what this code actually does — what
