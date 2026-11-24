@@ -47,7 +47,7 @@ describe("internal SiteVault account routes", () => {
     }
   });
 
-  it("email SiteVault's contact form to the org inbox, and say so when it did not go out", async () => {
+  it("email SiteVault's contact form to its own address, and say so when it did not go out", async () => {
     const msg = { name: "Sam", email: "sam@x.test", subject: "Hi", message: "Hello" };
     expect((await post("/internal/sitevault/contact", msg, {})).statusCode).toBe(401);
     expect((await post("/internal/sitevault/contact", msg)).statusCode).toBe(503); // no mailer
@@ -58,7 +58,7 @@ describe("internal SiteVault account routes", () => {
     expect((await post("/internal/sitevault/contact", msg)).statusCode).toBe(204);
     expect((await post("/internal/sitevault/contact", { ...msg, email: "no" })).statusCode).toBe(400);
     const sent = JSON.parse(String(fetchMock.mock.calls[0]![1].body)).messages[0];
-    expect(sent).toMatchObject({ to: "3pandas@3pandalabs.com", from: "sitevault@3pandalabs.com", replyTo: "sam@x.test", subject: "SiteVault contact: Hi" });
+    expect(sent).toMatchObject({ to: "sitevault@3pandalabs.com", from: "sitevault@3pandalabs.com", replyTo: "sam@x.test", subject: "SiteVault contact: Hi" });
     vi.unstubAllEnvs();
     vi.unstubAllGlobals();
   });
