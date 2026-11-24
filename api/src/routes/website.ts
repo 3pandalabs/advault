@@ -563,7 +563,7 @@ export async function websiteRoutes(app: FastifyInstance) {
   app.post(
     "/campaigns/:campaignId/website/account-site/delete",
     {
-      preHandler: requireAdmin,
+      onRequest: requireAdmin,
       schema: { params: z.object({ campaignId: z.string().uuid() }), body: deleteAccountSiteInput },
     },
     async (req, reply) => {

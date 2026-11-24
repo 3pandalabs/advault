@@ -108,8 +108,8 @@ export async function reportRoutes(app: FastifyInstance) {
 
   app.register(async (admin) => {
     admin.addHook("onRequest", requireAuth);
-    admin.addHook("preHandler", requireAdmin);
-    admin.addHook("preHandler", requireRealAdmin);
+    admin.addHook("onRequest", requireAdmin);
+    admin.addHook("onRequest", requireRealAdmin);
 
     admin.get(
       "/admin/reports",

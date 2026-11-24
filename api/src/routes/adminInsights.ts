@@ -40,7 +40,7 @@ type CustomerRow = {
 const PAID_PURCHASE = sql`p.status in ('paid','producing','delivered') and p.amount_minor > 0`;
 
 export async function adminInsightsRoutes(app: FastifyInstance) {
-  app.get("/admin/business", { preHandler: requireAdminOrAnalyticsToken }, async () => {
+  app.get("/admin/business", { onRequest: requireAdminOrAnalyticsToken }, async () => {
     const now = new Date();
 
     const customers = (
@@ -288,7 +288,7 @@ export async function adminInsightsRoutes(app: FastifyInstance) {
   //             /admin/business
   //   admins    role = 'admin' (never counted in the other three)
   // A test customer whose owner is gone still counts, with ownerEmail null.
-  app.get("/admin/account-counts", { preHandler: requireAdminOrAnalyticsToken }, async () => {
+  app.get("/admin/account-counts", { onRequest: requireAdminOrAnalyticsToken }, async () => {
     const [totals] = (
       await db.execute<{ real: number; created: number; marked: number; internal: number; admins: number }>(sql`
         select
@@ -349,7 +349,7 @@ export async function adminInsightsRoutes(app: FastifyInstance) {
   app.get(
     "/admin/internal-spend",
     {
-      preHandler: requireAdminOrAnalyticsToken,
+      onRequest: requireAdminOrAnalyticsToken,
       schema: {
         querystring: z.object({
           since: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),

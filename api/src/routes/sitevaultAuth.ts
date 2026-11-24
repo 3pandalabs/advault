@@ -34,13 +34,18 @@ const isoTime = z.string().datetime({ offset: true }).optional();
 export async function sitevaultAuthRoutes(app: FastifyInstance, opts: { db: Db }) {
   const { db } = opts;
 
+  // onRequest, not in the handlers: a call without the bearer must get 401
+  // before its body is parsed or validated, never a 400 describing the schema.
+  app.addHook("onRequest", async (req, reply) => {
+    if (!bearerOk(req.headers.authorization)) return reply.code(401).send({ ok: false, error: "unauthorized" });
+  });
+
   // SiteVault sign-in with the shared login. Answers only yes (with the user
   // id) or no: never a token, never whether the email exists.
   app.post(
     "/internal/sitevault/verify-login",
     { schema: { body: z.object({ email: z.string().trim().max(254), password: z.string().max(200) }) } },
     async (req, reply) => {
-      if (!bearerOk(req.headers.authorization)) return reply.code(401).send({ ok: false, error: "unauthorized" });
       const { email, password } = req.body as { email: string; password: string };
       const [user] = await db
         .select({ id: users.id, email: users.email, passwordHash: users.passwordHash })
@@ -75,7 +80,6 @@ export async function sitevaultAuthRoutes(app: FastifyInstance, opts: { db: Db }
       },
     },
     async (req, reply) => {
-      if (!bearerOk(req.headers.authorization)) return reply.code(401).send({ ok: false, error: "unauthorized" });
       const body = req.body as { email: string; password: string; createdAt?: string; sitevaultUsedAt?: string };
       const r = await createSitevaultAccount(db, body);
       if (r.status === "exists") return reply.code(409).send({ ok: false, error: "email_exists", userId: r.userId, email: r.email });
@@ -90,7 +94,6 @@ export async function sitevaultAuthRoutes(app: FastifyInstance, opts: { db: Db }
     "/internal/sitevault/usage",
     { schema: { body: z.object({ userId: z.string().uuid(), at: isoTime }) } },
     async (req, reply) => {
-      if (!bearerOk(req.headers.authorization)) return reply.code(401).send({ ok: false, error: "unauthorized" });
       const { userId, at } = req.body as { userId: string; at?: string };
       if (!(await markAppUsed(db, userId, "sitevault", at))) return reply.code(404).send({ ok: false, error: "not_found" });
       return { ok: true };
@@ -116,7 +119,6 @@ export async function sitevaultAuthRoutes(app: FastifyInstance, opts: { db: Db }
       },
     },
     async (req, reply) => {
-      if (!bearerOk(req.headers.authorization)) return reply.code(401).send({ ok: false, error: "unauthorized" });
       const b = req.body as { email: string; resetUrlBase: string; productName: string; fromName: string };
       await requestPasswordReset(db, b.email, { resetUrlBase: b.resetUrlBase, productName: b.productName, fromName: b.fromName }, (m) =>
         req.log.info(m),
@@ -132,7 +134,6 @@ export async function sitevaultAuthRoutes(app: FastifyInstance, opts: { db: Db }
     "/internal/sitevault/password-reset/confirm",
     { schema: { body: z.object({ token: z.string().min(1).max(500), password: z.string().min(8).max(200) }) } },
     async (req, reply) => {
-      if (!bearerOk(req.headers.authorization)) return reply.code(401).send({ ok: false, error: "unauthorized" });
       const b = req.body as { token: string; password: string };
       const r = await confirmPasswordReset(db, b.token, b.password);
       if (!r.ok) return reply.code(400).send({ ok: false, error: "invalid_or_expired_token" });
@@ -154,7 +155,6 @@ export async function sitevaultAuthRoutes(app: FastifyInstance, opts: { db: Db }
       },
     },
     async (req, reply) => {
-      if (!bearerOk(req.headers.authorization)) return reply.code(401).send({ ok: false, error: "unauthorized" });
       const b = req.body as { email: string; currentPassword: string; newPassword: string };
       const r = await changePassword(db, b.email, b.currentPassword, b.newPassword);
       if (!r.ok) return reply.code(401).send({ ok: false, error: "invalid_credentials" });

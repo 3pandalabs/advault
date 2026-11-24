@@ -19,8 +19,9 @@ function extractBearer(req: FastifyRequest): string | null {
 }
 
 // Attaches req.userId/req.userRole when a valid access token is present but
-// does not itself reject the request — use `requireAuth` as a preHandler on
-// routes that must be authenticated. The split matters because /health,
+// does not itself reject the request — use `requireAuth` as an onRequest hook on
+// routes that must be authenticated (onRequest, not preHandler: auth has to run
+// before body parsing and schema validation; routes/authFirst.test.ts checks it). The split matters because /health,
 // /metrics and the OAuth callback are all legitimately token-less, and a global
 // reject-on-missing hook would break them.
 //

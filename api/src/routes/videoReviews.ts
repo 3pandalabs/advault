@@ -28,7 +28,7 @@ const decisionBody = z.discriminatedUnion("decision", [
 export async function videoReviewRoutes(app: FastifyInstance) {
   app.get(
     "/admin/video-reviews",
-    { preHandler: requireAdminOrAnalyticsToken, schema: { querystring: listQuery } },
+    { onRequest: requireAdminOrAnalyticsToken, schema: { querystring: listQuery } },
     async (req) => {
       const status = (req.query as z.infer<typeof listQuery>).status ?? "pending_review";
       const rows = await db
@@ -75,7 +75,7 @@ export async function videoReviewRoutes(app: FastifyInstance) {
   app.post(
     "/admin/video-reviews/:creativeId",
     {
-      preHandler: requireAdminOrAnalyticsToken,
+      onRequest: requireAdminOrAnalyticsToken,
       schema: { params: z.object({ creativeId: z.string().uuid() }), body: decisionBody },
     },
     async (req, reply) => {

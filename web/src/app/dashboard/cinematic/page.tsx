@@ -42,7 +42,7 @@ export default function CinematicPage() {
   const [orders, setOrders] = useState<CinematicOrder[]>([]);
   const [campaignId, setCampaignId] = useState("");
   const [description, setDescription] = useState("");
-  const [aspectRatio, setAspectRatio] = useState<"16:9" | "9:16">("9:16");
+  const aspectRatio = "9:16";
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 

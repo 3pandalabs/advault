@@ -69,8 +69,12 @@ rows are KEPT (the record of what the client confirmed), but their
 `ip_address` and `user_agent` are blanked in the same transaction, the one
 UPDATE the append-only trigger allows.
 
-No password reset — the shared mailer has no verified sender for this app. See
-CLAUDE.md.
+Password reset (2026-11-18, `lib/passwordReset`): `POST /auth/password-reset/request`
+`{ email }` always answers **204**, whether or not the email has an account, and
+emails a single-use link (30 minutes) to the web page `/reset-password`.
+`POST /auth/password-reset/confirm` `{ token, password (10–200) }` answers **204**,
+or **400** `invalid_or_expired_token`. SiteVault uses its own
+`/internal/sitevault/password-reset/*`. Without `MAILER_TOKEN` no mail is sent.
 
 ## Internal: SiteVault (shared 3PandaLabs account)
 

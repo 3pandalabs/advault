@@ -66,7 +66,7 @@ const nameOf = (u: { displayName: string | null; businessName: string | null }) 
 const leaving = z.object({ refreshToken: z.string().min(1).max(500).optional() }).optional();
 
 export async function testCustomerRoutes(app: FastifyInstance) {
-  app.get("/test-customers", { preHandler: requireAuth }, async (req, reply) => {
+  app.get("/test-customers", { onRequest: requireAuth }, async (req, reply) => {
     const ownerId = await testCustomerOwner(req);
     if (!ownerId) return reply.code(403).send({ error: "admin_role_required" });
     const rows = await db
@@ -83,7 +83,7 @@ export async function testCustomerRoutes(app: FastifyInstance) {
 
   app.post(
     "/test-customers",
-    { preHandler: requireAuth, schema: { body: z.object({ name: z.string().trim().min(1).max(120) }) } },
+    { onRequest: requireAuth, schema: { body: z.object({ name: z.string().trim().min(1).max(120) }) } },
     async (req, reply) => {
       const ownerId = await testCustomerOwner(req);
       if (!ownerId) return reply.code(403).send({ error: "admin_role_required" });
@@ -117,7 +117,7 @@ export async function testCustomerRoutes(app: FastifyInstance) {
   // same token pair as /auth/login; the browser swaps its stored tokens.
   app.post(
     "/test-customers/:id/switch",
-    { preHandler: requireAuth, schema: { params: z.object({ id: z.string().uuid() }), body: leaving } },
+    { onRequest: requireAuth, schema: { params: z.object({ id: z.string().uuid() }), body: leaving } },
     async (req, reply) => {
       const ownerId = await testCustomerOwner(req);
       if (!ownerId) return reply.code(403).send({ error: "admin_role_required" });
@@ -138,7 +138,7 @@ export async function testCustomerRoutes(app: FastifyInstance) {
   );
 
   // "Back to admin": only from a session inside a test customer.
-  app.post("/test-customers/back", { preHandler: requireAuth, schema: { body: leaving } }, async (req, reply) => {
+  app.post("/test-customers/back", { onRequest: requireAuth, schema: { body: leaving } }, async (req, reply) => {
     if (!req.testOwnerClaim) return reply.code(403).send({ error: "not_in_test_customer" });
     const ownerId = await testCustomerOwner(req);
     if (!ownerId) return reply.code(403).send({ error: "not_in_test_customer" });
