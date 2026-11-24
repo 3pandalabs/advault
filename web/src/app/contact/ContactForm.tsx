@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { API_URL, getMe, getTokens } from "@/lib/api/browser";
+import { onContactQuestion } from "@/lib/help/question";
 import { Button } from "@/components/ui/button";
 import { Input, Label, Textarea } from "@/components/ui/input";
 
@@ -15,6 +16,16 @@ export function ContactForm() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sentTo, setSentTo] = useState<string | null>(null);
+
+  // A question the panda helper couldn't answer.
+  useEffect(
+    () =>
+      onContactQuestion((q) => {
+        setSentTo(null);
+        setForm((f) => ({ ...f, subject: f.subject || "Question from the AdVault helper", message: f.message ? `${f.message}\n\n${q}` : q }));
+      }),
+    [],
+  );
 
   useEffect(() => {
     if (!getTokens().access) return;

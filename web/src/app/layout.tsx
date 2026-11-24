@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { GradientBackdrop } from "@/components/GradientBackdrop";
+import { PandaHelper } from "@/components/PandaHelper";
 import { Footer } from "@/components/Footer";
 import { AdVisitTracker } from "@/components/AdVisitTracker";
 import "./globals.css";
@@ -35,6 +36,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <AdVisitTracker />
         <div className="flex-1">{children}</div>
         <Footer />
+        <PandaHelper />
       </body>
     </html>
   );
