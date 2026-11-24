@@ -6,7 +6,7 @@ import { PGlite } from "@electric-sql/pglite";
 import { drizzle } from "drizzle-orm/pglite";
 import Fastify, { type FastifyInstance } from "fastify";
 import { serializerCompiler, validatorCompiler } from "fastify-type-provider-zod";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import * as schema from "../db/schema.js";
 import type { Db } from "../lib/sharedAccount/index.js";
 import { sitevaultAuthRoutes } from "./sitevaultAuth.js";
@@ -45,6 +45,22 @@ describe("internal SiteVault account routes", () => {
       expect((await post(url, body, {})).statusCode).toBe(401);
       expect((await post(url, body, { authorization: "Bearer nope" })).statusCode).toBe(401);
     }
+  });
+
+  it("email SiteVault's contact form to the org inbox, and say so when it did not go out", async () => {
+    const msg = { name: "Sam", email: "sam@x.test", subject: "Hi", message: "Hello" };
+    expect((await post("/internal/sitevault/contact", msg, {})).statusCode).toBe(401);
+    expect((await post("/internal/sitevault/contact", msg)).statusCode).toBe(503); // no mailer
+    vi.stubEnv("MAILER_URL", "https://mailer.test");
+    vi.stubEnv("MAILER_TOKEN", "t");
+    const fetchMock = vi.fn(async (_u: string, _i: RequestInit) => new Response(JSON.stringify({ delivered: 1 })));
+    vi.stubGlobal("fetch", fetchMock);
+    expect((await post("/internal/sitevault/contact", msg)).statusCode).toBe(204);
+    expect((await post("/internal/sitevault/contact", { ...msg, email: "no" })).statusCode).toBe(400);
+    const sent = JSON.parse(String(fetchMock.mock.calls[0]![1].body)).messages[0];
+    expect(sent).toMatchObject({ to: "3pandas@3pandalabs.com", from: "sitevault@3pandalabs.com", replyTo: "sam@x.test", subject: "SiteVault contact: Hi" });
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
   });
 
   it("create a SiteVault account whose password then verifies (same login on both)", async () => {
