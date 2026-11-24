@@ -1,4 +1,4 @@
-// "Follow us" row for the footer, plus the public business phone. Icons are
+// "Follow us" row for the footer. Icons are
 // inline SVG in the footer's own text colour. An empty href hides the icon:
 // fill Instagram in once the account is live.
 const SOCIAL = [
@@ -10,9 +10,6 @@ const SOCIAL = [
 export function FollowUs({ className = "" }: { className?: string }) {
   return (
     <div className={`flex basis-full flex-wrap items-center gap-x-5 gap-y-2 pb-2 text-sm ${className}`}>
-      <a href="tel:+13323168453" className="whitespace-nowrap hover:underline">
-        +1 (332) 316-8453
-      </a>
       <span className="flex items-center gap-3 sm:ml-auto">
         Follow us
         {SOCIAL.map((s) => (
