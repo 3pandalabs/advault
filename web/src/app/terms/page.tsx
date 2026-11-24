@@ -31,8 +31,8 @@ export default function TermsPage() {
   return (
     <LegalPage
       title="Terms of Service"
-      effective="21 November 2026"
-      summary="You pay us to make your ads and, on the managed plan, to run them. You are responsible for the offers you advertise and for honouring them. We do not guarantee results, and nothing here is a promise that advertising will work."
+      effective="25 November 2026"
+      summary="You pay us to make your ads and, if you launch them with us, to run them. You are responsible for the offers you advertise and for honouring them. We do not guarantee results, and nothing here is a promise that advertising will work."
       notice={
         <>
           <strong>Pending legal review.</strong> These terms are in force, and are being
@@ -58,8 +58,8 @@ export default function TermsPage() {
       <h2>2. What AdVault does</h2>
       <p>
         You give us your business details, an offer, and a few photographs. We write a
-        script, produce video advertisements in widescreen and vertical formats, and — on
-        the managed plan — launch and run a geographically targeted campaign on Google
+        script, produce video advertisements in widescreen and vertical formats, and — if
+        you choose to launch — run a geographically targeted campaign on Google
         Ads and YouTube on your behalf.
       </p>
       <p>
@@ -85,38 +85,28 @@ export default function TermsPage() {
         builder: the same email and password sign you in to both, whichever one you created
         it on, and it is stored by AdVault. Deleting or closing the account ends your
         sign-in on both. Each product&rsquo;s own terms still apply to what you do in it, and
-        AdVault plans and SiteVault website plans are billed separately.
+        AdVault plans and SiteVault website plans are billed separately, except that a website
+        we make for you through AdVault includes Pro features as section 4 explains.
       </p>
 
       <h2>4. Plans and fees</h2>
-      <p>Three plans, charged monthly in advance:</p>
+      <p>
+        One monthly plan, charged in advance, or a single payment with no plan. Prices are in
+        US dollars:
+      </p>
       {/* Scrolls on its own on a 360px phone instead of widening the page. */}
       <div className="overflow-x-auto">
         <table>
         <thead>
           <tr>
             <th>Plan</th>
-            <th>India</th>
-            <th>United States</th>
+            <th>Price</th>
             <th>What you get</th>
           </tr>
         </thead>
         <tbody>
           <tr>
-            <td>Offer</td>
-            <td>₹999/month</td>
-            <td>$39/month</td>
-            <td>Three fresh videos a month. No advertising is bought.</td>
-          </tr>
-          <tr>
-            <td>Managed</td>
-            <td>₹1,499/month</td>
-            <td>$79/month</td>
-            <td>The same videos, plus a live campaign we run for you.</td>
-          </tr>
-          <tr>
             <td>Keep it running</td>
-            <td>Not offered</td>
             <td>
               $20/month while an ad runs, plus your monthly ad budget (from $35); or just once, with no
               monthly charge
@@ -171,14 +161,15 @@ export default function TermsPage() {
               does not approve it, your previous ad keeps running and an included change is
               given back (a paid change is not refunded automatically; ask us).
               Every dollar of your ad budget goes to Google; AdVault earns only the
-              $10 per ad, the $10 website, the $2 offer changes and the plan fee.
+              $10 per ad, the $10 website, the $2 charge to put an offer on your website, the $2
+              offer changes, any other extra you choose to buy, and the plan fee.
             </td>
           </tr>
         </tbody>
         </table>
       </div>
       <p>
-        The managed and Keep it running figures are <strong>our fee only</strong>. It does not include what
+        The plan fee is <strong>our fee only</strong>. It does not include what
         Google charges to show your advertisement — see the next section, which is the
         most important part of this page.
       </p>
@@ -186,7 +177,8 @@ export default function TermsPage() {
         We may also offer one-off extras, such as a <strong>video bundle</strong>.
         Prices shown in the product at the time you buy are the ones that apply. We may
         change prices for future billing periods, and will tell you before a change
-        affects you.
+        affects you. If you already have a plan that is not listed here, its price and terms stay
+        as agreed with you.
       </p>
 
       <h2>5. Ad spend is not our fee</h2>
