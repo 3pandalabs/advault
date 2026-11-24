@@ -26,6 +26,7 @@ import { creativeRoutes } from "./routes/creatives.js";
 import { uploadRoutes } from "./routes/uploads.js";
 import { videoReviewRoutes } from "./routes/videoReviews.js";
 import { reportRoutes } from "./routes/reports.js";
+import { contactRoutes } from "./routes/contact.js";
 import { siteVisitRoutes } from "./routes/siteVisits.js";
 import { adminUserRoutes } from "./routes/adminUsers.js";
 import { newAdRoutes } from "./routes/newAds.js";
@@ -160,6 +161,8 @@ await app.register(videoReviewRoutes);
 await app.register(adminUserRoutes);
 // "Report this ad" (public) + admin reports, takedown and wording review.
 await app.register(reportRoutes);
+// Public contact form: emails CONTACT_EMAIL, stores nothing.
+await app.register(contactRoutes);
 // Public ad-click visit counter (0045): no session, no IP stored.
 await app.register(siteVisitRoutes);
 // SiteVault checks AdVault logins here (same email + password on both).

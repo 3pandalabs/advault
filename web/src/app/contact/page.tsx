@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { WordmarkName, WordmarkTag } from "@/components/Wordmark";
+import { ContactForm } from "./ContactForm";
 
 export const metadata: Metadata = {
   title: "Contact us",
@@ -21,8 +22,13 @@ export default function ContactPage() {
       </div>
       <h1 className="text-3xl font-semibold tracking-tight">Contact us</h1>
       <p className="mt-3 text-zinc-400">
-        Questions about your ad, your website or a charge? Email or call us. AdVault is made by 3PandaLabs LLC.
+        Questions about your ad, your website or a charge? Send us a message, email or call. Quick answers are in the{" "}
+        <Link href="/faq" className={LINK}>
+          FAQ
+        </Link>
+        .
       </p>
+      <ContactForm />
       <dl className="mt-8 space-y-5 rounded-xl border border-white/10 bg-white/[0.02] p-6">
         <div>
           <dt className="text-sm text-zinc-500">Email</dt>

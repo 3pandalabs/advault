@@ -6,5 +6,5 @@ import type { MetadataRoute } from "next";
 const SITE_URL = "https://advault.3pandalabs.com";
 
 export default function sitemap(): MetadataRoute.Sitemap {
-  return ["", "/signup", "/login", "/privacy", "/terms", "/content-policy", "/contact"].map((path) => ({ url: `${SITE_URL}${path}` }));
+  return ["", "/signup", "/login", "/privacy", "/terms", "/content-policy", "/contact", "/faq"].map((path) => ({ url: `${SITE_URL}${path}` }));
 }

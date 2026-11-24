@@ -366,3 +366,7 @@ recognised.
 `{ "error": "<code>" }`, plus `details` on a Zod validation failure and `detail`
 on a launch failure. Postgres `23505` maps to 409 `conflict`; `23514` (a CHECK
 constraint) maps to 400 `invalid_request`.
+
+## Contact
+
+- `POST /contact` (public) `{name, email, subject, message, website?}` -> 204 once the email is accepted. `website` is a honeypot. 400 invalid, 429 `rate_limited`, 503 `mailer_unavailable`. Signed-in callers (optional bearer) are named in the email. Nothing is stored.
