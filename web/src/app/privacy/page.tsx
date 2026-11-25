@@ -12,7 +12,8 @@ import { LegalPage } from "@/components/legal/LegalPage";
 // the implementation:
 //
 //   - the subprocessor table mirrors the configured providers in api/src/lib
-//   - "no cookies, no analytics" is true only while web/src stays free of them
+//   - "no cookies, no third-party trackers" is true only while web/src stays free of them
+//   - "Visit counts" is web/src/lib/visitCount.ts + 3pandalabs/admin visits/ (totals only)
 //   - "Visits from an AdVault ad" is campaign_site_visits + users.signup_campaign_id
 //     (api migration 0045, lib/siteVisits, POST /track/visit): a per-campaign,
 //     per-day, per-path counter, no IP / user agent stored; the IP is only an
@@ -45,7 +46,7 @@ export default function PrivacyPage() {
   return (
     <LegalPage
       title="Privacy Policy"
-      effective="24 November 2026"
+      effective="25 November 2026"
       summary="We collect what we need to make your ad and run your campaign, and nothing else. We do not sell your data, we do not track you around the internet, and this site sets no cookies at all."
     >
       <h2>Who we are</h2>
@@ -171,12 +172,19 @@ export default function PrivacyPage() {
           campaign number for 30 days (in browser storage, not a cookie), and if you create
           an account in that time we note on your account which ad brought you.
         </li>
+        <li>
+          <strong>Visit counts, in total only</strong> — we count visits to this site
+          ourselves: the day, the section of the site, the kind of place the visit came
+          from (for example YouTube, LinkedIn, or a site that links to us), the country and
+          the type of device. We don&rsquo;t store your IP address, your browser details or
+          anything that identifies you, and we keep no record of any one visitor.
+        </li>
       </ul>
 
       <h3>What we do not collect</h3>
       <ul>
         <li>
-          <strong>No cookies and no analytics.</strong> This site sets no cookies, and
+          <strong>No cookies and no third-party trackers.</strong> This site sets no cookies, and
           there is no Google Analytics, no advertising pixel and no third-party tracker
           anywhere on it. Your login is held in browser storage, not a tracking cookie.
         </li>
