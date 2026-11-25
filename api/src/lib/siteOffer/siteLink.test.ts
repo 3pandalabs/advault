@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const status = vi.hoisted(() => ({ value: null as null | { siteState: string } }));
 vi.mock("./index.js", () => ({ fetchSiteOfferStatus: async () => status.value }));
 
-const { siteLinkState, siteLinkLaunchError } = await import("./siteLink.js");
+const { showableLandingUrl, siteLinkState, siteLinkLaunchError } = await import("./siteLink.js");
 const URL = "https://wax.3pandasite.com";
 const page = (code: number | null) =>
   vi.stubGlobal("fetch", async () => {
@@ -51,5 +51,32 @@ describe("siteLinkLaunchError", () => {
     expect(siteLinkLaunchError("paused")).toBe("website_paused");
     expect(siteLinkLaunchError("not_found")).toBe("website_not_found");
     for (const s of ["live", "loading", "unknown"] as const) expect(siteLinkLaunchError(s)).toBeNull();
+  });
+});
+
+describe("showableLandingUrl (end card, YouTube description)", () => {
+  it("leaves off a SiteVault address that 404s", async () => {
+    page(404);
+    expect(await showableLandingUrl(URL)).toBeNull();
+  });
+  it.each(["unpublished", "paused"])("leaves off a site that is %s", async (s) => {
+    page(200);
+    status.value = { siteState: s };
+    expect(await showableLandingUrl(URL)).toBeNull();
+  });
+  it("keeps a live site, one still loading, and any link during an outage", async () => {
+    status.value = { siteState: "live" };
+    page(200);
+    expect(await showableLandingUrl(URL)).toBe(URL);
+    page(404);
+    expect(await showableLandingUrl(URL)).toBe(URL);
+    status.value = null;
+    page(null);
+    expect(await showableLandingUrl(URL)).toBe(URL);
+  });
+  it("keeps other websites, and null stays null", async () => {
+    page(404);
+    expect(await showableLandingUrl("https://example.com")).toBe("https://example.com");
+    expect(await showableLandingUrl(null)).toBeNull();
   });
 });

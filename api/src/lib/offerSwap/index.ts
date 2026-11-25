@@ -12,6 +12,7 @@
 //   disapproved       Google said no; the new ad was removed, old one kept
 //   failed / cancelled / superseded
 
+import { answerableCallToAction } from "../script/cta.js";
 import { and, desc, eq, gte, inArray, isNotNull, isNull, ne, sql } from "drizzle-orm";
 import { db } from "../../db/index.js";
 import {
@@ -466,7 +467,7 @@ export async function createOfferChange(input: CreateChangeInput): Promise<{ ok:
     await discardCreatives(old.id);
   }
 
-  const callToAction = input.callToAction?.trim() || campaign.callToAction;
+  const callToAction = answerableCallToAction(input.callToAction?.trim() || campaign.callToAction);
   let change: OfferChange;
   try {
     [change] = (await db
@@ -556,7 +557,7 @@ export async function ensureBase(
       .onConflictDoNothing()
       .returning();
     if (!base) return;
-    await queueRecut({ campaign, change: base, templates, offer: null, endsAt: null, callToAction: campaign.callToAction, warn });
+    await queueRecut({ campaign, change: base, templates, offer: null, endsAt: null, callToAction: answerableCallToAction(campaign.callToAction), warn });
   } catch (err) {
     warn("offer change: base cut not queued", err);
   }

@@ -7,6 +7,7 @@
 // It deliberately does NOT run migrations — the API container owns that. Two
 // containers migrating on the same deploy race the drizzle bookkeeping table
 // and the loser crash-loops.
+import { showableLandingUrl } from "../lib/siteOffer/siteLink.js";
 import { isReformatCopy } from "../lib/uploads/reformatPolicy.js";
 import { reformatVideo } from "./reformat.js";
 import { renderOfferSlide } from "./offerSlide.js";
@@ -470,7 +471,7 @@ async function processJob(job: RenderJob): Promise<void> {
             beforeAfterPaths,
             businessName: creative.businessName,
             businessCategory: creative.businessCategory,
-            landingUrl: creative.landingUrl,
+            landingUrl: await showableLandingUrl(creative.landingUrl),
           },
           (msg, extra) => log(msg, { creativeId: creative.id, ...(extra as object) }),
         )

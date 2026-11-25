@@ -1,3 +1,4 @@
+import { answerableCallToAction } from "../lib/script/cta.js";
 import { execFile } from "node:child_process";
 import { writeFile } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
@@ -163,7 +164,7 @@ export async function renderTemplate(input: TemplateInputs, log: (msg: string, e
     itemText: sticker.headline,
     validText: sticker.tagline,
     benefits: sticker.benefits,
-    ctaLabel: script.callToAction,
+    ctaLabel: answerableCallToAction(script.callToAction),
     website: displayDomain(input.landingUrl),
     brandColor: brandColorFor(input.businessCategory),
     accentColor: ACCENT,

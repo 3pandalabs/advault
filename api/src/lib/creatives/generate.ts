@@ -1,3 +1,4 @@
+import { answerableCallToAction } from "../script/cta.js";
 import { and, eq, gte, inArray, sql } from "drizzle-orm";
 import { db } from "../../db/index.js";
 import { assets, campaigns, creatives } from "../../db/schema.js";
@@ -182,7 +183,7 @@ export async function generateForCampaign(args: {
     const writerInput = {
         businessName: campaign.businessName,
         businessCategory: campaign.businessCategory,
-        callToAction: campaign.callToAction,
+        callToAction: answerableCallToAction(campaign.callToAction),
         offerDetails: campaign.offerDetails,
         targetZipCodes: campaign.targetZipCodes,
         radiusMiles: campaign.radiusMiles,
