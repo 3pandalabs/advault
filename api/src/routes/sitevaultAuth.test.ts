@@ -140,4 +140,25 @@ describe("internal SiteVault password reset routes", () => {
     expect((await post("/internal/sitevault/verify-login", { email: "chg-http@x.test", password: "newpass12" })).statusCode).toBe(200);
     expect((await post("/internal/sitevault/verify-login", { email: "chg-http@x.test", password: "eightchr" })).statusCode).toBe(401);
   });
+
+  it("emails a SiteVault security notice after a successful change (from the passwordReset default sender), none on a wrong password", async () => {
+    await post("/internal/sitevault/accounts", { email: "chg-mail@x.test", password: "eightchr" });
+    vi.stubEnv("MAILER_URL", "https://mailer.test");
+    vi.stubEnv("MAILER_TOKEN", "t");
+    const fetchMock = vi.fn(async (_u: string, _i: RequestInit) => new Response(JSON.stringify({ delivered: 1 })));
+    vi.stubGlobal("fetch", fetchMock);
+
+    expect((await post("/internal/sitevault/change-password", { email: "chg-mail@x.test", currentPassword: "eightchr", newPassword: "newpass34" })).statusCode).toBe(200);
+    const sent = JSON.parse(String(fetchMock.mock.calls[0]![1].body)).messages[0];
+    expect(sent).toMatchObject({ to: "chg-mail@x.test", fromName: "SiteVault", subject: "Your SiteVault password was changed" });
+    expect(sent.from).toBeUndefined(); // unset -> gateway's advault default = passwordReset@3pandalabs.com
+
+    // A wrong current password changes nothing and sends nothing.
+    fetchMock.mockClear();
+    expect((await post("/internal/sitevault/change-password", { email: "chg-mail@x.test", currentPassword: "wrong-pass", newPassword: "newpass56" })).statusCode).toBe(401);
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+  });
 });
