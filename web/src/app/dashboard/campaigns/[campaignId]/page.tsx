@@ -48,6 +48,7 @@ import { TopUpPicker } from "@/components/TopUpPicker";
 import { WebsiteCard } from "./website-card";
 import { BeforeAfterCard } from "./before-after-card";
 import { SeasonCard } from "./season-card";
+import { DetailsCard } from "./details-card";
 import { OfferCard } from "./offer-card";
 import { ChangeOfferCard } from "./change-offer-card";
 import { WhatsAppPrompt } from "@/components/WhatsAppOptIn";
@@ -387,13 +388,13 @@ export default function CampaignDetailPage({
     }
   }, [campaign, previews]);
 
-  async function onLaunch(adAccountId: string) {
+  async function onLaunch(adAccountId: string, dryRun = false) {
     if (!launchAttestation) return setError(LAUNCH_ERRORS.attestation_required!);
     setBusy(true);
     setError(null);
     setLaunchNote(null);
     try {
-      const result = await launchCampaign(campaignId, adAccountId, launchAttestation, onSite ? videoOnSite : undefined);
+      const result = await launchCampaign(campaignId, adAccountId, launchAttestation, onSite ? videoOnSite : undefined, dryRun || undefined);
       const lead = result.validateOnly
         ? "Dry run passed. Google checked everything. Nothing went live and $0 was spent."
         : result.note;
@@ -562,6 +563,15 @@ export default function CampaignDetailPage({
         </p>
       )}
       {usesWallet && <BudgetBanner wallet={wallet} campaignId={campaign.id} href="#ad-budget" />}
+
+      {/* Before launch only: fix the category or area, or delete the draft. */}
+      {!campaign.googleCampaignResourceName && campaign.complianceStatus !== "taken_down" && (
+        <DetailsCard
+          campaign={campaign}
+          locked={Boolean(newAd?.order) || campaign.creatives.some((c) => c.kind !== "upload")}
+          onSaved={(c) => setCampaign((prev) => (prev ? { ...prev, ...c } : prev))}
+        />
+      )}
 
       {/* Client attestation & compliance (api lib/compliance). */}
       {campaign.complianceStatus === "taken_down" && (
@@ -1254,6 +1264,19 @@ export default function CampaignDetailPage({
                       : `Launch to ${account.descriptiveName ?? account.customerId}`}
                 </Button>
               ))}
+              {/* Ours only: Google checks the setup, creates nothing. A real customer has no use for it. */}
+              {(isAdmin || isInternal) &&
+                !isTestCustomer &&
+                launchableAccounts.map((account) => (
+                  <Button
+                    key={`dry-${account.id}`}
+                    variant="outline"
+                    disabled={busy || !logo || !launchAttestation || campaign.complianceStatus === "taken_down"}
+                    onClick={() => onLaunch(account.id, true)}
+                  >
+                    Dry run (nothing goes live)
+                  </Button>
+                ))}
             </div>
             {/* Feedback right under the button: the page-top banners are
                 off-screen from here, so a click looked like it did nothing. */}

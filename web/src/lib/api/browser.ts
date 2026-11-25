@@ -701,6 +701,13 @@ export function createCampaign(input: {
 export function updateCampaign(
   campaignId: string,
   input: Partial<{
+    name: string;
+    businessName: string;
+    /** 409 `category_locked` once an ad was made or paid for; resets area, badges, extras. */
+    businessCategory: string;
+    callToAction: string;
+    offerDetails: string | null;
+    realty: Realty | null;
     audienceFilters: AudienceFilters | null;
     targetAddress: TargetAddress | null;
     radiusMiles: number;
@@ -714,6 +721,11 @@ export function updateCampaign(
   }>,
 ) {
   return api<Campaign>(`/campaigns/${campaignId}`, { method: "PATCH", body: JSON.stringify(input) });
+}
+
+/** A draft that never ran and was never paid for; 409 otherwise. */
+export function deleteCampaign(campaignId: string) {
+  return api<void>(`/campaigns/${campaignId}`, { method: "DELETE" });
 }
 
 /**
@@ -1048,7 +1060,7 @@ export const generatePaidNewAd = (purchaseId: string) =>
     method: "POST",
   });
 
-export function launchCampaign(campaignId: string, adAccountId: string, attestation: Attestation, videoOnWebsite?: boolean) {
+export function launchCampaign(campaignId: string, adAccountId: string, attestation: Attestation, videoOnWebsite?: boolean, validateOnly?: boolean) {
   return api<{
     campaign: Campaign;
     zipCodesRequested: number;
@@ -1062,7 +1074,7 @@ export function launchCampaign(campaignId: string, adAccountId: string, attestat
     testCustomer?: boolean;
   }>(`/campaigns/${campaignId}/launch`, {
     method: "POST",
-    body: JSON.stringify({ adAccountId, videoOnWebsite, attestation }),
+    body: JSON.stringify({ adAccountId, videoOnWebsite, attestation, validateOnly }),
   });
 }
 
