@@ -10,6 +10,7 @@ describe("categoryKey", () => {
     expect(categoryKey("Restaurant")).toBe("restaurant");
     expect(categoryKey("Landscaping")).toBe("landscaping");
     expect(categoryKey("Auto repair")).toBe("auto");
+    expect(categoryKey("Car wash")).toBe("carWash");
     expect(categoryKey("Cleaning services")).toBe("cleaning");
     expect(categoryKey("Real estate")).toBe("realEstate");
   });
@@ -18,6 +19,9 @@ describe("categoryKey", () => {
     expect(categoryKey("Lawn care")).toBe("landscaping");
     expect(categoryKey("Dental cleaning")).toBe("dentistry");
     expect(categoryKey("Auto electrical")).toBe("auto");
+    for (const c of ["Hand car wash", "Carwash", "Auto detailing", "Mobile detailing", "Truck wash", "Car cleaning"]) expect(categoryKey(c), c).toBe("carWash");
+    for (const c of ["Auto repair shop", "Body shop"]) expect(categoryKey(c), c).toBe("auto");
+    expect(categoryKey("Pressure washing")).not.toBe("carWash");
     expect(categoryKey("Pizza place")).toBe("restaurant");
     expect(categoryKey("Heating and cooling")).toBe("hvac");
     expect(categoryKey("Drain cleaning")).toBe("plumbing");
@@ -30,8 +34,8 @@ describe("categoryKey", () => {
     for (const c of ["Other", "", "Hair salon", "Bookshop", null, undefined]) expect(categoryKey(c)).toBeNull();
   });
 
-  it("has nine keys", () => {
-    expect(CATEGORY_KEYS).toHaveLength(9);
+  it("has ten keys", () => {
+    expect(CATEGORY_KEYS).toHaveLength(10);
   });
 });
 

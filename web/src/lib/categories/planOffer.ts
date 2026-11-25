@@ -5,7 +5,7 @@
 import type { CategoryKey } from "./key";
 
 // <shared>
-export const PLAN_OFFER_CATEGORIES: readonly CategoryKey[] = ["landscaping", "cleaning", "hvac"];
+export const PLAN_OFFER_CATEGORIES: readonly CategoryKey[] = ["landscaping", "cleaning", "hvac", "carWash"];
 
 export type PlanCadence = "visit" | "month" | "season";
 export type FirstVisitDeal = { kind: "percent"; value: number } | { kind: "amount"; value: number } | { kind: "free" };
@@ -25,6 +25,7 @@ export const PLAN_SERVICE: Partial<Record<CategoryKey, string>> = {
   landscaping: "Weekly mowing",
   cleaning: "Every-other-week home cleaning",
   hvac: "Heating and cooling maintenance plan",
+  carWash: "Unlimited car washes",
 };
 
 const CADENCE_TEXT: Record<PlanCadence, string> = {

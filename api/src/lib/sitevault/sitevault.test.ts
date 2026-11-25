@@ -7,6 +7,9 @@ describe("sitevaultCategory", () => {
     expect(sitevaultCategory("Dentistry")).toBe("dentist");
     expect(sitevaultCategory("Real estate")).toBe("realestate");
     expect(sitevaultCategory("Cleaning services")).toBe("cleaning");
+    expect(sitevaultCategory("Car wash")).toBe("carwash");
+    expect(sitevaultCategory("Auto detailing")).toBe("carwash");
+    expect(sitevaultCategory("Auto repair")).toBe("auto");
     expect(sitevaultCategory("HVAC")).toBe("hvac");
     expect(sitevaultCategory("Hair salon")).toBe("salon");
     expect(sitevaultCategory("Other")).toBe("other");

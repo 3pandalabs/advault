@@ -16,7 +16,7 @@ import {
 
 type DealChoice = "none" | "percent" | "amount" | "free";
 
-/** Landscaping, Cleaning services and HVAC: build a recurring plan offer (api lib/categories/planOffer). */
+/** Landscaping, Cleaning services, HVAC and Car wash: build a recurring plan offer (api lib/categories/planOffer). */
 export function planOfferAvailable(category: string): boolean {
   const k = categoryKey(category);
   return Boolean(k && PLAN_OFFER_CATEGORIES.includes(k));

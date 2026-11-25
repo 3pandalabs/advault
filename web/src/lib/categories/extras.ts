@@ -168,6 +168,26 @@ export const OFFER_PRESETS: Partial<Record<CategoryKey, readonly OfferPreset[]>>
       callToAction: "Get a free estimate",
     },
   ],
+  carWash: [
+    {
+      id: "first-wash",
+      label: "First wash deal",
+      offer: "$5 off your first full-service wash. Hand dried, windows and wheels included. No appointment needed.",
+      callToAction: "Visit us today",
+    },
+    {
+      id: "detail",
+      label: "Full detail",
+      offer: "Full interior and exterior detail from $149. Vacuum, shampoo, wash and wax. Same-day appointments.",
+      callToAction: "Book a detail",
+    },
+    {
+      id: "membership",
+      label: "Wash membership",
+      offer: "Unlimited washes from $29 a month. Come as often as you like. Cancel anytime.",
+      callToAction: "Join today",
+    },
+  ],
   cleaning: [
     {
       id: "move-out-in",

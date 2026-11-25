@@ -19,6 +19,7 @@ export const CATEGORIES = [
   "Real estate",
   "Landscaping",
   "Auto repair",
+  "Car wash",
   "Cleaning services",
   "Other",
 ] as const;
