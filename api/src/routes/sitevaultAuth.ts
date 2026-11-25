@@ -3,7 +3,7 @@ import { eq } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { users } from "../db/schema.js";
-import { sendMail } from "../lib/mailer.js";
+import { noticeMail, sendMail } from "../lib/mailer.js";
 import { allowContact, contactBody, contactMail } from "../lib/contact.js";
 import { verifySecret } from "../auth/password.js";
 import { createSitevaultAccount, markAppUsed, type Db } from "../lib/sharedAccount/index.js";
@@ -178,6 +178,25 @@ export async function sitevaultAuthRoutes(app: FastifyInstance, opts: { db: Db }
       const b = req.body as { email: string; currentPassword: string; newPassword: string };
       const r = await changePassword(db, b.email, b.currentPassword, b.newPassword);
       if (!r.ok) return reply.code(401).send({ ok: false, error: "invalid_credentials" });
+      // Security notice to the account. `from` is left unset so the gateway uses
+      // advault's default sender, passwordReset@3pandalabs.com, with the SiteVault
+      // display name. Fire-and-forget: the password is already changed, so a mail
+      // failure must never fail the change.
+      await sendMail(
+        [
+          noticeMail(
+            b.email,
+            "Your SiteVault password was changed",
+            [
+              "Your SiteVault password was just changed.",
+              "If this was you, you're all set — no action is needed.",
+              "If you didn't change it, reset your password now at https://sitevault.3pandalabs.com/forgot-password and email us at 3pandas@3pandalabs.com.",
+            ],
+            "SiteVault",
+          ),
+        ],
+        (m) => req.log.info(m),
+      ).catch((err) => req.log.error(err));
       return { ok: true };
     },
   );

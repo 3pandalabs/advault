@@ -76,3 +76,16 @@ export function actionMail(
   const text = `${intro}\n\n${cta}: ${url}\n\n${outro}`;
   return { to, subject, html, text, ...(fromName ? { fromName } : {}) };
 }
+
+/**
+ * A plain notification email: one or more paragraphs, no call-to-action button
+ * (e.g. a "your password was changed" security notice). Link(s), if any, go in
+ * the paragraph text so they appear in both the HTML and the text part.
+ */
+export function noticeMail(to: string, subject: string, paragraphs: string[], fromName?: string): Message {
+  const html = `<!doctype html><html><body style="margin:0;padding:24px;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;color:#0f172a;line-height:1.5">
+  ${paragraphs.map((p) => `<p>${escHtml(p)}</p>`).join("\n  ")}
+</body></html>`;
+  const text = paragraphs.join("\n\n");
+  return { to, subject, html, text, ...(fromName ? { fromName } : {}) };
+}
