@@ -182,6 +182,7 @@ export default function CampaignDetailPage({
 }) {
   const { campaignId } = use(params);
   const [campaign, setCampaign] = useState<Loaded | null>(null);
+  const [adAccountsFailed, setAdAccountsFailed] = useState(false);
   const [adAccounts, setAdAccounts] = useState<{
     configured: boolean;
     managedOffered?: boolean;
@@ -273,7 +274,7 @@ export default function CampaignDetailPage({
 
   useEffect(() => {
     refresh();
-    listAdAccounts().then(setAdAccounts).catch(() => undefined);
+    listAdAccounts().then(setAdAccounts).catch(() => setAdAccountsFailed(true));
     getWallet().then(setWallet).catch(() => undefined);
     getMe()
       .then((me) => {
@@ -1130,10 +1131,17 @@ export default function CampaignDetailPage({
               </div>
             )}
           </>
-        ) : adAccounts && !adAccounts.configured ? (
+        ) : !adAccounts ? (
+          // Not loaded is not "no account": never offer to connect one on a failed call.
+          <CardDescription>
+            {adAccountsFailed
+              ? "We couldn't load your ad account. Reload the page, or sign in again."
+              : "Loading your ad account…"}
+          </CardDescription>
+        ) : !adAccounts.configured ? (
           <CardDescription>{LAUNCH_ERRORS.google_ads_not_configured}</CardDescription>
         ) : activeAccounts.length === 0 ? (
-          adAccounts?.managedOffered ? (
+          adAccounts.managedOffered ? (
             // The default path: the customer never needs a Google or YouTube
             // account. AdVault creates the ad account and pays Google for it.
             <>

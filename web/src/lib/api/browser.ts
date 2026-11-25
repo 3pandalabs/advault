@@ -46,8 +46,30 @@ export function clearTokens() {
   window.localStorage.removeItem(REFRESH_KEY);
 }
 
-async function refreshTokens(): Promise<string | null> {
-  const { refresh } = getTokens();
+// One refresh at a time. Refresh tokens are single use (the API rotates them),
+// so a page whose six calls all 401 together must not send six refreshes: one
+// wins, the other five 401, and they used to wipe the winner's new tokens
+// (2026-11-25: signed out mid-edit). `refreshing` covers this tab; the Web Lock
+// covers other tabs sharing the same localStorage.
+let refreshing: Promise<string | null> | null = null;
+
+function refreshTokens(rejected: string | null): Promise<string | null> {
+  refreshing ??= withRefreshLock(() => doRefresh(rejected)).finally(() => {
+    refreshing = null;
+  });
+  return refreshing;
+}
+
+async function withRefreshLock(run: () => Promise<string | null>): Promise<string | null> {
+  return typeof navigator !== "undefined" && navigator.locks
+    ? navigator.locks.request("av_refresh", run)
+    : run();
+}
+
+async function doRefresh(rejected: string | null): Promise<string | null> {
+  const { access, refresh } = getTokens();
+  // Already replaced (another call or tab refreshed, or signed in again).
+  if (access && access !== rejected) return access;
   if (!refresh) return null;
 
   const res = await fetch(`${API_URL}/auth/refresh`, {
@@ -55,11 +77,14 @@ async function refreshTokens(): Promise<string | null> {
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ refreshToken: refresh }),
   });
-  if (!res.ok) {
-    clearTokens();
+  const data = res.ok ? ((await res.json()) as { accessToken: string; refreshToken: string }) : null;
+  // Signed out, or in as someone else, while we waited: leave that alone.
+  if (getTokens().refresh !== refresh) return getTokens().access;
+  if (!data) {
+    // Only a refused token ends the session; a 5xx or 429 is worth another try.
+    if (res.status === 401) clearTokens();
     return null;
   }
-  const data = (await res.json()) as { accessToken: string; refreshToken: string };
   setTokens(data.accessToken, data.refreshToken);
   return data.accessToken;
 }
@@ -83,9 +108,10 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
       },
     });
 
-  let res = await send(getTokens().access);
+  const token = getTokens().access;
+  let res = await send(token);
   if (res.status === 401) {
-    const fresh = await refreshTokens();
+    const fresh = await refreshTokens(token);
     if (fresh) res = await send(fresh);
   }
 
@@ -105,7 +131,11 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
     const fields = (body?.details ?? [])
       .map((d) => (d.instancePath ? d.instancePath.split("/")[1] : String(d.path?.[0] ?? "")))
       .filter(Boolean);
-    throw new ApiError(res.status, body?.error ?? "request_failed", body?.detail, fields, body as Record<string, unknown> | null);
+    // Still 401 after a refresh: say so, or screens fall back to their generic
+    // text ("we couldn't reach Google"). /auth/* 401s mean something else.
+    const signedOut = res.status === 401 && !path.startsWith("/auth/");
+    const detail = body?.detail ?? (signedOut ? "You were signed out. Please sign in again." : undefined);
+    throw new ApiError(res.status, body?.error ?? "request_failed", detail, fields, body as Record<string, unknown> | null);
   }
   return res.status === 204 ? (undefined as T) : res.json();
 }
