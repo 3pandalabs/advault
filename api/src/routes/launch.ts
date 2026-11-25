@@ -1,5 +1,6 @@
 import { pushSiteVideoSoon } from "../lib/siteVideo/index.js";
 import { wantsSiteVideo } from "../lib/siteVideo/policy.js";
+import { siteLinkLaunchError, siteLinkState } from "../lib/siteOffer/siteLink.js";
 import { slugFromSiteUrl } from "../lib/sitevault/index.js";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
@@ -175,6 +176,10 @@ export async function launchRoutes(app: FastifyInstance) {
       if (!campaign.landingUrl) {
         return reply.code(409).send({ error: "landing_url_required" });
       }
+      // A SiteVault site that isn't published (or is paused or gone) would send
+      // paid clicks to a "not published yet" page. Dry run included.
+      const linkError = siteLinkLaunchError(await siteLinkState(campaign.landingUrl));
+      if (linkError) return reply.code(409).send({ error: linkError });
       // An open-house ad stops by itself after the event (lib/realty); once
       // the day is over there is nothing left to advertise.
       if (openHouseIsOver(campaign.realty, new Date().toISOString().slice(0, 10))) {

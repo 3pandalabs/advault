@@ -14,11 +14,12 @@ import {
   websiteReady,
   type Campaign,
   type PendingSite,
+  type SiteLinkState,
 } from "@/lib/api/browser";
 import { Card, CardDescription, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { siteVaultSlug } from "@/lib/sitevault";
+import { SITEVAULT_ACCOUNT_URL, siteVaultSlug } from "@/lib/sitevault";
 import { SuggestionChips } from "@/components/SuggestionChips";
 import { openingHoursSuggestions, townFromAddress } from "@/lib/suggestions";
 import { EditOnSiteVault, SiteEditorFrame, useSiteEditor, type CreatedSite } from "@/components/SiteEditorFrame";
@@ -105,10 +106,14 @@ export function WebsiteCard({
   siteOfferRev?: number;
 }) {
   const locked = campaign.status === "live" || Boolean(campaign.googleCampaignResourceName);
-  // A SiteVault link is shown only once the site really loads; until then a
-  // "building your website" bar. Gives up after ~3 minutes and shows the link.
+  // A SiteVault link is checked until it loads (gives up after ~3 minutes).
+  // Just made or paid for here: a "building your website" bar meanwhile. Any
+  // other link (pasted, or made earlier): the link, and why it isn't live.
   const isSiteVault = Boolean(siteVaultSlug(campaign.landingUrl));
   const [siteReady, setSiteReady] = useState<boolean>(!isSiteVault);
+  const [linkState, setLinkState] = useState<SiteLinkState | null>(null);
+  const [checkRev, setCheckRev] = useState(0);
+  const [madeHere, setMadeHere] = useState(false);
   const [checkStartedAt] = useState(() => Date.now());
   useEffect(() => {
     if (!isSiteVault) {
@@ -120,20 +125,21 @@ export function WebsiteCard({
     let tries = 0;
     const check = () =>
       websiteReady(campaign.id)
-        .then((r) => r.ready)
-        .catch(() => false)
-        .then((ready) => {
+        .catch((): Awaited<ReturnType<typeof websiteReady>> => ({ ready: false }))
+        .then(({ ready, state }) => {
           if (cancelled) return;
+          setLinkState(state ?? (ready ? "live" : "unknown"));
           tries += 1;
           if (ready || tries >= 45) setSiteReady(true);
           else setTimeout(check, 4000);
         });
     setSiteReady(false);
+    setLinkState(null);
     void check();
     return () => {
       cancelled = true;
     };
-  }, [campaign.id, campaign.landingUrl, isSiteVault]);
+  }, [campaign.id, campaign.landingUrl, isSiteVault, checkRev]);
   // "make" = SiteVault's full builder inline; "quick" = the short fallback form.
   const [mode, setMode] = useState<"view" | "link" | "make" | "quick">("view");
   const [draft, setDraft] = useState(campaign.landingUrl ?? "");
@@ -170,6 +176,7 @@ export function WebsiteCard({
     () => typeof window !== "undefined" && new URLSearchParams(window.location.search).get("website") === "paid",
   );
   const paidWelcome = returnedFromPay && isSiteVault && Boolean(campaign.landingUrl) && !pendingSite;
+  const building = Boolean(campaign.landingUrl) && !siteReady && (madeHere || returnedFromPay);
   const editorView = editorOpen === "closed" ? null : (editorOpen ?? (paidWelcome ? "welcome" : null));
   useEffect(() => {
     if (!paidWelcome) return;
@@ -275,7 +282,9 @@ export function WebsiteCard({
     setBusy(true);
     setError(null);
     try {
-      onSaved(await updateCampaign(campaign.id, { landingUrl: draft.trim() || null }));
+      const saved = await updateCampaign(campaign.id, { landingUrl: draft.trim() || null });
+      setMadeHere(false);
+      onSaved(saved);
       setMode("view");
     } catch (err) {
       setError(
@@ -350,6 +359,7 @@ export function WebsiteCard({
         attest: true,
       });
       setEditUrl(res.editUrl);
+      setMadeHere(true);
       onSaved(res.campaign);
       setMode("view");
       if (res.pendingSite) {
@@ -379,7 +389,7 @@ export function WebsiteCard({
         <div className="min-w-0">
           <CardTitle>Your website</CardTitle>
           <CardDescription>
-            {campaign.landingUrl && !siteReady ? (
+            {building ? (
               <WebsiteBuilding startedAt={checkStartedAt} />
             ) : campaign.landingUrl ? (
               <a href={campaign.landingUrl} target="_blank" rel="noreferrer" className="break-all hover:underline">
@@ -409,6 +419,10 @@ export function WebsiteCard({
       </div>
 
       {error && <p className="mt-3 text-sm text-red-300">{error}</p>}
+
+      {campaign.landingUrl && isSiteVault && mode === "view" && !building && (
+        <SiteLinkNotice state={linkState} onCheck={() => setCheckRev((n) => n + 1)} />
+      )}
 
       {editUrl && campaign.landingUrl && siteReady && mode === "view" && !editorView && (
         <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">
@@ -612,6 +626,7 @@ export function WebsiteCard({
             websiteFee={websiteFee}
             onRecorded={(res) => {
               setEditUrl(res.editUrl);
+              setMadeHere(true);
               onSaved(res.campaign);
               setMode("view");
               if (res.pendingSite) {
@@ -786,6 +801,40 @@ function InlineSiteEditor({ focus }: { focus?: "style" }) {
     );
   }
   return <SiteEditorFrame editorUrl={editorUrl} onReload={reload} focus={focus} />;
+}
+
+const LINK_PROBLEM: Partial<Record<SiteLinkState, string>> = {
+  unpublished: "This website isn't published yet, so visitors can't see it. Publish it on SiteVault, then check again.",
+  paused: "This website is paused, so visitors can't see it. Renew it on SiteVault, then check again.",
+  not_found: "We couldn't find a website at this link. Press Change to fix it.",
+  loading: "This website isn't loading yet. It may need another minute.",
+  unknown: "We couldn't check this website just now.",
+};
+
+/** Why a SiteVault link isn't live. Nothing once it is. */
+function SiteLinkNotice({ state, onCheck }: { state: SiteLinkState | null; onCheck: () => void }) {
+  if (state === "live") return null;
+  if (state === null) return <p className="mt-3 text-sm text-zinc-400" role="status">Checking your website…</p>;
+  return (
+    <div className="mt-3 space-y-2" role="status">
+      <p className="text-sm text-amber-300">{LINK_PROBLEM[state]}</p>
+      <div className="flex flex-wrap items-center gap-3">
+        {(state === "unpublished" || state === "paused") && (
+          <a
+            href={SITEVAULT_ACCOUNT_URL}
+            target="_blank"
+            rel="noreferrer"
+            className="rounded-lg border border-white/15 px-3 py-1.5 text-sm text-zinc-200 hover:bg-white/5"
+          >
+            Open SiteVault
+          </a>
+        )}
+        <Button size="sm" variant="ghost" onClick={onCheck}>
+          Check again
+        </Button>
+      </div>
+    </div>
+  );
 }
 
 /** Shown until the new website actually loads: an estimate, never 100% on its own. */
