@@ -1465,7 +1465,9 @@ misrepresentation rather than a harmless stale doc.
 
 **Change it in the same PR that changes the behaviour it describes**: a new
 column holding personal data, a new subprocessor, a change of retention, or the
-first analytics script anyone adds to `web/`. The page's own header comment
+first third-party script anyone adds to `web/`. Our own visit totals
+(`web/src/lib/visitCount.ts` -> 3pandalabs/admin `visits/`, shown on the admin
+page's Visitors tab) are described there. The page's own header comment
 lists the specific claims that are pinned to the implementation.
 
 ## Deployment gotchas inherited from the other apps

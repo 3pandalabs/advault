@@ -41,7 +41,7 @@ const SECURITY_HEADERS = [
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data: blob: https://*.r2.cloudflarestorage.com",
       "media-src 'self' blob: https://*.r2.cloudflarestorage.com",
-      `connect-src 'self' ${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080"} https://*.r2.cloudflarestorage.com`,
+      `connect-src 'self' ${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080"} https://*.r2.cloudflarestorage.com https://counts.3pandalabs.com`,
       "frame-src https://sitevault.3pandalabs.com",
       "object-src 'none'",
       "base-uri 'self'",
