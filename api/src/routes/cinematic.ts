@@ -1,3 +1,4 @@
+import { answerableCallToAction } from "../lib/script/cta.js";
 import { onOfferChangePaid } from "../lib/offerSwap/index.js";
 import { and, desc, eq, sql } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
@@ -197,7 +198,7 @@ export async function cinematicRoutes(app: FastifyInstance) {
               businessCategory: campaign.businessCategory,
               description: body.description,
               offerDetails: campaign.offerDetails,
-              callToAction: campaign.callToAction,
+              callToAction: answerableCallToAction(campaign.callToAction),
               aspectRatio: "9:16",
               addOn: quote.addOn,
               realAssetCount: 1,

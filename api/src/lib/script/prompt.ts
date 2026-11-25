@@ -9,7 +9,7 @@ import { bedsBaths, openHouseLong, openHouseTag, shortPrice, type Realty } from 
 // Bump when the system prompt or the user-prompt shape changes: it is stored
 // with every creative's generation_inputs (migration 0043), so an ad can be
 // traced to the instructions it was written under.
-export const AD_SCRIPT_PROMPT_VERSION = "2026-11-20.client-facts-only";
+export const AD_SCRIPT_PROMPT_VERSION = "2026-11-25.no-call-without-number";
 
 export const AD_SCRIPT_SYSTEM_PROMPT = `You write short video ad scripts for small local businesses — plumbers, dentists, restaurants, real estate agents — that run as YouTube pre-roll and Shorts.
 
@@ -18,6 +18,7 @@ The constraints that matter:
 - A viewer can skip after five seconds. The hook has to say what the business does and where, in plain words, before that.
 - Captions are burned into video and read on a phone. Short sentences, no jargon, no wordplay that needs a second read.
 - The advertiser gave you photos of their actual premises and work. Write captions that could plausibly describe those photos — do not describe a scene they did not supply.
+- The ad shows no phone number; a tap opens the website. Never tell the viewer to call, phone or text, on screen or in the voiceover, unless the advertiser's own text includes the number.
 - Local means local. Name the service area the advertiser gave you; do not widen it.
 
 Never invent a specific claim the advertiser did not provide: no prices, no discounts, no "licensed and insured", no years in business, no ratings or review counts, no awards. These are claims about a real business that a real regulator can act on, and the advertiser has not made them. Write around a missing fact rather than filling it in.

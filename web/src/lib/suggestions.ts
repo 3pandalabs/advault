@@ -7,24 +7,24 @@ import { isHousingCategory } from "@/lib/audience";
 
 /** Call-to-action options per category; the API allows any 1-40 chars. */
 const CTA_BY_CATEGORY: Record<string, string[]> = {
-  Plumbing: ["Call now", "Get a free quote", "Book a plumber"],
-  Electrical: ["Call now", "Get a free estimate", "Book an electrician"],
-  HVAC: ["Call now", "Book a tune-up", "Get a free quote"],
-  Dentistry: ["Book an appointment", "Call now", "Book your cleaning"],
-  Restaurant: ["Order now", "Reserve a table", "Call now"],
-  Landscaping: ["Get a free quote", "Call now", "Book a cleanup"],
-  "Auto repair": ["Book a service", "Call now", "Get a free quote"],
-  "Car wash": ["Visit us today", "Book a detail", "Call now"],
-  "Cleaning services": ["Book a clean", "Get a free quote", "Call now"],
+  Plumbing: ["Visit our website", "Get a free quote", "Book a plumber"],
+  Electrical: ["Visit our website", "Get a free estimate", "Book an electrician"],
+  HVAC: ["Visit our website", "Book a tune-up", "Get a free quote"],
+  Dentistry: ["Book an appointment", "Visit our website", "Book your cleaning"],
+  Restaurant: ["Order now", "Reserve a table", "Visit our website"],
+  Landscaping: ["Get a free quote", "Visit our website", "Book a cleanup"],
+  "Auto repair": ["Book a service", "Visit our website", "Get a free quote"],
+  "Car wash": ["Visit us today", "Book a detail", "Visit our website"],
+  "Cleaning services": ["Book a clean", "Get a free quote", "Visit our website"],
 };
 
 export function callToActionSuggestions(category: string, isListing: boolean): string[] {
   if (isHousingCategory(category)) {
     return isListing
-      ? ["Schedule a tour", "Call now", "See the home"]
-      : ["Get a free home valuation", "Call now", "Book a consultation"];
+      ? ["Schedule a tour", "Visit our website", "See the home"]
+      : ["Get a free home valuation", "Visit our website", "Book a consultation"];
   }
-  return CTA_BY_CATEGORY[category] ?? ["Call now", "Get a free quote", "Visit us today"];
+  return CTA_BY_CATEGORY[category] ?? ["Visit our website", "Get a free quote", "Visit us today"];
 }
 
 const MONTHS = [

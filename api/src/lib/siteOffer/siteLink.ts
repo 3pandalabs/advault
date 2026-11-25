@@ -31,3 +31,14 @@ export function siteLinkLaunchError(state: SiteLinkState): "website_not_publishe
   if (state === "not_found") return "website_not_found";
   return null;
 }
+
+/**
+ * The link to burn into a video's end card or put in its YouTube description:
+ * null when we KNOW it shows visitors nothing. A video can't be corrected
+ * later, so a dead address is left off (launch refuses it anyway, and the ad's
+ * button still carries the link once it works). An outage keeps the link.
+ */
+export async function showableLandingUrl(url: string | null): Promise<string | null> {
+  if (!url) return null;
+  return siteLinkLaunchError(await siteLinkState(url)) ? null : url;
+}

@@ -227,7 +227,7 @@ export default function NewCampaignPage() {
     name: "",
     businessName: "",
     businessCategory: "",
-    callToAction: "Call now",
+    callToAction: "Visit our website",
     landingUrl: "",
     offerDetails: "",
     zipInput: "",

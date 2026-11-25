@@ -1,3 +1,4 @@
+import { answerableCallToAction } from "../lib/script/cta.js";
 import { pushSiteVideoSoon } from "../lib/siteVideo/index.js";
 import { wantsSiteVideo } from "../lib/siteVideo/policy.js";
 import { siteLinkLaunchError, siteLinkState } from "../lib/siteOffer/siteLink.js";
@@ -497,7 +498,7 @@ export async function launchRoutes(app: FastifyInstance) {
           copy: buildAdCopy({
             businessName: campaign.businessName,
             businessCategory: campaign.businessCategory,
-            callToAction: campaign.callToAction,
+            callToAction: answerableCallToAction(campaign.callToAction),
             offerDetails: campaign.offerDetails,
             script: (uploaded[0]!.script ?? null) as AdCopyInput["script"],
           }),

@@ -1,3 +1,5 @@
+import { answerableCallToAction } from "../lib/script/cta.js";
+import { showableLandingUrl } from "../lib/siteOffer/siteLink.js";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -137,7 +139,7 @@ async function produce(purchase: typeof import("../db/schema.js").purchases.$inf
         businessCategory: campaign.businessCategory,
         description,
         offerDetails: campaign.offerDetails,
-        callToAction: campaign.callToAction,
+        callToAction: answerableCallToAction(campaign.callToAction),
         aspectRatio: "9:16",
         addOn,
         realAssetCount: 1,
@@ -247,7 +249,7 @@ async function produce(purchase: typeof import("../db/schema.js").purchases.$inf
               voicePath,
               businessName: campaign.businessName,
               businessCategory: campaign.businessCategory,
-              landingUrl: campaign.landingUrl,
+              landingUrl: await showableLandingUrl(campaign.landingUrl),
               cinematic: true,
             },
             (msg, extra) => log(msg, { purchaseId: purchase.id, ...(extra as object) }),

@@ -1,3 +1,4 @@
+import { showableLandingUrl } from "../lib/siteOffer/siteLink.js";
 import { hostname } from "node:os";
 import { getObjectBytes } from "../plugins/r2.js";
 import { GoogleOAuthError } from "../lib/googleAds/oauth.js";
@@ -92,10 +93,11 @@ async function processJob(job: YouTubeUploadJob): Promise<void> {
   // the YouTube title against the ad, and "creative-4f3a.mp4" there is how an
   // advertiser loses track of which ad is which.
   const title = `${creative.businessName} — ${creative.campaignName}`;
+  const landingUrl = await showableLandingUrl(creative.landingUrl);
   const description = [
     creative.offerDetails ?? "",
     "",
-    ...(creative.landingUrl ? [creative.landingUrl, ""] : []),
+    ...(landingUrl ? [landingUrl, ""] : []),
     "Produced with AdVault by 3PandaLabs.",
     // Anyone can flag an ad to AdVault (web /report, routes/reports.ts).
     `Report this ad: ${reportUrl(creative.publicId)}`,

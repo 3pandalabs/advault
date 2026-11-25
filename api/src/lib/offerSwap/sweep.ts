@@ -19,6 +19,7 @@
 //     offer is never left serving, even with no base to return to (then ops
 //     are paged: the campaign shows nothing until a base exists).
 
+import { answerableCallToAction } from "../script/cta.js";
 import { and, eq, inArray } from "drizzle-orm";
 import { db } from "../../db/index.js";
 import { adAccounts, campaigns, creatives, offerChanges } from "../../db/schema.js";
@@ -134,7 +135,7 @@ async function planFor(port: GooglePort, ctx: GoogleCtx, campaign: Campaign, cha
     copy: buildAdCopy({
       businessName: campaign.businessName,
       businessCategory: campaign.businessCategory,
-      callToAction: change.callToAction ?? campaign.callToAction,
+      callToAction: answerableCallToAction(change.callToAction ?? campaign.callToAction),
       offerDetails: change.kind === "offer" ? change.offerText : null,
       script: (cuts[0]?.script ?? null) as { hook?: string } | null,
     }),

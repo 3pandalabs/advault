@@ -145,7 +145,7 @@ export const AD_SCRIPT_JSON_SCHEMA = {
         additionalProperties: false,
       },
     },
-    callToAction: { type: "string", description: "Under 40 characters, e.g. 'Call now'." },
+    callToAction: { type: "string", description: "Under 40 characters, e.g. 'Get a free quote'. Never ask the viewer to call or text unless a phone number is given." },
     endCardText: { type: "string", description: "Closing frame text, under 60 characters." },
     voiceoverText: {
       type: "string",

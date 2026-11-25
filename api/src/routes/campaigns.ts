@@ -1,3 +1,4 @@
+import { DEFAULT_CALL_TO_ACTION } from "../lib/script/cta.js";
 import { and, desc, eq, inArray, isNull, ne } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
@@ -47,7 +48,7 @@ const campaignFields = z.object({
   name: z.string().min(1).max(120),
   businessName: z.string().min(1).max(160),
   businessCategory: z.string().min(1).max(80),
-  callToAction: z.string().min(1).max(40).default("Call now"),
+  callToAction: z.string().min(1).max(40).default(DEFAULT_CALL_TO_ACTION),
   // Constrained to http(s) so a campaign can't ship a javascript: or data:
   // landing URL into a live ad. OPTIONAL since 2026-11-15: a business with no
   // website can still make ads (blank = null); launch requires one

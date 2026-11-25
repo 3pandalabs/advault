@@ -1,3 +1,4 @@
+import { answerableCallToAction } from "../lib/script/cta.js";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import type { AdScript } from "../lib/script/schema.js";
@@ -377,7 +378,7 @@ export async function renderCreative(input: RenderInputs): Promise<RenderOutputs
   await renderEndCard({
     outputPath: endCardPath,
     endCardText: input.script.endCardText,
-    callToAction: input.script.callToAction,
+    callToAction: answerableCallToAction(input.script.callToAction),
     aspectRatio: input.aspectRatio,
   });
   segments.push(endCardPath);

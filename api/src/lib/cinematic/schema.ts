@@ -51,7 +51,7 @@ export const CINEMATIC_BRIEF_JSON_SCHEMA = {
     },
     voiceoverText: { type: "string" },
     closingText: { type: "string" },
-    callToAction: { type: "string" },
+    callToAction: { type: "string", description: "Never ask the viewer to call or text unless a phone number is given." },
     // Same narrator list and offer-sticker rules as the photo ads.
     voice: AD_SCRIPT_JSON_SCHEMA.properties.voice,
     sticker: AD_SCRIPT_JSON_SCHEMA.properties.sticker,
