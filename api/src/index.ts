@@ -1,8 +1,9 @@
-import cors from "@fastify/cors";
-import Fastify, { type FastifyError } from "fastify";
+import cors, { type FastifyCorsOptions } from "@fastify/cors";
+import Fastify, { type FastifyError, type FastifyRequest } from "fastify";
 import { serializerCompiler, validatorCompiler, type ZodTypeProvider } from "fastify-type-provider-zod";
 import { authPlugin } from "./auth/plugin.js";
 import { env } from "./env.js";
+import { corsOrigins } from "./lib/contact.js";
 import { recordRequest, startCpuSampler } from "./metrics/collector.js";
 import { adAccountRoutes } from "./routes/adAccounts.js";
 import { adMetricsRoutes } from "./routes/adMetrics.js";
@@ -79,7 +80,10 @@ app.addContentTypeParser(
   },
 );
 
-await app.register(cors, { origin: env.CORS_ORIGINS, credentials: true });
+// 3pandalabs.com may post its contact form; nothing else (lib/contact corsOrigins).
+await app.register(cors, () => (req: FastifyRequest, cb: (err: Error | null, opts: FastifyCorsOptions) => void) =>
+  cb(null, { origin: corsOrigins(req.url, env.CORS_ORIGINS), credentials: true }),
+);
 await app.register(authPlugin);
 
 app.get("/health", async () => ({ ok: true }));
