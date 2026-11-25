@@ -25,6 +25,7 @@ export function sitevaultCategory(category: string): string {
     [/bak(ery|er)/, "bakery"],
     [/real[\s-]?estate|realt/, "realestate"],
     [/landscap|lawn|garden|tree/, "landscaping"],
+    [/(car|auto|truck) ?wash|detailing|detailer/, "carwash"],
     [/auto|car |mechanic|tyre|tire/, "auto"],
     [/clean|maid|janitor/, "cleaning"],
     [/barber/, "barber"],

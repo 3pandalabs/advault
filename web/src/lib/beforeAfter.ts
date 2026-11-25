@@ -16,11 +16,12 @@ export const BEFORE_AFTER_CATEGORIES = [
   "HVAC",
   "Landscaping",
   "Auto repair",
+  "Car wash",
   "Cleaning services",
 ] as const;
 
 const TRADE_PATTERN =
-  /\b(contract(or|ors|ing)?|remodel(l?ing|s|ers?)?|renovat(e|ion|ions|ing)|handyman|handymen|roof(s|ing|er|ers)?|gutters?|paint(ing|ers?)?|landscap(e|ing|ers?)|lawns?|yard|garden(ing|ers?)?|tree (service|care|removal)|mow(ing)?|clean(ing|ers?)?|pressure[\s-]?wash(ing)?|power[\s-]?wash(ing)?|window washing|carpet|detail(ing|ers?)?|body ?shop|auto ?body|collision|auto repair|mechanic|floor(s|ing)?|tile|tiling|hardwood|junk|hauling|debris|demolition|hvac|heating|air condition(ing)?|furnace|plumb(ing|ers?)?|drain|sewer|water heater|electric(al|ians?)?|wiring|solar|fenc(e|es|ing)|deck(s|ing)?|patio|concrete|masonry|paving|driveway|siding|drywall|carpent(ry|ers?)|cabinet(s|ry)?|kitchen|bath(room)?s?|countertops?|garage doors?|pool (service|cleaning)|chimney|insulation|restoration|mold remediation|pest control)\b/i;
+  /\b(contract(or|ors|ing)?|remodel(l?ing|s|ers?)?|renovat(e|ion|ions|ing)|handyman|handymen|roof(s|ing|er|ers)?|gutters?|paint(ing|ers?)?|landscap(e|ing|ers?)|lawns?|yard|garden(ing|ers?)?|tree (service|care|removal)|mow(ing)?|clean(ing|ers?)?|pressure[\s-]?wash(ing)?|power[\s-]?wash(ing)?|window washing|carpet|detail(ing|ers?)?|body ?shop|auto ?body|collision|auto repair|(car|auto|truck) ?wash|mechanic|floor(s|ing)?|tile|tiling|hardwood|junk|hauling|debris|demolition|hvac|heating|air condition(ing)?|furnace|plumb(ing|ers?)?|drain|sewer|water heater|electric(al|ians?)?|wiring|solar|fenc(e|es|ing)|deck(s|ing)?|patio|concrete|masonry|paving|driveway|siding|drywall|carpent(ry|ers?)|cabinet(s|ry)?|kitchen|bath(room)?s?|countertops?|garage doors?|pool (service|cleaning)|chimney|insulation|restoration|mold remediation|pest control)\b/i;
 
 // Google Ads restricts before/after imagery for personal health and cosmetic
 // results, so anything about bodies or health never gets it, whatever trade

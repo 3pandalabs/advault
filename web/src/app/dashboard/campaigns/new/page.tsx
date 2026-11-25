@@ -114,6 +114,7 @@ const OFFER_EXAMPLES: Record<string, string> = {
   Restaurant: "Lunch special $12.99, Mon–Fri. Wood-fired pizza, fresh pasta. Free delivery within 3 miles.",
   Landscaping: "Spring cleanup from $149. Weekly mowing from $35. Free quotes, same week.",
   "Auto repair": "Oil change $39.99. Free brake check. Most repairs done same day, 12-month warranty.",
+  "Car wash": "Full-service wash $19. $5 off your first visit. No appointment needed, open 7 days.",
   "Cleaning services": "First home clean 20% off. Eco-friendly products. Insured, background-checked cleaners.",
 };
 const LISTING_EXAMPLE =
@@ -129,6 +130,7 @@ const PHOTO_TIPS: Record<string, string> = {
   Restaurant: "A photo of your cooks in the kitchen, or staff serving guests.",
   Landscaping: "A photo of your crew working on a yard.",
   "Auto repair": "A photo of your mechanic working on a car.",
+  "Car wash": "A photo of your team washing a car, and a clean car leaving.",
   "Cleaning services": "A photo of your cleaners at work.",
   "Real estate": "For a listing, the home itself: outside, the main rooms, the yard. Add your own photo below.",
 };

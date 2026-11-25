@@ -119,7 +119,7 @@ const CLAIM_RULES: readonly ClaimRule[] = [
   },
   {
     id: "guarantee",
-    categories: ["plumbing", "electrical", "hvac", "restaurant", "auto", "cleaning", "realEstate"],
+    categories: ["plumbing", "electrical", "hvac", "restaurant", "auto", "carWash", "cleaning", "realEstate"],
     level: "warn",
     pattern: /\b(guarantee[ds]?|money[- ]back)\b/i,
     reason: "A guarantee is a promise you must keep. Say exactly what it covers.",

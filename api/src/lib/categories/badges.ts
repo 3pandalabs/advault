@@ -62,6 +62,7 @@ export const BADGES_BY_CATEGORY: Record<CategoryKey, readonly BadgeId[]> = {
   restaurant: [],
   landscaping: ["license_number", "licensed_insured", "pesticide_license", "background_checked", "upfront_pricing"],
   auto: ["ase_certified", "warranty_12mo", "upfront_pricing", "financing"],
+  carWash: ["licensed_insured", "upfront_pricing"],
   cleaning: ["licensed_insured", "background_checked", "upfront_pricing"],
   realEstate: ["license_number"],
 };

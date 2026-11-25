@@ -50,7 +50,7 @@ const voiceNames = Object.keys(AD_VOICES) as [AdVoice, ...AdVoice[]];
 /** A voice for scripts that didn't choose one (fallback, older scripts). */
 export function defaultVoiceFor(category: string): AdVoice {
   const c = category.toLowerCase();
-  if (/real ?estate|realt|agent|home|roof|plumb|hvac|electric|auto|mechanic|garage|contract|landscap|lawn|handyman|moving/.test(c)) return "Chris";
+  if (/real ?estate|realt|agent|home|roof|plumb|hvac|electric|auto|car ?wash|detailing|mechanic|garage|contract|landscap|lawn|handyman|moving/.test(c)) return "Chris";
   if (/salon|hair|beauty|nail|spa|barber|lash|brow|fitness|yoga|gym/.test(c)) return "Laura";
   if (/restaurant|cafe|coffee|bak|food|pizza|bar|grill|dessert|ice cream/.test(c)) return "Jessica";
   return "Sarah";

@@ -48,7 +48,7 @@ describe("badges", () => {
 
 describe("plan offer builder", () => {
   it("is offered for landscaping, cleaning and HVAC, each with a default service", () => {
-    expect(PLAN_OFFER_CATEGORIES).toEqual(["landscaping", "cleaning", "hvac"]);
+    expect(PLAN_OFFER_CATEGORIES).toEqual(["landscaping", "cleaning", "hvac", "carWash"]);
     for (const k of PLAN_OFFER_CATEGORIES) expect(PLAN_SERVICE[k]).toBeTruthy();
   });
 

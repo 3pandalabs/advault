@@ -1,5 +1,5 @@
-// Recurring plan offer builder (2026-11-20): Landscaping, Cleaning services
-// and HVAC sell plans, not one-off jobs. The owner picks a price per visit,
+// Recurring plan offer builder (2026-11-20): Landscaping, Cleaning services,
+// HVAC and Car wash sell plans, not one-off jobs. The owner picks a price per visit,
 // per month or per season, plus an optional first-visit deal, and this writes
 // the offer text. Nothing is stored here: the text goes into the offer box,
 // which the owner can still edit. Pure, tested (planOffer.test.ts).
@@ -10,7 +10,7 @@
 import type { CategoryKey } from "./key.js";
 
 // <shared>
-export const PLAN_OFFER_CATEGORIES: readonly CategoryKey[] = ["landscaping", "cleaning", "hvac"];
+export const PLAN_OFFER_CATEGORIES: readonly CategoryKey[] = ["landscaping", "cleaning", "hvac", "carWash"];
 
 export type PlanCadence = "visit" | "month" | "season";
 export type FirstVisitDeal = { kind: "percent"; value: number } | { kind: "amount"; value: number } | { kind: "free" };
@@ -30,6 +30,7 @@ export const PLAN_SERVICE: Partial<Record<CategoryKey, string>> = {
   landscaping: "Weekly mowing",
   cleaning: "Every-other-week home cleaning",
   hvac: "Heating and cooling maintenance plan",
+  carWash: "Unlimited car washes",
 };
 
 const CADENCE_TEXT: Record<PlanCadence, string> = {

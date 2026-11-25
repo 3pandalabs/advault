@@ -42,6 +42,20 @@ export const SCHEDULE_PRESETS: Partial<Record<CategoryKey, readonly SchedulePres
   plumbing: TRADE_PRESETS,
   hvac: TRADE_PRESETS,
   electrical: TRADE_PRESETS,
+  carWash: [
+    {
+      id: "daytime",
+      label: "Daytime, every day",
+      hint: "Every day 8 am to 6 pm, when people can drive over now.",
+      schedule: { days: EVERY_DAY, startHour: 8, endHour: 18 },
+    },
+    {
+      id: "weekend",
+      label: "Thursday to Sunday",
+      hint: "Thursday to Sunday 8 am to 6 pm, around the weekend.",
+      schedule: { days: ["thu", "fri", "sat", "sun"], startHour: 8, endHour: 18 },
+    },
+  ],
   restaurant: [
     {
       id: "lunch-dinner",

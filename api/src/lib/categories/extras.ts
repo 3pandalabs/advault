@@ -7,6 +7,7 @@
 //                 existing customers become the ad's ZIPs, with neighbor-price
 //                 copy.
 //   Electrical  — upgrade offer presets (EV charger, panel, generator, solar).
+//   Car wash    — first wash, full detail and membership presets.
 //   Cleaning    — the move-out / move-in preset.
 // (Real estate's open house and "just sold" ads live in lib/realty.)
 // Stored on campaigns.category_extras; the route is routes/categoryExtras.ts.
@@ -179,6 +180,26 @@ export const OFFER_PRESETS: Partial<Record<CategoryKey, readonly OfferPreset[]>>
       label: "Solar hookup",
       offer: "Solar and battery hookups by licensed electricians. Panel and wiring checked first. Free estimates.",
       callToAction: "Get a free estimate",
+    },
+  ],
+  carWash: [
+    {
+      id: "first-wash",
+      label: "First wash deal",
+      offer: "$5 off your first full-service wash. Hand dried, windows and wheels included. No appointment needed.",
+      callToAction: "Visit us today",
+    },
+    {
+      id: "detail",
+      label: "Full detail",
+      offer: "Full interior and exterior detail from $149. Vacuum, shampoo, wash and wax. Same-day appointments.",
+      callToAction: "Book a detail",
+    },
+    {
+      id: "membership",
+      label: "Wash membership",
+      offer: "Unlimited washes from $29 a month. Come as often as you like. Cancel anytime.",
+      callToAction: "Join today",
     },
   ],
   cleaning: [

@@ -14,6 +14,7 @@ const CTA_BY_CATEGORY: Record<string, string[]> = {
   Restaurant: ["Order now", "Reserve a table", "Call now"],
   Landscaping: ["Get a free quote", "Call now", "Book a cleanup"],
   "Auto repair": ["Book a service", "Call now", "Get a free quote"],
+  "Car wash": ["Visit us today", "Book a detail", "Call now"],
   "Cleaning services": ["Book a clean", "Get a free quote", "Call now"],
 };
 
@@ -52,6 +53,7 @@ export function openingHoursSuggestions(category: string): string[] {
   if (category === "Plumbing" || category === "HVAC" || category === "Electrical") {
     return ["Mon-Fri 8am-6pm, Sat 9am-2pm", "Open 24/7 for emergencies", "Mon-Sat 7am-7pm"];
   }
+  if (category === "Car wash") return ["Daily 8am-6pm", "Mon-Sat 8am-7pm, Sun 9am-5pm", "Open 24 hours"];
   if (category === "Dentistry") return ["Mon-Fri 8am-5pm", "Mon-Thu 8am-7pm, Sat 9am-2pm", "Mon-Fri 9am-6pm"];
   return ["Mon-Fri 8am-6pm, Sat 9am-2pm", "Mon-Sat 9am-6pm", "Mon-Fri 9am-5pm"];
 }

@@ -40,6 +40,8 @@ const PALETTES: Record<string, string> = {
   plumbing: "#1f4e8c",
   hvac: "#1f4e8c",
   electrician: "#1f4e8c",
+  "car wash": "#0b5fa5",
+  carwash: "#0b5fa5",
   auto: "#2b2b2b",
   fitness: "#5b2be0",
   gym: "#5b2be0",
