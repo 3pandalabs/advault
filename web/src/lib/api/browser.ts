@@ -953,7 +953,8 @@ export function websiteCheckout(campaignId: string) {
 
 /** The site link and its private SiteVault edit link (owner only). */
 /** Is the campaign's website actually up (SiteVault live and the page loads)? */
-export const websiteReady = (campaignId: string) => api<{ ready: boolean }>(`/campaigns/${campaignId}/website/ready`);
+export type SiteLinkState = "live" | "loading" | "unpublished" | "paused" | "not_found" | "unknown";
+export const websiteReady = (campaignId: string) => api<{ ready: boolean; state?: SiteLinkState }>(`/campaigns/${campaignId}/website/ready`);
 
 export function getWebsite(campaignId: string) {
   // `campaign` is present when the site was renamed and the link was updated.

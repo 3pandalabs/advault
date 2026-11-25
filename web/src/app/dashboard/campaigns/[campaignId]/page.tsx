@@ -111,6 +111,10 @@ const LAUNCH_ERRORS: Record<string, string> = {
   open_house_over: "The open house date has passed, so this ad has nothing left to promote. Make a new campaign for your next listing or a “Just sold” ad.",
   landing_url_required:
     "Google needs a website link before your ad can go live. Add one under “Your website” below.",
+  website_not_published:
+    "Your website isn't published yet, so people who tap your ad wouldn't see it. Publish it on SiteVault, then launch.",
+  website_paused: "Your website is paused, so people who tap your ad couldn't see it. Renew it on SiteVault, then launch.",
+  website_not_found: "We couldn't find your website at that link. Check the link under “Your website” below.",
   no_resolvable_zip_codes: "Google did not recognise any of those ZIP codes.",
   // US housing-ads policy, re-checked at launch (lib/audience/policy.ts).
   housing_demographics_not_allowed:

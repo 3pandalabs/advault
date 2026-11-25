@@ -36,7 +36,8 @@ import { markAppUsed } from "../lib/sharedAccount/index.js";
 import { getObjectBytes, headObject } from "../plugins/r2.js";
 import { proPhotoKey } from "../render/enhance.js";
 import { isHousingCategory } from "../lib/audience/policy.js";
-import { fetchSiteOfferStatus, latestSiteOffer } from "../lib/siteOffer/index.js";
+import { latestSiteOffer } from "../lib/siteOffer/index.js";
+import { siteLinkState } from "../lib/siteOffer/siteLink.js";
 import { billingIdentity } from "../lib/testMode/index.js";
 import { isUndeliverableEmail } from "../lib/testMode/policy.js";
 import { SITE_OFFER_MAX_ATTEMPTS } from "../lib/siteOffer/policy.js";
@@ -674,16 +675,9 @@ export async function websiteRoutes(app: FastifyInstance) {
       const campaign = await loadOwnedCampaign(campaignId, req.userId!, reply);
       if (!campaign) return;
       const url = campaign.landingUrl;
-      const slug = slugFromSiteUrl(url);
-      if (!url || !slug) return { ready: Boolean(url) };
-      const status = await fetchSiteOfferStatus(slug);
-      if (!status || (status.siteState !== "live" && status.siteState !== "grace")) return { ready: false };
-      try {
-        const res = await fetch(url, { redirect: "follow", signal: AbortSignal.timeout(6_000) });
-        return { ready: res.ok };
-      } catch {
-        return { ready: false };
-      }
+      if (!url) return { ready: false };
+      const state = await siteLinkState(url);
+      return { ready: state === "live", state };
     },
   );
 
