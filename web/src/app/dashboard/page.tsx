@@ -21,6 +21,7 @@ import { CostSimulator } from "@/components/CostSimulator";
 import { Card, CardDescription, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { CampaignCard, isLaunched, type OfferChangeChip } from "./campaign-card";
+import { CampaignsSummary } from "./campaigns-summary";
 
 export default function CampaignsPage() {
   const [campaigns, setCampaigns] = useState<Campaign[] | null>(null);
@@ -137,6 +138,12 @@ export default function CampaignsPage() {
     );
   }
 
+  // Ads that all run on the customer's own Google billing: the AdVault balance
+  // has nothing to do with them, so the summary leaves it out.
+  const launchedStats = campaigns.filter(isLaunched).map((c) => stats?.get(c.id));
+  const ownBillingOnly =
+    launchedStats.length > 0 && launchedStats.every((s) => s !== undefined && !s.walletPays);
+
   return (
     <div>
       <BudgetBanner
@@ -155,6 +162,8 @@ export default function CampaignsPage() {
           <Button>New campaign</Button>
         </Link>
       </div>
+
+      <CampaignsSummary campaigns={campaigns} wallet={ownBillingOnly ? null : wallet} />
 
       <div className="space-y-3">
         {campaigns.map((c) => (
