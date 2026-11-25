@@ -1,3 +1,4 @@
+import cors from "@fastify/cors";
 import Fastify from "fastify";
 import { serializerCompiler, validatorCompiler } from "fastify-type-provider-zod";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -7,7 +8,7 @@ vi.mock("../lib/compliance/index.js", () => ({
   clientIp: (req: { headers: Record<string, string> }) => req.headers["cf-connecting-ip"] ?? null,
 }));
 const { contactRoutes } = await import("./contact.js");
-const { resetContactLimits, CONTACT_PER_HOUR, CONTACT_PER_IP_PER_HOUR } = await import("../lib/contact.js");
+const { corsOrigins, resetContactLimits, CONTACT_PER_HOUR, CONTACT_PER_IP_PER_HOUR } = await import("../lib/contact.js");
 
 const good = { name: "Sam Lee", email: "sam@example.com", subject: "My ad", message: "Hello <b>there</b>" };
 const fetchMock = vi.fn();
@@ -51,6 +52,27 @@ describe("POST /contact", () => {
     await post({ ...good, subject: "Hi\r\nBcc: x@example.com" }, "1.1.1.1", "user-1");
     expect(sent().text).toContain("(signed in as user user-1)");
     expect(sent().subject).toBe("AdVault contact: Hi Bcc: x@example.com");
+  });
+
+  it("sends 3pandalabs.com's form to the company inbox, and no other site value", async () => {
+    expect((await post({ ...good, site: "3pandalabs" })).statusCode).toBe(204);
+    expect(sent()).toMatchObject({ to: "3pandas@3pandalabs.com", from: "advault@3pandalabs.com", fromName: "3PandaLabs contact form", subject: "3PandaLabs contact: My ad" });
+    expect((await post({ ...good, site: "evil" })).statusCode).toBe(400);
+  });
+
+  it("lets 3pandalabs.com call only this route from a browser", async () => {
+    const app = Fastify();
+    await app.register(cors, () => (req: { url: string }, cb: (e: Error | null, o: object) => void) => cb(null, { origin: corsOrigins(req.url, ["https://advault.test"]) }));
+    app.post("/contact", async () => "ok");
+    app.post("/auth/login", async () => "ok");
+    const allowed = async (url: string, origin: string) =>
+      (await app.inject({ method: "OPTIONS", url, headers: { origin, "access-control-request-method": "POST" } })).headers["access-control-allow-origin"];
+    expect(await allowed("/contact", "https://3pandalabs.com")).toBe("https://3pandalabs.com");
+    expect(await allowed("/contact", "https://advault.test")).toBe("https://advault.test");
+    expect(await allowed("/contact", "https://evil.test")).toBeFalsy();
+    expect(await allowed("/auth/login", "https://3pandalabs.com")).toBeFalsy();
+    expect(await allowed("/auth/login?x=/contact", "https://3pandalabs.com")).toBeFalsy();
+    expect(await allowed("/auth/login", "https://advault.test")).toBe("https://advault.test");
   });
 
   it("drops bots that fill the honeypot", async () => {

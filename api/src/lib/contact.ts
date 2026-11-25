@@ -33,7 +33,17 @@ export const contactBody = z.object({
   message: z.string().trim().min(1).max(4000),
   // Honeypot: hidden on the form, so only bots fill it.
   website: z.string().max(500).optional(),
+  // Set by 3pandalabs.com's contact page, so its mail goes to the company inbox.
+  site: z.literal("3pandalabs").optional(),
 });
+
+/** The company site may call POST /contact from the browser, and nothing else here. */
+export const CONTACT_ORIGINS = ["https://3pandalabs.com", "https://www.3pandalabs.com"];
+
+/** Allowed CORS origins for a request path. */
+export function corsOrigins(url: string, base: string[]): string[] {
+  return url.split("?", 1)[0] === "/contact" ? [...base, ...CONTACT_ORIGINS] : base;
+}
 
 type ContactInput = Pick<z.infer<typeof contactBody>, "name" | "email" | "subject" | "message">;
 
@@ -41,6 +51,7 @@ type ContactInput = Pick<z.infer<typeof contactBody>, "name" | "email" | "subjec
 const PRODUCTS = {
   AdVault: { to: () => process.env.CONTACT_EMAIL || "advault@3pandalabs.com", from: "advault@3pandalabs.com" },
   SiteVault: { to: () => process.env.SITEVAULT_CONTACT_EMAIL || "sitevault@3pandalabs.com", from: "sitevault@3pandalabs.com" },
+  "3PandaLabs": { to: () => process.env.ORG_CONTACT_EMAIL || "3pandas@3pandalabs.com", from: "advault@3pandalabs.com" },
 };
 
 export function contactMail(b: ContactInput, userId?: string, product: keyof typeof PRODUCTS = "AdVault"): Message {

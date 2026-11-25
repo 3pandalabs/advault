@@ -13,7 +13,7 @@ export async function contactRoutes(app: FastifyInstance) {
     if (body.website?.trim()) return reply.code(204).send();
     if (!allowContact(clientIp(req), Date.now())) return reply.code(429).send({ error: "rate_limited" });
     const res = mailerConfigured()
-      ? await sendMail([contactMail(body, req.userId)], (m) => req.log.info(m)).catch((err) => {
+      ? await sendMail([contactMail(body, req.userId, body.site === "3pandalabs" ? "3PandaLabs" : "AdVault")], (m) => req.log.info(m)).catch((err) => {
           req.log.error(err);
           return null;
         })
