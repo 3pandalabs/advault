@@ -1,9 +1,9 @@
-import { and, desc, eq, isNull } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, ne } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { requireAuth } from "../auth/plugin.js";
 import { db } from "../db/index.js";
-import { campaigns, creatives } from "../db/schema.js";
+import { campaigns, creatives, purchases } from "../db/schema.js";
 import { loadOwnedCampaign } from "../lib/ownership.js";
 import { budgetBelowMinimum } from "../lib/pricing/index.js";
 import { realtySchema } from "../lib/realty/index.js";
@@ -20,6 +20,7 @@ import { adScheduleSchema, normalizeAdSchedule } from "../lib/schedule/policy.js
 import {
   TARGETING_VIOLATION_DETAIL,
   audienceFiltersSchema,
+  isHousingCategory,
   normalizeAudienceFilters,
   targetAddressSchema,
   targetingViolations,
@@ -146,6 +147,38 @@ function blockedClaim(category: string, offerDetails: string | null | undefined)
   return b ? { error: "claim_not_allowed", detail: b.reason, phrase: b.phrase } : null;
 }
 
+// What the ad at Google was launched with (2026-11-24): never editable here
+// after launch, or the row would say one thing and Google another.
+const LAUNCHED_FIXED = ["businessCategory", "targetZipCodes", "radiusMiles", "targetAddress", "realty"] as const;
+
+// Money taken that this campaign still owes something for.
+const PAID_STATUSES = ["paid", "producing", "delivered"];
+
+async function hasPayment(campaignId: string, skus?: string[]): Promise<boolean> {
+  const [row] = await db
+    .select({ id: purchases.id })
+    .from(purchases)
+    .where(
+      and(
+        eq(purchases.campaignId, campaignId),
+        inArray(purchases.status, PAID_STATUSES),
+        ...(skus ? [inArray(purchases.sku, skus)] : []),
+      ),
+    )
+    .limit(1);
+  return Boolean(row);
+}
+
+/** An ad was made, or paid for, with this category in its script. Own uploads don't count. */
+async function categoryLocked(campaignId: string): Promise<boolean> {
+  const [made] = await db
+    .select({ id: creatives.id })
+    .from(creatives)
+    .where(and(eq(creatives.campaignId, campaignId), ne(creatives.kind, "upload")))
+    .limit(1);
+  return Boolean(made) || hasPayment(campaignId, ["new_ad", "cinematic", "cinematic_pack"]);
+}
+
 export async function campaignRoutes(app: FastifyInstance) {
   app.addHook("onRequest", requireAuth);
 
@@ -257,7 +290,33 @@ export async function campaignRoutes(app: FastifyInstance) {
 
       // Checked against the row as it WILL be, so changing only the category
       // to "Real estate" on a campaign with age filters is refused too.
-      const body = req.body as Partial<CampaignInput>;
+      let body = req.body as Partial<CampaignInput>;
+      if (campaign.googleCampaignResourceName && LAUNCHED_FIXED.some((k) => body[k] !== undefined)) {
+        return reply.code(409).send({ error: "campaign_already_launched" });
+      }
+      // A new category: what belonged to the old one goes. Crossing in or out
+      // of housing also drops the old area and audience, so a housing ad can
+      // never keep ZIPs or filters (and needs its own address, checked below).
+      const newCategory = body.businessCategory !== undefined && body.businessCategory !== campaign.businessCategory;
+      let categoryReset: Partial<typeof campaigns.$inferInsert> = {};
+      if (newCategory) {
+        if (await categoryLocked(campaignId)) return reply.code(409).send({ error: "category_locked" });
+        categoryReset = {
+          badges: null,
+          badgesAttestedAt: null,
+          badgesAttestedBy: null,
+          categoryExtras: null,
+          beforeAfter: null,
+          beforeAfterAttestedAt: null,
+          beforeAfterAttestedBy: null,
+        };
+        const housing = isHousingCategory(body.businessCategory);
+        if (housing !== isHousingCategory(campaign.businessCategory)) {
+          body = housing
+            ? { ...body, targetZipCodes: [], targetAddress: body.targetAddress ?? null, audienceFilters: null, realty: body.realty ?? null }
+            : { ...body, targetZipCodes: body.targetZipCodes ?? [], targetAddress: null, audienceFilters: null, realty: null };
+        }
+      }
       // The run length only matters at launch (it becomes Google's end date),
       // so once a campaign exists at Google changing it here would be a lie.
       if (body.runDays !== undefined && campaign.googleCampaignResourceName) {
@@ -299,6 +358,7 @@ export async function campaignRoutes(app: FastifyInstance) {
       const [updated] = await db
         .update(campaigns)
         .set({
+          ...categoryReset,
           ...body,
           ...(body.audienceFilters !== undefined ? { audienceFilters: targeting.audienceFilters } : {}),
           ...(body.adSchedule !== undefined ? { adSchedule: normalizeAdSchedule(body.adSchedule), scheduleMode: "custom" as const } : {}),
@@ -329,6 +389,10 @@ export async function campaignRoutes(app: FastifyInstance) {
       // A removed ad stays on record (its reports point at it).
       const removed = takenDownRefusal(campaign);
       if (removed) return reply.code(removed.status).send(removed.body);
+      // Only a draft that never ran and was never paid for (2026-11-24).
+      if (campaign.googleCampaignResourceName) return reply.code(409).send({ error: "campaign_already_launched" });
+      if (campaign.status === "rendering") return reply.code(409).send({ error: "campaign_rendering" });
+      if (await hasPayment(campaignId)) return reply.code(409).send({ error: "campaign_has_payment" });
 
       await db.delete(campaigns).where(eq(campaigns.id, campaignId));
       return reply.code(204).send();
