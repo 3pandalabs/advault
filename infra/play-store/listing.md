@@ -22,6 +22,7 @@ HOW IT WORKS
 SIMPLE PRICING
 • From $55 a month to keep your ad running: $20 for AdVault plus your ad budget (from $35), which goes to Google.
 • $10 for each new ad we make.
+• Optional: a website for $10, and extra offer changes for $2 each (one a month is included with the plan).
 • Or run an ad just once, with no monthly plan.
 • No contract. Cancel any time.
 

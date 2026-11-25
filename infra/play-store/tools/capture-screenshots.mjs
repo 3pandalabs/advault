@@ -43,6 +43,8 @@ for (const [file, selector] of SHOTS) {
     await page.evaluate(() => window.scrollTo(0, 0));
   }
   await page.waitForTimeout(800);
+  // The panda helper button would cover the text underneath.
+  await page.evaluate(() => document.querySelectorAll('[aria-label="Ask the AdVault panda"]').forEach((e) => (e.style.visibility = "hidden")));
   await page.screenshot({ path: RAW + file });
   console.log(`captured ${file}`);
 }
