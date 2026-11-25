@@ -26,7 +26,7 @@ const STATUS_TONE: Record<CampaignStatus, "neutral" | "pending" | "success" | "d
   failed: "danger",
 };
 
-const STATUS_LABEL: Record<CampaignStatus, string> = {
+export const STATUS_LABEL: Record<CampaignStatus, string> = {
   draft: "Draft",
   rendering: "Rendering",
   ready: "Ready to launch",
