@@ -11,7 +11,7 @@ const SOCIAL = [
 
 export function FollowUs({ className = "" }: { className?: string }) {
   return (
-    <div className={`flex basis-full flex-wrap items-center gap-x-5 gap-y-2 pb-2 text-sm ${className}`}>
+    <div className={`flex basis-full flex-wrap items-center gap-x-5 gap-y-2 pb-2 text-sm sm:basis-auto sm:ml-auto sm:pb-0 ${className}`}>
       <span className="flex items-center gap-3 sm:ml-auto">
         Follow us
         {SOCIAL.map((s) => (

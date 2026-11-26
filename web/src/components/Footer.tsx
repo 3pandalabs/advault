@@ -53,9 +53,9 @@ export function Footer() {
         <Link href="/contact" className="text-zinc-400 hover:text-zinc-200">
           Contact us
         </Link>
+        <FollowUs className="text-zinc-400" />
       </div>
       <div className="mx-auto flex w-full max-w-5xl flex-wrap items-center justify-between gap-2 text-sm text-zinc-500">
-        <FollowUs />
         <span>&copy; 3PandaLabs LLC, USA.</span>
         <span>All rights reserved.</span>
         <p className="mt-1 basis-full text-xs text-zinc-500">Built by pandas. Loved by people.</p>
