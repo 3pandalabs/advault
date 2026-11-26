@@ -1,8 +1,11 @@
+"use client";
+
 import Link from "next/link";
 import { timesShownEstimate } from "@/lib/budget";
 import { ADD_MORE_LINE } from "@/lib/spread";
 import { shownPrice } from "@/lib/testMode";
 import { formatMoney } from "@/lib/utils";
+import { useInAndroidApp } from "@/components/AppPayments";
 
 // The price, said the same way everywhere (owner decision 2026-11-19, "from
 // $55 a month"): the price lines and the trust line for Keep it running. Used
@@ -36,6 +39,7 @@ export function PlanPriceLines({
   addMoreHref?: string;
   className?: string;
 }) {
+  const inApp = useInAndroidApp(); // TODO(play-billing): no top-up link in the Android app
   const est = timesShownEstimate(budgetCents ?? 3_500, "USD");
   return (
     <div className={`text-sm ${className}`}>
@@ -76,7 +80,7 @@ export function PlanPriceLines({
         and no recharge while paused.
       </p>
       <p className="mt-1 text-xs text-zinc-400">
-        {addMoreHref ? (
+        {addMoreHref && !inApp ? (
           <Link href={addMoreHref} className="text-amber-300 underline-offset-2 hover:underline">
             {ADD_MORE_LINE}
           </Link>

@@ -5,6 +5,7 @@ import type { BadgeId } from "@/lib/categories/badges";
 import type { ClaimFlag } from "@/lib/categories/claims";
 import type { CategoryExtras } from "@/lib/categories/extras";
 import type { AdSchedule } from "@/lib/schedule";
+import { APP_PAYMENTS_ERROR, APP_PAYMENTS_MESSAGE, isInAndroidApp, isPaymentRequest, stripCheckoutLinks } from "@/lib/appPayments";
 
 // Browser-side calls go to the public, Cloudflare-proxied hostname. The
 // orange-to-orange restriction that forces server-side code onto
@@ -93,6 +94,13 @@ async function doRefresh(rejected: string | null): Promise<string | null> {
 // exceptional. Retry once after refreshing; a second 401 means the refresh
 // token is gone too and the caller should send the advertiser to /login.
 export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
+  // TODO(play-billing): Android app = payments on the website only (CLAUDE.md
+  // "Android app: payments on the website only"). Refuse a call that starts a
+  // checkout before it is sent, and drop checkout links from every response.
+  const inApp = isInAndroidApp();
+  if (inApp && isPaymentRequest(init.method, path)) {
+    throw new ApiError(403, APP_PAYMENTS_ERROR, APP_PAYMENTS_MESSAGE);
+  }
   const send = (token: string | null) =>
     fetch(`${API_URL}${path}`, {
       ...init,
@@ -137,7 +145,9 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
     const detail = body?.detail ?? (signedOut ? "You were signed out. Please sign in again." : undefined);
     throw new ApiError(res.status, body?.error ?? "request_failed", detail, fields, body as Record<string, unknown> | null);
   }
-  return res.status === 204 ? (undefined as T) : res.json();
+  if (res.status === 204) return undefined as T;
+  const data = (await res.json()) as T;
+  return inApp ? stripCheckoutLinks(data) : data;
 }
 
 // --- shared response types -------------------------------------------------

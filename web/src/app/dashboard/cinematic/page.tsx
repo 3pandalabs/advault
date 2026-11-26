@@ -14,6 +14,7 @@ import {
 } from "@/lib/api/browser";
 import { Badge, Card, CardDescription, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { AppPaymentsNotice, useInAndroidApp } from "@/components/AppPayments";
 import { formatDate } from "@/lib/utils";
 import { SuggestionChips } from "@/components/SuggestionChips";
 import { cinematicDescription } from "@/lib/suggestions";
@@ -45,6 +46,8 @@ export default function CinematicPage() {
   const aspectRatio = "9:16";
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // TODO(play-billing): Android app = payments on the website only.
+  const inApp = useInAndroidApp();
 
   const refresh = () =>
     Promise.all([cinematicQuote(), listCampaigns(), listCinematicOrders()])
@@ -73,6 +76,7 @@ export default function CinematicPage() {
   }, [orders]);
 
   async function onOrder() {
+    if (inApp && (quote?.creditsLeft ?? 0) === 0) return; // TODO(play-billing): pay on the website
     setBusy(true);
     setError(null);
     try {
@@ -172,9 +176,13 @@ export default function CinematicPage() {
                 Or get {quote.pack.credits} for {quote.pack.display.price} ({quote.pack.display.each} each).
                 Use them on any campaign, any time.
               </p>
-              <Button variant="outline" onClick={onBuyPack} disabled={busy}>
-                Get {quote.pack.credits} for {quote.pack.display.price}
-              </Button>
+              {inApp ? (
+                <AppPaymentsNotice />
+              ) : (
+                <Button variant="outline" onClick={onBuyPack} disabled={busy}>
+                  Get {quote.pack.credits} for {quote.pack.display.price}
+                </Button>
+              )}
             </div>
           ) : null}
         </Card>
@@ -240,17 +248,22 @@ export default function CinematicPage() {
             few seconds are your own photo.
           </p>
 
-          <Button
-            className="mt-4"
-            onClick={onOrder}
-            disabled={busy || !campaignId || description.trim().length < 20}
-          >
-            {busy
-              ? "Planning your shots… (up to a minute)"
-              : credits > 0
-                ? "Make it — uses 1 pack credit"
-                : `Make it — ${quote.display.amount}`}
-          </Button>
+          {/* TODO(play-billing): a paid order can't start in the Android app; pack credits still work. */}
+          {inApp && credits === 0 ? (
+            <AppPaymentsNotice className="mt-4" />
+          ) : (
+            <Button
+              className="mt-4"
+              onClick={onOrder}
+              disabled={busy || !campaignId || description.trim().length < 20}
+            >
+              {busy
+                ? "Planning your shots… (up to a minute)"
+                : credits > 0
+                  ? "Make it — uses 1 pack credit"
+                  : `Make it — ${quote.display.amount}`}
+            </Button>
+          )}
           {campaigns.length === 0 ? (
             <p className="mt-2 text-sm text-zinc-400">
               You&apos;ll need a <Link href="/dashboard/campaigns">campaign</Link> first.

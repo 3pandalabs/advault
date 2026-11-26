@@ -21,6 +21,7 @@ import { AttestationChecks, useAttestation } from "@/components/AttestationCheck
 import { formatDate } from "@/lib/utils";
 import { WhatsAppPrompt } from "@/components/WhatsAppOptIn";
 import { EstimateProgress } from "./render-progress";
+import { AppPaymentsNotice, useInAndroidApp } from "@/components/AppPayments";
 
 // "Change my offer" (api lib/offerSwap, 2026-11-21) on a launched campaign.
 // A cheap re-cut of the running ad with the new offer: same photos, motion
@@ -73,6 +74,8 @@ export function ChangeOfferCard({ campaign }: { campaign: Campaign }) {
   const [photo, setPhoto] = useState<File | null>(null);
   const [ticks, setTicks, attestation] = useAttestation();
   const [busy, setBusy] = useState(false);
+  // TODO(play-billing): Android app = payments on the website only.
+  const inApp = useInAndroidApp();
   const [error, setError] = useState<string | null>(null);
   // Bumped to reload; also re-polls while something is being made or is
   // with Google (5 s while making or publishing, so "Ready to check" shows
@@ -204,7 +207,19 @@ export function ChangeOfferCard({ campaign }: { campaign: Campaign }) {
         </p>
       )}
 
-      {current && <CurrentChange change={current} busy={busy} onPutLive={putLive} onPay={payAgain} onCancel={notNow} priceLine={priceLine} />}
+      {current && (
+        <CurrentChange
+          change={current}
+          busy={busy}
+          onPutLive={putLive}
+          onPay={payAgain}
+          onCancel={notNow}
+          priceLine={priceLine}
+          // TODO(play-billing): a paid change can't be paid for in the Android app.
+          inApp={inApp}
+          payInApp={inApp && quote.charge === "paid"}
+        />
+      )}
 
       {editing && !current && (
         <div className="mt-4 space-y-3 text-sm">
@@ -280,9 +295,15 @@ function CurrentChange({
   onPutLive,
   onPay,
   onCancel,
+  inApp = false,
+  payInApp = false,
 }: {
   change: OfferChange;
   busy: boolean;
+  /** Inside the Android app (waiting_payment = always paid: no Pay button there). */
+  inApp?: boolean;
+  /** Android app + this change costs money: no pay / put-live-and-pay button, the notice instead. */
+  payInApp?: boolean;
   priceLine: string;
   onPutLive: (c: OfferChange) => void;
   onPay: (c: OfferChange) => void;
@@ -353,10 +374,13 @@ function CurrentChange({
             <p className="text-zinc-400">We set it to end on {formatDate(change.endsAt)}. To change that, make it again with a date.</p>
           )}
           <p className="text-zinc-300">{priceLine}</p>
+          {payInApp && <AppPaymentsNotice />}
           <div className="flex flex-wrap gap-2">
-            <Button onClick={() => onPutLive(change)} disabled={busy}>
-              Put it live
-            </Button>
+            {!payInApp && (
+              <Button onClick={() => onPutLive(change)} disabled={busy}>
+                Put it live
+              </Button>
+            )}
             <Button variant="ghost" onClick={() => onCancel(change)} disabled={busy}>
               Discard this preview
             </Button>
@@ -365,9 +389,12 @@ function CurrentChange({
       )}
       {change.stage === "waiting_payment" && (
         <div className="flex flex-wrap gap-2">
-          <Button onClick={() => onPay(change)} disabled={busy}>
-            Pay and put it live
-          </Button>
+          {/* Waiting for payment is always a paid change. */}
+          {inApp ? <AppPaymentsNotice className="w-full" /> : (
+            <Button onClick={() => onPay(change)} disabled={busy}>
+              Pay and put it live
+            </Button>
+          )}
           <Button variant="ghost" onClick={() => onCancel(change)} disabled={busy}>
             Cancel
           </Button>

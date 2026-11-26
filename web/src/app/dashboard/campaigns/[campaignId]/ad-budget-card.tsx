@@ -8,6 +8,7 @@ import { wizardTopupKey } from "@/lib/budget";
 import { MonthlyBudgetCard } from "@/components/MonthlyBudgetCard";
 import { ADD_MORE_LINE } from "@/lib/spread";
 import { formatMoney } from "@/lib/utils";
+import { useInAndroidApp } from "@/components/AppPayments";
 
 /**
  * "Add to your ad budget" on the campaign page (top-up-first model,
@@ -26,6 +27,7 @@ export function AdBudgetCard({ campaign, wallet }: { campaign: Campaign; wallet:
     }
   });
 
+  const inApp = useInAndroidApp(); // TODO(play-billing): TopUpPicker shows the notice in the app
   if (!wallet) return null;
   const balance = wallet.balanceMinor;
 
@@ -38,8 +40,8 @@ export function AdBudgetCard({ campaign, wallet }: { campaign: Campaign; wallet:
         You only pay for what Google delivers. Unused budget stays in your account.
       </CardDescription>
       <MonthlyBudgetCard className="mt-3" />
-      <p className="mt-2 text-sm text-zinc-300">{ADD_MORE_LINE} More budget means more days of showing.</p>
-      <p className="mt-4 text-sm font-medium text-zinc-200">Add a one-time top-up</p>
+      {!inApp && <p className="mt-2 text-sm text-zinc-300">{ADD_MORE_LINE} More budget means more days of showing.</p>}
+      {!inApp && <p className="mt-4 text-sm font-medium text-zinc-200">Add a one-time top-up</p>}
       <div className="mt-2">
         <TopUpPicker
           currency={wallet.currencyCode}

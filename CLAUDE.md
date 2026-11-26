@@ -44,6 +44,45 @@ Brand assets (`logo/`, `background/`, `footer/`, `attribution/`) are copied
 from `3pandalabs/brand` into `web/src/components/`, not referenced at runtime —
 same copy-not-import convention as the other apps.
 
+## Android app: payments on the website only (TODO: revisit Play alternative billing at 10%)
+
+**Temporary, owner decision 2026-11-26 (US-only Play launch).** Google Play's
+US rules make taking Stripe payments inside the app, or linking out to a
+payment page, need a Google program and a ~10% fee. So inside the Android app
+(the TWA above) there is **no way to start a payment and no link to one**;
+people pay on the website in a normal browser. Code: `web/src/lib/appPayments.ts`
+(pure, tested by `node scripts/app-payments-check.mjs` in `web/`) and
+`web/src/components/AppPayments.tsx`; every spot is marked `TODO(play-billing)`.
+
+- **Detection** (`detectAndroidApp`): `document.referrer` starts with
+  `android-app://com.threepandalabs.advault`, or `?source=twa`
+  (`android/twa-manifest.json` startUrl + shortcut, and `build.gradle`; needs a
+  new app build), or display-mode standalone AND an Android user agent. A yes
+  is remembered in sessionStorage (`advault.inAndroidApp`, try/catch) because
+  in-app navigation loses the referrer; the root layout's `AppContextRecorder`
+  records it on the first page. Don't add `?source=twa` to `web/src/app/manifest.ts`
+  (browser installs).
+- **Central guard** in `api()` (`lib/api/browser.ts`): in the app, a POST that
+  only ever starts a checkout (`PAYMENT_ROUTES`: `/wallet/topup`,
+  `/subscription`, `/campaigns/:id/website/checkout`,
+  `/offer-changes/:id/checkout`, `/cinematic/packs`) throws `ApiError 403
+  payments_unavailable_in_app` before anything is sent, and every response has
+  its `redirectUrl` / `checkoutUrl` nulled (`stripCheckoutLinks`). Calls that
+  are only sometimes paid (new-ad order, make a website, confirm an offer
+  change, cinematic order with pack credits) stay open so their free case
+  works; their buttons are hidden when they would charge.
+- **UI**: payment buttons are replaced by `AppPaymentsNotice`, whose text is
+  the one constant `APP_PAYMENTS_MESSAGE` (plain text: no link, button or
+  address). Use `useInAndroidApp()` / `WebOnlyPayment` for any NEW payment
+  button, and add a new checkout-only route to `PAYMENT_ROUTES`. Free actions
+  (launch on existing balance, edit, pause/resume, audience, results, stop
+  renewing / cancel, "Just this once") keep working.
+- Left as is: the Google Ads "Open Google billing" link on onboarding (the
+  advertiser's card goes to Google, not to us) and plain-text prices.
+- **To undo**: delete the guard lines in `api()`, the `inApp` branches
+  (`grep -rn "play-billing" web/src`), the two files above, and the startUrl
+  query (or keep it, harmless).
+
 ## Git flow
 
 Never commit directly to `main`. Branch → PR → merge, committing as

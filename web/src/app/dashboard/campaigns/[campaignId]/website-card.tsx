@@ -18,6 +18,7 @@ import {
 } from "@/lib/api/browser";
 import { Card, CardDescription, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { AppPaymentsNotice, useInAndroidApp } from "@/components/AppPayments";
 import { Input } from "@/components/ui/input";
 import { SITEVAULT_ACCOUNT_URL, siteVaultSlug } from "@/lib/sitevault";
 import { SuggestionChips } from "@/components/SuggestionChips";
@@ -168,6 +169,9 @@ export function WebsiteCard({
   // $10 website fee: the made-but-unpaid site, and the price ("$10"; null = free).
   const [pendingSite, setPendingSite] = useState<PendingSite | null>(null);
   const [websiteFee, setWebsiteFee] = useState<string | null | undefined>(undefined);
+  // TODO(play-billing): no $10 website fee checkout inside the Android app (pay on the website).
+  const inApp = useInAndroidApp();
+  const feeInApp = inApp && Boolean(websiteFee);
   // The inline SiteVault editor: "welcome" right after the site is made (or
   // paid for), "edit" from the Edit my website button, "closed" once dismissed.
   const [editorOpen, setEditorOpen] = useState<"welcome" | "edit" | "closed" | null>(null);
@@ -494,9 +498,13 @@ export function WebsiteCard({
                 Publish it for {pendingSite.display ?? "$10"} once; Pro (visitor stats) stays included while your
                 AdVault plan runs.
               </p>
-              <Button onClick={payForWebsite} disabled={busy}>
-                {busy ? "Opening payment…" : `Pay ${pendingSite.display ?? "$10"} and publish`}
-              </Button>
+              {inApp ? (
+                <AppPaymentsNotice />
+              ) : (
+                <Button onClick={payForWebsite} disabled={busy}>
+                  {busy ? "Opening payment…" : `Pay ${pendingSite.display ?? "$10"} and publish`}
+                </Button>
+              )}
             </>
           )}
           {editUrl && (
@@ -573,9 +581,13 @@ export function WebsiteCard({
 
       {!locked && !campaign.landingUrl && mode === "view" && !accountSite && !pendingSite && (
         <div className="mt-4 flex flex-col gap-2 sm:flex-row">
-          <Button onClick={() => setMode("make")}>
-            {websiteFee ? `Make me a website, ${websiteFee}` : "Make me a website"}
-          </Button>
+          {feeInApp ? (
+            <AppPaymentsNotice />
+          ) : (
+            <Button onClick={() => setMode("make")}>
+              {websiteFee ? `Make me a website, ${websiteFee}` : "Make me a website"}
+            </Button>
+          )}
           <Button variant="outline" onClick={() => setMode("link")}>
             I have a website
           </Button>
@@ -621,6 +633,9 @@ export function WebsiteCard({
               Deleted {deletedSite}. Now make the new website.
             </p>
           )}
+          {feeInApp ? (
+            <AppPaymentsNotice />
+          ) : (
           <EmbeddedBuilder
             campaignId={campaign.id}
             websiteFee={websiteFee}
@@ -638,6 +653,7 @@ export function WebsiteCard({
             onQuickForm={() => setMode("quick")}
             onCancel={() => setMode("view")}
           />
+          )}
         </div>
       )}
 
@@ -760,10 +776,13 @@ export function WebsiteCard({
               . The website is public.
             </span>
           </label>
+          {feeInApp && <AppPaymentsNotice />}
           <div className="flex gap-2">
-            <Button onClick={make} disabled={busy || !makeValid}>
-              {busy ? "Building your website…" : websiteFee ? `Create my website and pay ${websiteFee}` : "Create my website"}
-            </Button>
+            {!feeInApp && (
+              <Button onClick={make} disabled={busy || !makeValid}>
+                {busy ? "Building your website…" : websiteFee ? `Create my website and pay ${websiteFee}` : "Create my website"}
+              </Button>
+            )}
             <Button variant="ghost" onClick={() => setMode("view")} disabled={busy}>
               Cancel
             </Button>

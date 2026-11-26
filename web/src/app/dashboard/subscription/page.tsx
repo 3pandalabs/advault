@@ -17,6 +17,7 @@ import { formatDate, formatMoney } from "@/lib/utils";
 import { PlanPriceLines } from "@/components/PlanPriceLines";
 import { MonthlyBudgetCard } from "@/components/MonthlyBudgetCard";
 import { TopUpPicker } from "@/components/TopUpPicker";
+import { AppPaymentsNotice, useInAndroidApp } from "@/components/AppPayments";
 import { MONTHLY_AD_BUDGET_CENTS, monthlyTotalCents, oneMonthFromToday } from "@/lib/prices";
 
 // The subscription. This page is what makes someone a paying customer, and
@@ -61,6 +62,8 @@ export default function SubscriptionPage() {
   const [busy, setBusy] = useState(false);
   // The monthly ad budget a new plan starts with.
   const [startBudget, setStartBudget] = useState(MONTHLY_AD_BUDGET_CENTS);
+  // TODO(play-billing): no plan start / restart inside the Android app (pay on the website).
+  const inApp = useInAndroidApp();
 
   const refresh = () =>
     getSubscription()
@@ -249,6 +252,8 @@ export default function SubscriptionPage() {
                 <Button variant="ghost" onClick={onStopRenewing} disabled={busy}>
                   Stop renewing
                 </Button>
+              ) : oneTime && inApp ? (
+                <AppPaymentsNotice />
               ) : oneTime ? (
                 <Button onClick={onKeepRunning} disabled={busy}>
                   Keep it running
@@ -311,25 +316,31 @@ export default function SubscriptionPage() {
                   renewals. Your ad stops when its budget runs out.
                 </p>
               ) : null}
-              <p className="mt-4 mb-1 text-sm font-medium text-zinc-200">Your monthly ad budget</p>
-              <TopUpPicker mode="choose" currency="USD" value={startBudget} onChange={setStartBudget} showEstimate={false} />
-              <PlanPriceLines
-                className="mt-3"
-                testMode={testMode}
-                firstMonthIncluded={firstMonthAvailable}
-                budgetCents={startBudget}
-                addMoreHref="/dashboard/wallet"
-              />
-              <p className="mt-3 text-sm text-amber-200">
-                {firstMonthAvailable
-                  ? "Plan $0 today: your first month is included."
-                  : `Charged today: ${formatMoney(monthlyTotalCents(startBudget), "USD")} ($20 plan + your monthly ad budget; your included month was used by your first ad).`}{" "}
-                Renews at {formatMoney(monthlyTotalCents(startBudget), "USD")}/month from{" "}
-                {formatDate(oneMonthFromToday().toISOString())}. Cancel anytime in one click.
-              </p>
-              <Button className="mt-4" onClick={() => onSubscribe(plan.key)} disabled={busy}>
-                {oneTime ? "Turn on Keep it running" : firstMonthAvailable ? "Start my plan ($0 today)" : "Start my plan"}
-              </Button>
+              {inApp ? (
+                <AppPaymentsNotice className="mt-4" />
+              ) : (
+                <>
+                  <p className="mt-4 mb-1 text-sm font-medium text-zinc-200">Your monthly ad budget</p>
+                  <TopUpPicker mode="choose" currency="USD" value={startBudget} onChange={setStartBudget} showEstimate={false} />
+                  <PlanPriceLines
+                    className="mt-3"
+                    testMode={testMode}
+                    firstMonthIncluded={firstMonthAvailable}
+                    budgetCents={startBudget}
+                    addMoreHref="/dashboard/wallet"
+                  />
+                  <p className="mt-3 text-sm text-amber-200">
+                    {firstMonthAvailable
+                      ? "Plan $0 today: your first month is included."
+                      : `Charged today: ${formatMoney(monthlyTotalCents(startBudget), "USD")} ($20 plan + your monthly ad budget; your included month was used by your first ad).`}{" "}
+                    Renews at {formatMoney(monthlyTotalCents(startBudget), "USD")}/month from{" "}
+                    {formatDate(oneMonthFromToday().toISOString())}. Cancel anytime in one click.
+                  </p>
+                  <Button className="mt-4" onClick={() => onSubscribe(plan.key)} disabled={busy}>
+                    {oneTime ? "Turn on Keep it running" : firstMonthAvailable ? "Start my plan ($0 today)" : "Start my plan"}
+                  </Button>
+                </>
+              )}
             </Card>
           ))}
           {plans.length === 0 ? (

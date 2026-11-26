@@ -27,6 +27,7 @@ import {
 } from "@/lib/budget";
 import { TopUpPicker } from "@/components/TopUpPicker";
 import { PlanPriceLines } from "@/components/PlanPriceLines";
+import { AppPaymentsNotice, useInAndroidApp } from "@/components/AppPayments";
 import { SuggestionChips } from "@/components/SuggestionChips";
 import { ClaimWarnings, hasBlockedClaim } from "@/components/ClaimWarnings";
 import { PlanOfferBuilder } from "@/components/PlanOfferBuilder";
@@ -170,6 +171,9 @@ export default function NewCampaignPage() {
   const [writingSince, setWritingSince] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // TODO(play-billing): in the Android app the wizard saves the campaign but
+  // never starts the $10 checkout; they pay for the ad on the website.
+  const inApp = useInAndroidApp();
   const [isAdmin, setIsAdmin] = useState(false);
   // Admin testing as a customer / test customer: prices shown at the test price.
   const [testMode, setTestMode] = useState(false);
@@ -465,6 +469,8 @@ export default function NewCampaignPage() {
           setTimeout(() => router.push(`/dashboard/campaigns/${campaign.id}`), 2500);
           return;
         }
+      } else if (newAdPrice && !freeAd && inApp) {
+        // Android app: the campaign is saved; the ad is paid for on the website.
       } else if (newAdPrice) {
         // Pay first; the campaign page makes the ad once the payment lands.
         const { checkout } = await orderNewAd(campaign.id, { ...adChoices(), attestation: attestation! });
@@ -1449,13 +1455,18 @@ export default function NewCampaignPage() {
               Launch offer: your first ad is free (normally $10).
               We write the script and render your videos. Nothing runs until you launch.
             </p>
+          ) : newAdPrice && inApp ? (
+            <div className="mt-5 space-y-2 text-sm text-zinc-400">
+              <p>We save your campaign now. Making the ad costs {newAdPrice}, including up to two redos.</p>
+              <AppPaymentsNotice />
+            </div>
           ) : newAdPrice ? (
             <p className="mt-5 text-sm text-zinc-400">
               Making your ad costs {newAdPrice}, including up to two redos. You pay now, then we
               write the script and render your videos. Nothing runs until you launch.
             </p>
           ) : null}
-          {newAdPrice && !freeAd ? (
+          {newAdPrice && !freeAd && !inApp ? (
             <PlanPriceLines className="mt-4 rounded-lg border border-white/10 p-3" testMode={testMode} />
           ) : null}
           {freeAd || newAdPrice ? null : (
@@ -1482,7 +1493,15 @@ export default function NewCampaignPage() {
               Back
             </Button>
             <Button onClick={onFinish} disabled={busy || !extrasReady || !attestation}>
-              {busy ? "Creating…" : freeAd ? "Make my free ad" : newAdPrice ? `Pay ${newAdPrice} and make my ad` : "Generate my ads"}
+              {busy
+                ? "Creating…"
+                : freeAd
+                  ? "Make my free ad"
+                  : newAdPrice && inApp
+                    ? "Save my campaign"
+                    : newAdPrice
+                      ? `Pay ${newAdPrice} and make my ad`
+                      : "Generate my ads"}
             </Button>
           </div>
         </Card>

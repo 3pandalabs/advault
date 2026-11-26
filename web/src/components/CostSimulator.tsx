@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { TopUpPicker } from "@/components/TopUpPicker";
+import { useInAndroidApp } from "@/components/AppPayments";
 import { timesShownEstimate } from "@/lib/budget";
 import { MIN_AD_BUDGET_CENTS, monthlyBreakdown } from "@/lib/prices";
 import { formatMoney } from "@/lib/utils";
@@ -104,6 +105,7 @@ export function CostSimulator({
   addMoreHref?: string;
 }) {
   const [budget, setBudget] = useState(MIN_AD_BUDGET_CENTS);
+  const inApp = useInAndroidApp(); // TODO(play-billing): no top-up link in the Android app
   // Own-video uploads are paused for customers (CLAUDE.md 2026-11-16), so the
   // "I'll upload my own video" toggle is hidden. Restore it when they reopen.
   const ownVideo = false;
@@ -195,7 +197,7 @@ export function CostSimulator({
         {monthly
           ? "Change your monthly ad budget anytime. Want it shown more this month? "
           : "One payment. No renewals. Your ad stops when the budget runs out. Want it shown more? "}
-        {addMoreHref ? (
+        {addMoreHref && !inApp ? (
           <Link href={addMoreHref} className="text-amber-300 underline-offset-2 hover:underline">
             Add a one-time top-up anytime.
           </Link>

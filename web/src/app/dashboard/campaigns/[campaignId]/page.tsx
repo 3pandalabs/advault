@@ -62,6 +62,7 @@ import { Button } from "@/components/ui/button";
 import { formatDate, formatDuration, formatMoney } from "@/lib/utils";
 import { actsAsAdmin } from "@/lib/testMode";
 import { PlanPriceLines } from "@/components/PlanPriceLines";
+import { AppPaymentsNotice, useInAndroidApp } from "@/components/AppPayments";
 
 // "Writing the script" survives a refresh: sessionStorage, ignored after 2 min.
 const WRITING_MAX_MS = 120_000;
@@ -223,6 +224,8 @@ export default function CampaignDetailPage({
     }
   });
   const [firstMonthAvailable, setFirstMonthAvailable] = useState(true);
+  // TODO(play-billing): the Android app shows no way to pay (pay on the website).
+  const inApp = useInAndroidApp();
   const [testMode, setTestMode] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -638,10 +641,11 @@ export default function CampaignDetailPage({
                   ? "This campaign has no ad yet. Your first ad is free (launch offer)."
                   : `This campaign has no ad yet. Making it costs ${newAd.display}, including up to two redos.`}
               </CardDescription>
-              {newAd.order && (
+              {newAd.order && inApp && !newAd.freeLaunchOffer && <AppPaymentsNotice className="w-full" />}
+              {newAd.order && !(inApp && !newAd.freeLaunchOffer) && (
                 <AttestationChecks className="w-full" value={orderTicks} onChange={setOrderTicks} disabled={busy} />
               )}
-              {newAd.order && (
+              {newAd.order && !(inApp && !newAd.freeLaunchOffer) && (
                 <Button
                   size="sm"
                   disabled={busy || !orderAttestation}
@@ -664,12 +668,12 @@ export default function CampaignDetailPage({
                   {newAd.freeLaunchOffer ? "Make my free ad" : `Pay ${payLabel(newAd, orderSiteOffer)} and make my ad`}
                 </Button>
               )}
-              {newAd.order && (
+              {newAd.order && !inApp && (
                 <div className="w-full">
                   <SiteOfferOption status={newAd} checked={siteOfferTicked} onChange={setSiteOfferTicked} disabled={busy} />
                 </div>
               )}
-              {newAd.order && !newAd.freeLaunchOffer && (
+              {newAd.order && !newAd.freeLaunchOffer && !inApp && (
                 <PlanPriceLines
                   className="w-full"
                   testMode={testMode}
@@ -701,7 +705,7 @@ export default function CampaignDetailPage({
                     : `You've used this ad's free redos. A new version is ${newAd.display}, including two more redos.`}
                 </CardDescription>
               </div>
-              {redoConfirm ? (
+              {!canRedo && inApp ? null : redoConfirm ? (
                 <div className="flex items-center gap-2">
                   <Button variant="ghost" size="sm" disabled={busy} onClick={() => setRedoConfirm(false)}>
                     Cancel
@@ -736,8 +740,9 @@ export default function CampaignDetailPage({
                 </Button>
               )}
             </div>
-            {redoConfirm && <AttestationChecks className="mt-3" value={redoTicks} onChange={setRedoTicks} disabled={busy} />}
-            {metered && !canRedo && (
+            {!canRedo && inApp && <AppPaymentsNotice className="mt-3" />}
+            {redoConfirm && !(!canRedo && inApp) && <AttestationChecks className="mt-3" value={redoTicks} onChange={setRedoTicks} disabled={busy} />}
+            {metered && !canRedo && !inApp && (
               <SiteOfferOption status={newAd} checked={siteOfferTicked} onChange={setSiteOfferTicked} disabled={busy} />
             )}
             {metered && canRedo && siteOfferDeepLink && newAd.siteOffer && (
@@ -1059,13 +1064,14 @@ export default function CampaignDetailPage({
               </span>
             </label>
           </div>
-          {planOption === "monthly" && (
+          {planOption === "monthly" && inApp && <AppPaymentsNotice className="mt-3" />}
+          {planOption === "monthly" && !inApp && (
             <div className="mt-3">
               <p className="mb-1 text-sm font-medium text-zinc-200">Your monthly ad budget</p>
               <TopUpPicker mode="choose" currency="USD" value={planBudget} onChange={setPlanBudget} showEstimate={false} />
             </div>
           )}
-          {planOption === "monthly" && (
+          {planOption === "monthly" && !inApp && (
             <PlanPriceLines
               className="mt-3"
               testMode={testMode}
@@ -1075,22 +1081,24 @@ export default function CampaignDetailPage({
             />
           )}
           <div className="mt-4 flex flex-wrap gap-2">
-            <Button disabled={busy} onClick={onStartPlan}>
-              {busy
-                ? planOption === "once"
-                  ? "Saving…"
-                  : "Opening checkout…"
-                : planOption === "once"
-                  ? "Continue, just this once"
-                  : planPrompt.firstMonthIncluded
-                    ? "Start my plan ($0 today)"
-                    : "Restart my plan"}
-            </Button>
+            {!(inApp && planOption === "monthly") && (
+              <Button disabled={busy} onClick={onStartPlan}>
+                {busy
+                  ? planOption === "once"
+                    ? "Saving…"
+                    : "Opening checkout…"
+                  : planOption === "once"
+                    ? "Continue, just this once"
+                    : planPrompt.firstMonthIncluded
+                      ? "Start my plan ($0 today)"
+                      : "Restart my plan"}
+              </Button>
+            )}
             <Button variant="ghost" disabled={busy} onClick={() => setPlanPrompt(null)}>
               Not now
             </Button>
           </div>
-          <p className="mt-2 text-xs text-zinc-500">
+          <p className={`mt-2 text-xs text-zinc-500 ${inApp && planOption === "monthly" ? "hidden" : ""}`}>
             {planOption === "once"
               ? "Your ad budget is a one-time top-up on this page. You can turn on Keep it running later from Subscription; it then starts charging that day."
               : planPrompt.firstMonthIncluded
