@@ -268,6 +268,9 @@ export const adAccounts = pgTable(
     // reminders have gone out since.
     opsNotifiedAt: timestamp("ops_notified_at", { withTimezone: true }),
     opsReminderCount: integer("ops_reminder_count").notNull().default(0),
+    // When the customer was emailed "Your ad account is ready" (migration
+    // 0049, lib/customerEmails). Claimed atomically, so at most one per account.
+    readyEmailedAt: timestamp("ready_emailed_at", { withTimezone: true }),
 
     // 'active' | 'revoked' — set to 'revoked' when Google answers
     // invalid_grant, so the dashboard can prompt a reconnect instead of
@@ -813,6 +816,11 @@ export const creatives = pgTable(
     // The ad resource name at Google, once this creative is attached to the
     // campaign's ad group. Null means rendered and uploaded but not serving.
     googleAdResourceName: text("google_ad_resource_name"),
+    // "Your ad is ready" email (migration 0049, lib/customerEmails). Set only on
+    // the FIRST creative of a make (campaign + kind + version + purchase), the
+    // group's anchor, when the email is claimed: one email per make, not per
+    // format. NULL on every other creative.
+    readyEmailedAt: timestamp("ready_emailed_at", { withTimezone: true }),
 
     // Human review of customer-uploaded videos (lib/uploads/review.ts).
     // NULL for everything AdVault generated — those never need review.

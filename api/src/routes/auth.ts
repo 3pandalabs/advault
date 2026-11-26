@@ -15,6 +15,7 @@ import { acceptedTermsVersion, recordTermsAcceptance } from "../lib/compliance/i
 import { TERMS_VERSION } from "../lib/compliance/texts.js";
 import { knownCampaignId } from "../lib/siteVisits/index.js";
 import { notifyNewUser } from "../lib/newUserAlert.js";
+import { sendWelcomeEmail } from "../lib/customerEmails/index.js";
 import { normalizePhone } from "../lib/phone/index.js";
 import { whatsAppStateFor } from "../lib/offers/index.js";
 
@@ -103,6 +104,10 @@ export async function authRoutes(app: FastifyInstance) {
           businessCategory: body.businessCategory,
           fromAd: Boolean(signupCampaignId),
         },
+        (m) => req.log.warn(m),
+      );
+      sendWelcomeEmail(
+        { email: body.email.toLowerCase(), role: user.role, displayName: body.displayName, businessName: body.businessName },
         (m) => req.log.warn(m),
       );
 

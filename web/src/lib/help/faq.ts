@@ -14,7 +14,7 @@ export const FAQ = [
   },
   {
     q: "Do I need a Google Ads or YouTube account?",
-    a: "No. We create and run the ad account for you. You never log in to Google Ads, and you don't need a YouTube channel.",
+    a: "No. We create and run the ad account for you. You never log in to Google Ads, and you don't need a YouTube channel. Setting it up is usually quick, and we'll email you as soon as your ad account is ready.",
   },
   {
     q: "What does it cost to keep my ad running?",

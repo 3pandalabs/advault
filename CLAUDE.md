@@ -317,8 +317,8 @@ orphaned a budget on every failure. Don't split it back up.
   campaign. Low balance (under max(2 days of budget, $10)) shows a banner on
   the dashboard and campaign page, computed live by `GET /wallet` `budget`;
   the sync also pings ops via ntfy once per episode
-  (`campaigns.low_balance_alerted_at`, cleared when healthy). Still no
-  customer email. FAQ + terms: unused ad budget stays in the account and is
+  (`campaigns.low_balance_alerted_at`, cleared when healthy), and since
+  2026-11-26 emails the customer at the same moment ("Customer emails"). FAQ + terms: unused ad budget stays in the account and is
   refunded if they leave (terms §5, delete-account already refunds it).
   Under the picker, ONE line for the chosen amount (owner): "Your ad would be
   shown about X–Y times to people in your area." (`timesShownEstimate` =
@@ -1448,8 +1448,35 @@ reuse `lib/passwordReset` unchanged. **New sign-up alert (2026-11-26,
 `/auth/register` and `POST /internal/sitevault/accounts` (not an older SiteVault
 account being moved over, i.e. a `createdAt` over a day old, and never an
 admin-made test customer). Fire-and-forget: a mailer failure never touches the
-sign-up. Still no render-complete notification; the
-dashboard polls. Reset tokens are personal data: `lib/accountDeletion.ts`
+sign-up. Customers now get service emails too (next paragraph).
+
+**Customer emails (2026-11-26, migration 0049, `lib/customerEmails`).** The
+Android app sells nothing, so email (to the account's own address, from
+`advault@3pandalabs.com` as "AdVault", never the reset sender) is where a
+customer is told what to do next, with links to the website. Four, each
+fire-and-forget (a failure only logs, nothing is claimed or sent when the
+mailer is unconfigured): **welcome** (`/auth/register`, beside
+`notifyNewUser`; not SiteVault sign-ups) -> /dashboard/campaigns/new;
+**ad account ready** (`refreshPlatformBilling` sees platform billing go
+pending -> active; once per account, `ad_accounts.ready_emailed_at` claimed
+atomically) -> the newest unlaunched campaign, else /dashboard; **your ad is
+ready** (after every render and YouTube upload job: when every creative of a
+make, i.e. campaign + kind + version + purchase, is Ready = rendered AND on
+YouTube, or gave up, with at least one Ready; once per make via
+`creatives.ready_emailed_at` on the make's first creative; standard and
+cinematic only, never uploads or offer-change cuts; 0049 marked everything
+already on YouTube) -> the campaign page; **low ad budget** (`spendSync`, same
+once-per-episode mark as the ops ping) -> `#ad-budget` on the campaign page
+when one campaign is live, else /dashboard/wallet, with the real balance,
+daily total and days left. Skipped (`customerEmailSkip`, one rule): deleted
+accounts, test customers (`test_owner_id`) and any `*.invalid` email, and
+admins by REAL role (test mode or not). Internal and `marked_test` accounts
+get them. They share the gateway's `advault` quota (15/day in the mailer's
+`wrangler.jsonc`) with resets, the contact form and the new-user alert.
+Templates are pure (`templates.ts`, tested); the web copy for the managed
+setup says "Usually done quickly. We'll email you as soon as your ad account
+is ready." (campaign page, onboarding, launch's `billing_setup_pending`, FAQ):
+keep it true. Tests: `lib/customerEmails/*.test.ts` (PGlite). Reset tokens are personal data: `lib/accountDeletion.ts`
 deletes them with the account.
 
 ## The panda helper (2026-11-24, `web/src/lib/help`)

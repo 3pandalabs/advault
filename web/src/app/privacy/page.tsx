@@ -12,6 +12,8 @@ import { LegalPage } from "@/components/legal/LegalPage";
 // the implementation:
 //
 //   - the subprocessor table mirrors the configured providers in api/src/lib
+//   - the Resend row's service emails are api/src/lib/customerEmails (welcome, ad account
+//     ready, ad ready, low ad budget), sent only to the account's own email
 //   - "no cookies, no third-party trackers" is true only while web/src stays free of them
 //   - "Visit counts" is web/src/lib/visitCount.ts + 3pandalabs/admin visits/ (totals only)
 //   - "Visits from an AdVault ad" is campaign_site_visits + users.signup_campaign_id
@@ -430,8 +432,10 @@ export default function PrivacyPage() {
             </td>
             <td>
               To send a password-reset email when you ask for one, from
-              passwordReset@3pandalabs.com; or to deliver your contact-form message to us. We send
-              no marketing email
+              passwordReset@3pandalabs.com; to send service emails about your own account from
+              advault@3pandalabs.com (a welcome when you sign up, when your ad account is ready,
+              when your ad is ready, and when your ad budget is running low); or to deliver your
+              contact-form message to us. We send no marketing email
             </td>
           </tr>
           <tr>

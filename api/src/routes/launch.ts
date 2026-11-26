@@ -236,7 +236,7 @@ export async function launchRoutes(app: FastifyInstance) {
               : gate.code === "provisioning_incomplete"
                 ? "This ad account is still being set up."
                 : gate.code === "billing_setup_pending"
-                  ? "We're finishing your ad account's setup. Launch unlocks automatically, usually within a few hours."
+                  ? "We're finishing your ad account's setup. Launch unlocks automatically. Usually done quickly. We'll email you as soon as your ad account is ready."
                   : "This ad account is no longer connected.";
         return reply
           .code(gate.code === "account_revoked" ? 409 : 409)

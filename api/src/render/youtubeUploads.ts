@@ -8,6 +8,7 @@ import { mayPublishToYoutube } from "../lib/uploads/review.js";
 import { reportUrl } from "../lib/compliance/report.js";
 import { uploadVideo, YouTubeUploadError } from "../lib/youtube/upload.js";
 import { advanceOfferChangeForCreative } from "../lib/offerSwap/sweep.js";
+import { notifyAdReady } from "../lib/customerEmails/index.js";
 import {
   claimNextUploadJob,
   completeUploadJob,
@@ -179,6 +180,9 @@ async function runLoop(): Promise<void> {
     // ad at Google now (publishing -> add_to_google), not at the next swap
     // sweep. No-op for any other creative; never throws.
     await advanceOfferChangeForCreative(job.creativeId);
+    // "Your ad is ready" once every format of the make is on YouTube (or gave
+    // up). One email per make, claimed atomically. Background, never throws.
+    notifyAdReady(job.creativeId, (m) => log(m));
   }
 }
 
