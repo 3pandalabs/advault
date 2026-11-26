@@ -328,7 +328,7 @@ export default function OnboardingPage() {
           </div>
           <CardDescription>
             {isAwaitingPlatformSetup(account)
-              ? "Nothing for you to do: we finish the setup on our side, usually within a few hours. Meanwhile, create your first ad and top up your balance — Launch unlocks by itself once we're done."
+              ? "Nothing for you to do: we finish the setup on our side. Usually done quickly. We'll email you as soon as your ad account is ready. Meanwhile, create your first ad and top up your balance — Launch unlocks by itself once we're done."
               : account.billingMode === "platform"
                 ? "Top up your balance and your campaigns can go live. We pause them automatically if the balance runs out, so nothing overspends."
                 : "Google bills your card for ad spend. We bill you for your plan separately."}

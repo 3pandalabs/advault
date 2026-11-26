@@ -152,7 +152,7 @@ const LAUNCH_ERRORS: Record<string, string> = {
   manager_account:
     "That is a Google Ads manager account, which can't run campaigns itself. Set up an ad account under it instead.",
   billing_setup_pending:
-    "We're finishing your ad account's setup. Launch unlocks automatically, usually within a few hours.",
+    "We're finishing your ad account's setup. Launch unlocks automatically. Usually done quickly. We'll email you as soon as your ad account is ready.",
   currency_mismatch:
     "This campaign's budget currency doesn't match the ad account's. Create the campaign again in the account's currency.",
   provisioning_failed: "We couldn't set up your ad account just now. Please try again in a few minutes.",
@@ -1169,7 +1169,7 @@ export default function CampaignDetailPage({
             <>
               <CardDescription>
                 AdVault runs your ads for you — no Google or YouTube account needed. We set up
-                your ad account once, which usually takes a few hours.
+                your ad account once. Usually done quickly. We&apos;ll email you as soon as your ad account is ready.
               </CardDescription>
               <div className="mt-4">
                 <Button disabled={settingUp} onClick={onSetUpAccount}>
@@ -1196,7 +1196,7 @@ export default function CampaignDetailPage({
         ) : launchableAccounts.length === 0 ? (
           <CardDescription>
             We&apos;re setting up your ad account — nothing for you to do. Launch unlocks here
-            automatically, usually within a few hours.
+            automatically. Usually done quickly. We&apos;ll email you as soon as your ad account is ready.
           </CardDescription>
         ) : inReview.length > 0 ? (
           <CardDescription>{LAUNCH_ERRORS.video_pending_review}</CardDescription>

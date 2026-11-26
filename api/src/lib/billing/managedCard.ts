@@ -19,6 +19,7 @@ import {
   unfreezeCard,
 } from "../mercury/index.js";
 import { notifyOps } from "../ops/notify.js";
+import { notifyAdAccountReady } from "../customerEmails/index.js";
 import {
   findOperatorAccount,
   formatCustomerId,
@@ -250,6 +251,10 @@ export async function refreshPlatformBilling(account: AccountRow): Promise<"acti
       billingCheckedAt: new Date(),
       ...(funded ? { billingLinkStatus: "active", billingConfirmedAt: new Date() } : {}),
     });
+    // The operator added the card: tell the customer (the web says "We'll
+    // email you as soon as your ad account is ready"). Once per account
+    // (ad_accounts.ready_emailed_at), background, never throws.
+    if (funded && account.billingLinkStatus !== "active") notifyAdAccountReady(account);
     return funded ? "active" : "pending";
   } catch (err) {
     // A failed poll must not change the state; record that we looked.

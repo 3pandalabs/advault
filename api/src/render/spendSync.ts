@@ -13,6 +13,7 @@ import {
 import { applyEntry, DuplicateLedgerEntry, getBalance } from "../lib/wallet/index.js";
 import { resumeAllFundedCampaigns } from "../lib/billing/resume.js";
 import { notifyOps } from "../lib/ops/notify.js";
+import { notifyLowBudget } from "../lib/customerEmails/index.js";
 import { daysOfBudget, isLowBalance, lowBalanceEpisode } from "../lib/wallet/runway.js";
 import type { Currency } from "../lib/pricing/index.js";
 import { pauseForFunds } from "../lib/schedule/spread.js";
@@ -236,8 +237,8 @@ export async function runSpendSync(): Promise<{ synced: number; paused: number; 
 /**
  * One operator line per low-balance episode (migration 0034). The customer
  * sees the banner on the dashboard and campaign page (computed live from the
- * balance by GET /wallet); this tells us, so a nudge can follow. AdVault
- * sends customers no email (CLAUDE.md "Not used here").
+ * balance by GET /wallet); this tells us, and since 2026-11-26 the customer
+ * also gets ONE email per episode (same mark, lib/customerEmails).
  */
 async function lowBalanceAlerts(campaignIds: string[]): Promise<void> {
   if (campaignIds.length === 0) return;
@@ -272,6 +273,17 @@ async function lowBalanceAlerts(campaignIds: string[]): Promise<void> {
         priority: 2,
         tags: ["moneybag"],
       });
+      notifyLowBudget(
+        {
+          userId,
+          balanceMinor: balance,
+          dailyMinor: daily,
+          currency,
+          daysLeft: daysOfBudget(balance, daily),
+          campaigns: list.map((c) => ({ id: c.id, name: c.name })),
+        },
+        (m) => log(m),
+      );
     } catch (err) {
       log("low-balance check failed", { userId, error: String(err) });
     }

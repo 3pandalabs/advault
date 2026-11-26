@@ -14,6 +14,7 @@ import { renderOfferSlide } from "./offerSlide.js";
 import { slideVoice, voiceCacheKey } from "./slideVoice.js";
 import { offerSlideOf } from "../lib/offerSwap/policy.js";
 import { advanceOfferChangeForCreative } from "../lib/offerSwap/sweep.js";
+import { notifyAdReady } from "../lib/customerEmails/index.js";
 import { deleteUploadObjects } from "../lib/uploads/remove.js";
 import { hostname } from "node:os";
 import { createHash } from "node:crypto";
@@ -739,6 +740,9 @@ async function runLoop(slot: number): Promise<void> {
     // A cut of an offer change: move the change on now (preview ready as soon
     // as its last cut is), not at the next swap sweep. No-op otherwise; never throws.
     await advanceOfferChangeForCreative(job.creativeId);
+    // "Your ad is ready" once the make's last format is done (a failed format
+    // can be that last one). Background, never throws.
+    notifyAdReady(job.creativeId, (m) => log(m));
   }
 }
 
