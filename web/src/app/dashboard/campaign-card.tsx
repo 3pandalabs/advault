@@ -4,6 +4,7 @@ import { useId, useState } from "react";
 import Link from "next/link";
 import type { Campaign, CampaignStats, CampaignStatus, WhatsAppState } from "@/lib/api/browser";
 import { WhatsAppOfferLine } from "@/components/WhatsAppOptIn";
+import { useInAndroidApp } from "@/components/AppPayments";
 import { AUDIENCE_FILTERS_ENABLED } from "@/lib/audience";
 import { Badge, Card, CardDescription, CardTitle } from "@/components/ui/card";
 import { buttonVariants } from "@/components/ui/button";
@@ -44,7 +45,7 @@ export function isLaunched(c: Campaign): boolean {
 
 type Action = { label: string; href: string };
 
-function actionsFor(c: Campaign, stats: CampaignStats | undefined): Action[] {
+function actionsFor(c: Campaign, stats: CampaignStats | undefined, inApp = false): Action[] {
   const page = `/dashboard/campaigns/${c.id}`;
   const out: Action[] = [{ label: "Open campaign", href: page }];
   // AdVault removed this ad: nothing to change or fund (the API refuses too).
@@ -58,6 +59,8 @@ function actionsFor(c: Campaign, stats: CampaignStats | undefined): Action[] {
   // The AdVault ad budget pays: top up on the campaign page (checkout comes
   // back to it). Launched on the customer's own Google billing: nothing of
   // ours to top up. Not launched yet: the Balance page.
+  // TODO(play-billing): no top-up button inside the Android app.
+  if (inApp) return out;
   if (stats?.walletPays) {
     out.push({ label: "Top up budget", href: `${page}#ad-budget` });
   } else if (!c.googleCampaignResourceName) {
@@ -199,7 +202,8 @@ export function CampaignCard({
 }) {
   const chip = offerChange ? offerChipText(offerChange) : null;
   const launched = isLaunched(c);
-  const actions = actionsFor(c, stats);
+  const inApp = useInAndroidApp();
+  const actions = actionsFor(c, stats, inApp);
   const page = `/dashboard/campaigns/${c.id}`;
   return (
     // No link wraps the card: the title and the buttons are separate links,

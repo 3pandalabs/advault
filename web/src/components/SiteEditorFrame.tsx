@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getWebsiteEditor } from "@/lib/api/browser";
 import { SiteVaultLink } from "@/components/SiteVaultLink";
+import { useInAndroidApp } from "@/components/AppPayments";
 
 // SiteVault's full editor inside AdVault (2026-11-19). Used by "Your website"
 // (/dashboard/website) and inline on the campaign page's website card, right
@@ -166,6 +167,12 @@ export function SiteEditorFrame({
 
 /** A website built on SiteVault keeps its own editor there. */
 export function EditOnSiteVault({ slug }: { slug: string }) {
+  // TODO(play-billing): SiteVault's own editor carries its billing, so the
+  // Android app names it without linking to it.
+  const inApp = useInAndroidApp();
+  if (inApp) {
+    return <>This website was made on SiteVault, so you edit it there with the same login, from any browser.</>;
+  }
   return (
     <>
       This website was made on SiteVault, so you edit it there with the same login.{" "}

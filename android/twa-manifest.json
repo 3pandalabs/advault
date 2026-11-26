@@ -12,7 +12,7 @@
   "navigationDividerColorDark": "#000000",
   "backgroundColor": "#09090B",
   "enableNotifications": false,
-  "startUrl": "/dashboard",
+  "startUrl": "/dashboard?source=twa",
   "iconUrl": "https://advault.3pandalabs.com/icons/icon-512.png",
   "maskableIconUrl": "https://advault.3pandalabs.com/icons/maskable-512.png",
   "splashScreenFadeOutDuration": 300,
@@ -26,7 +26,7 @@
     {
       "name": "New ad",
       "shortName": "New ad",
-      "url": "/dashboard/campaigns/new",
+      "url": "/dashboard/campaigns/new?source=twa",
       "chosenIconUrl": "https://advault.3pandalabs.com/icons/icon-192.png"
     }
   ],

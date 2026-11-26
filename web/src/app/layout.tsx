@@ -3,6 +3,7 @@ import { GradientBackdrop } from "@/components/GradientBackdrop";
 import { PandaHelper } from "@/components/PandaHelper";
 import { Footer } from "@/components/Footer";
 import { AdVisitTracker } from "@/components/AdVisitTracker";
+import { AppContextRecorder } from "@/components/AppPayments";
 import "./globals.css";
 
 // Titles and share tags follow 3pandalabs/brand brand.md "Consistency rules":
@@ -34,6 +35,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="flex min-h-screen flex-col bg-zinc-950 text-zinc-100 antialiased">
         <GradientBackdrop />
         <AdVisitTracker />
+        <AppContextRecorder />
         <div className="flex-1">{children}</div>
         <Footer />
         <PandaHelper />

@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { minTopupCents, timesShownEstimate, topupPresets } from "@/lib/budget";
 import { formatMoney, parseDollarsToCents } from "@/lib/utils";
+import { AppPaymentsNotice, useInAndroidApp } from "@/components/AppPayments";
 
 /**
  * "Add to your ad budget": $35 / $50 / $100 / custom, with how long it lasts at
@@ -40,6 +41,8 @@ export function TopUpPicker({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  // TODO(play-billing): no top-up inside the Android app (pay on the website).
+  const inApp = useInAndroidApp();
 
   const customCents = parseDollarsToCents(custom);
   const amount = picked === "custom" ? customCents : picked;
@@ -82,6 +85,7 @@ export function TopUpPicker({
     }
   }
 
+  if (inApp && mode === "pay") return <AppPaymentsNotice />;
 
   return (
     <div>

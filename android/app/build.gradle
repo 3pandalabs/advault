@@ -23,7 +23,7 @@ plugins {
 def twaManifest = [
     applicationId: 'com.threepandalabs.advault',
     hostName: 'advault.3pandalabs.com', // The domain being opened in the TWA.
-    launchUrl: '/dashboard', // The start path for the TWA. Must be relative to the domain.
+    launchUrl: '/dashboard?source=twa', // The start path for the TWA. Must be relative to the domain.
     name: 'AdVault', // The application name.
     launcherName: 'AdVault', // The name shown on the Android Launcher.
     themeColor: '#09090B', // The color used for the status bar.
@@ -39,7 +39,7 @@ def twaManifest = [
     // - short_name: Shorter string used if |name| is too long.
     // - url: Absolute path of the URL to launch the app with (e.g '/create').
     // - icon: Name of the resource in the drawable folder to use as an icon.
-    shortcuts: [[name:'New ad', short_name:'New ad', url:'/dashboard/campaigns/new', icon:'shortcut_0']],
+    shortcuts: [[name:'New ad', short_name:'New ad', url:'/dashboard/campaigns/new?source=twa', icon:'shortcut_0']],
     // The duration of fade out animation in milliseconds to be played when removing splash screen.
     splashScreenFadeOutDuration: 300,
     generatorApp: 'bubblewrap-cli', // Application that generated the Android Project

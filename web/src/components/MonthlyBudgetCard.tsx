@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { TopUpPicker } from "@/components/TopUpPicker";
 import { MONTHLY_AD_BUDGET_CENTS, PLAN_PRICE_CENTS_PER_MONTH } from "@/lib/prices";
 import { formatMoney } from "@/lib/utils";
+import { AppPaymentsNotice, useInAndroidApp } from "@/components/AppPayments";
 
 // "From $55 a month" (owner, 2026-11-19): the customer's chosen monthly ad
 // budget, recharged automatically with the plan, and a Change control (PUT
@@ -21,6 +22,8 @@ export function MonthlyBudgetCard({ className = "" }: { className?: string }) {
   const [pick, setPick] = useState(MONTHLY_AD_BUDGET_CENTS);
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
+  // TODO(play-billing): the Android app can't start or change what the plan charges.
+  const inApp = useInAndroidApp();
 
   const load = () =>
     getSubscription()
@@ -42,10 +45,13 @@ export function MonthlyBudgetCard({ className = "" }: { className?: string }) {
         <p>
           <span className="font-medium text-zinc-100">Just this once:</span> no monthly recharge. Your ad stops when
           the budget runs out.{" "}
-          <Link href="/dashboard/subscription" className="text-amber-300 underline-offset-2 hover:underline">
-            Turn on Keep it running
-          </Link>
+          {!inApp && (
+            <Link href="/dashboard/subscription" className="text-amber-300 underline-offset-2 hover:underline">
+              Turn on Keep it running
+            </Link>
+          )}
         </p>
+        {inApp && <AppPaymentsNotice className="mt-2" />}
       </div>
     );
   }
@@ -76,7 +82,7 @@ export function MonthlyBudgetCard({ className = "" }: { className?: string }) {
         <p className="text-zinc-100">
           Monthly ad budget: <span className="font-semibold">{formatMoney(recharge, currency)}</span>
         </p>
-        {!editing && !sub.cancelAtPeriodEnd && (
+        {!editing && !sub.cancelAtPeriodEnd && !inApp && (
           <Button
             variant="ghost"
             onClick={() => {
@@ -93,7 +99,7 @@ export function MonthlyBudgetCard({ className = "" }: { className?: string }) {
           ? "Your plan won't renew, so nothing more is added."
           : `Added to your ad budget automatically each month with the ${formatMoney(PLAN_PRICE_CENTS_PER_MONTH, "USD")} plan fee. 100% of it goes to Google.`}
       </p>
-      {editing && (
+      {editing && !inApp && (
         <div className="mt-3">
           <TopUpPicker mode="choose" currency={currency} value={pick} onChange={setPick} />
           <p className="mt-2 text-xs text-zinc-400">
