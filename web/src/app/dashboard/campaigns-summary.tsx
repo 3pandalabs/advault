@@ -1,4 +1,7 @@
+"use client";
+
 import Link from "next/link";
+import { useInAndroidApp } from "@/components/AppPayments";
 import type { Campaign, CampaignStatus, Wallet } from "@/lib/api/browser";
 import { STATUS_LABEL } from "./campaign-card";
 
@@ -32,6 +35,7 @@ export function CampaignsSummary({
     n: campaigns.filter((c) => c.status === status).length,
   })).filter((s) => s.n > 0);
   const daysLeft = wallet ? daysLeftText(wallet) : null;
+  const inApp = useInAndroidApp();
 
   return (
     <section
@@ -45,12 +49,15 @@ export function CampaignsSummary({
             <p className="mt-0.5 text-2xl font-semibold tabular-nums text-amber-300">{wallet.display}</p>
             {daysLeft && <p className="text-xs text-zinc-400">{daysLeft}</p>}
           </div>
-          <Link
-            href="/dashboard/wallet"
-            className="text-sm font-medium text-amber-300 underline-offset-4 hover:underline"
-          >
-            Top up
-          </Link>
+          {/* TODO(play-billing): no way to pay inside the Android app. */}
+          {!inApp && (
+            <Link
+              href="/dashboard/wallet"
+              className="text-sm font-medium text-amber-300 underline-offset-4 hover:underline"
+            >
+              Top up
+            </Link>
+          )}
         </div>
       )}
       <dl className="flex flex-wrap gap-x-6 gap-y-3">
