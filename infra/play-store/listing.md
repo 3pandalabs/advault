@@ -1,6 +1,6 @@
 # Google Play listing: AdVault
 
-Package `com.threepandalabs.advault` · Developer: 3PandaLabs LLC (organization account) · Category: **Business** · Free to install · No ads in the app · No purchases through Google Play Billing. AdVault sells YouTube ads for local businesses (from $55/month: $20 plan + the customer's ad budget from $35; $10 per new ad; or a one-off ad with no plan), paid by card through Stripe Checkout. US only. Google isn't requiring Play Billing for US users while the US court order stands (support.google.com/googleplay/android-developer/answer/15582165), and the ad itself runs on YouTube, outside the app. Answer the Play Console payments declaration to match.
+Package `com.threepandalabs.advault` · Developer: 3PandaLabs LLC (organization account) · Category: **Business** · Free to install · No ads in the app · **The Android app sells nothing (2026-11-26, owner decision, US-only launch): no payment buttons or links in the app, and NO prices or "pay on our website" wording in this listing or its screenshots** (Play lists the store listing as a place where steering to other payment methods is prohibited; see advault CLAUDE.md "Android app: payments on the website only"). On the web, AdVault sells YouTube ads for local businesses (from $55/month: $20 plan + the customer's ad budget from $35; $10 per new ad; or a one-off ad with no plan), paid by card through Stripe Checkout. US only. Google isn't requiring Play Billing for US users while the US court order stands (support.google.com/googleplay/android-developer/answer/15582165), and the ad itself runs on YouTube, outside the app. Answer the Play Console payments declaration to match.
 
 ## App name (30)
 AdVault by 3PandaLabs
@@ -19,12 +19,10 @@ HOW IT WORKS
 • Choose where your customers are and how much to spend a month.
 • We launch it on YouTube and keep it running. You see times shown, clicks and spend in the app.
 
-SIMPLE PRICING
-• From $55 a month to keep your ad running: $20 for AdVault plus your ad budget (from $35), which goes to Google.
-• $10 for each new ad we make.
-• Optional: a website for $10, and extra offer changes for $2 each (one a month is included with the plan).
-• Or run an ad just once, with no monthly plan.
-• No contract. Cancel any time.
+YOUR ACCOUNT
+• Free to download.
+• Plans, ads and your ad budget are managed from your AdVault account.
+• No contract. Pause or cancel any time.
 
 Made for plumbers, salons, dentists, realtors, restaurants and every local business that wants to be seen by the people around it.
 
