@@ -7,6 +7,7 @@ import { noticeMail, sendMail } from "../lib/mailer.js";
 import { allowContact, contactBody, contactMail } from "../lib/contact.js";
 import { verifySecret } from "../auth/password.js";
 import { createSitevaultAccount, markAppUsed, type Db } from "../lib/sharedAccount/index.js";
+import { isFreshSignup, notifyNewUser } from "../lib/newUserAlert.js";
 import { changePassword, confirmPasswordReset, requestPasswordReset } from "../lib/passwordReset/index.js";
 
 // SiteVault's server-to-server window onto the shared 3PandaLabs account
@@ -104,6 +105,10 @@ export async function sitevaultAuthRoutes(app: FastifyInstance, opts: { db: Db }
       const r = await createSitevaultAccount(db, body);
       if (r.status === "exists") return reply.code(409).send({ ok: false, error: "email_exists", userId: r.userId, email: r.email });
       req.log.info({ userId: r.userId }, "account created from sitevault");
+      // An older SiteVault account moved over keeps its original createdAt: not news.
+      if (isFreshSignup(body.createdAt)) {
+        notifyNewUser({ app: "SiteVault", email: r.email, userId: r.userId }, (m) => req.log.warn(m));
+      }
       return reply.code(201).send({ ok: true, userId: r.userId, email: r.email });
     },
   );

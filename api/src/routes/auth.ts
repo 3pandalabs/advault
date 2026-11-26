@@ -14,6 +14,7 @@ import { env } from "../env.js";
 import { acceptedTermsVersion, recordTermsAcceptance } from "../lib/compliance/index.js";
 import { TERMS_VERSION } from "../lib/compliance/texts.js";
 import { knownCampaignId } from "../lib/siteVisits/index.js";
+import { notifyNewUser } from "../lib/newUserAlert.js";
 import { normalizePhone } from "../lib/phone/index.js";
 import { whatsAppStateFor } from "../lib/offers/index.js";
 
@@ -93,6 +94,17 @@ export async function authRoutes(app: FastifyInstance) {
       // caller would get for any rejected registration.
       if (!user) return reply.code(409).send({ error: "registration_failed" });
       if (body.termsVersion === TERMS_VERSION) await recordTermsAcceptance(user.id, TERMS_VERSION, req);
+      notifyNewUser(
+        {
+          app: "AdVault",
+          email: body.email.toLowerCase(),
+          userId: user.id,
+          businessName: body.businessName,
+          businessCategory: body.businessCategory,
+          fromAd: Boolean(signupCampaignId),
+        },
+        (m) => req.log.warn(m),
+      );
 
       return reply.code(201).send({
         accessToken: signAccessToken({ sub: user.id, role: user.role as "advertiser" | "admin" }),
