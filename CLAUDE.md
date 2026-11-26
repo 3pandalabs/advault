@@ -1441,7 +1441,14 @@ TTL, enumeration-safe), reached today by the **SiteVault-proxied** routes
 `/change-password` (`routes/sitevaultAuth.ts`, bearer `SITEVAULT_INTERNAL_TOKEN`)
 — the shared password lives here, so SiteVault owns the UI and AdVault changes
 the credential. AdVault's OWN `/auth` reset pages are a fast follow that can
-reuse `lib/passwordReset` unchanged. Still no render-complete notification; the
+reuse `lib/passwordReset` unchanged. **New sign-up alert (2026-11-26,
+`lib/newUserAlert.ts`):** every new account emails "AdVault New user" /
+"SiteVault New user" (email, business, category, came from an ad, time, id) to
+`NEW_USER_ALERT_EMAIL` (default 3pandas@3pandalabs.com; `off` disables) from
+`/auth/register` and `POST /internal/sitevault/accounts` (not an older SiteVault
+account being moved over, i.e. a `createdAt` over a day old, and never an
+admin-made test customer). Fire-and-forget: a mailer failure never touches the
+sign-up. Still no render-complete notification; the
 dashboard polls. Reset tokens are personal data: `lib/accountDeletion.ts`
 deletes them with the account.
 
