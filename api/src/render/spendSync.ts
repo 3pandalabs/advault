@@ -1,7 +1,8 @@
 import { freezeCardsForUser } from "../lib/billing/managedCard.js";
-import { and, eq, gte, isNotNull, or } from "drizzle-orm";
+import { and, eq, gte, isNotNull, like, or } from "drizzle-orm";
 import { db } from "../db/index.js";
-import { adAccounts, campaigns } from "../db/schema.js";
+import { adAccounts, campaigns, ledgerEntries, wallets } from "../db/schema.js";
+import { ledgerByDay, SPEND_REF_PREFIX, spendCorrection } from "../lib/wallet/spendDelta.js";
 import {
   fetchCampaignSpend,
   isMccConfigured,
@@ -115,9 +116,9 @@ export async function runSpendSync(): Promise<{ synced: number; paused: number; 
   for (const [customerId, group] of byCustomer) {
     // Seven days of lookback rather than "since we last ran". Google restates
     // recent spend as invalid traffic is filtered out, so a figure read the
-    // morning after can still change. Re-reading a week is cheap and the
-    // per-(campaign, date) idempotency key makes it safe — already-applied days
-    // land as DuplicateLedgerEntry and are skipped.
+    // morning after can still change. Re-reading a week is cheap, and each
+    // day only ever moves by the difference from what the ledger holds
+    // (lib/wallet/spendDelta).
     let spendRows;
     try {
       spendRows = await fetchCampaignSpend({ accessToken, customerId, sinceDate: isoDaysAgo(LOOKBACK_DAYS) });
@@ -131,21 +132,44 @@ export async function runSpendSync(): Promise<{ synced: number; paused: number; 
         (s) => s.campaignResourceName === row.campaign.googleCampaignResourceName,
       );
 
+      // What the ledger already holds per day for this campaign: each run
+      // records only the difference from Google's latest figure (spendDelta).
+      // Before 2026-11-25 a day was recorded once, at its first partial figure.
+      const held = ledgerByDay(
+        await db
+          .select({ externalRef: ledgerEntries.externalRef, amountMinor: ledgerEntries.amountMinor })
+          .from(ledgerEntries)
+          .innerJoin(wallets, eq(wallets.id, ledgerEntries.walletId))
+          .where(
+            and(
+              eq(wallets.userId, row.campaign.userId),
+              like(ledgerEntries.externalRef, `${SPEND_REF_PREFIX}${row.campaign.id}:%`),
+            ),
+          ),
+        row.campaign.id,
+      );
+
       for (const day of mine) {
-        const minor = microsToMinor(day.costMicros);
-        if (minor <= 0) continue;
+        const fix = spendCorrection({
+          campaignId: row.campaign.id,
+          date: day.date,
+          reportedMinor: microsToMinor(day.costMicros),
+          ledger: held.get(day.date),
+        });
+        if (!fix) continue;
 
         try {
           await applyEntry({
             userId: row.campaign.userId,
             currency: row.campaign.currencyCode as Currency,
-            type: "spend",
-            amountMinor: -minor,
-            description: `Google Ads spend ${day.date}`,
+            type: fix.type,
+            amountMinor: fix.amountMinor,
+            description:
+              fix.type === "spend" ? `Google Ads spend ${day.date}` : `Google Ads spend ${day.date} lowered by Google`,
             campaignId: row.campaign.id,
-            // The idempotency key. Stable per campaign-day, which is what makes
-            // the seven-day lookback safe to re-run every hour.
-            externalRef: `gads:${row.campaign.id}:${day.date}`,
+            // Unique per correction; a racing run computes the same key and
+            // lands as DuplicateLedgerEntry below.
+            externalRef: fix.externalRef,
             // Google has already spent this money; refusing to record it would
             // not un-spend it. The wallet clamps at zero and the shortfall stays
             // visible in the ledger — see wallet.reconcile().
