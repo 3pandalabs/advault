@@ -16,6 +16,7 @@ import {
 } from "@/lib/api/browser";
 import { Badge, Card, CardDescription, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { useInAndroidApp } from "@/components/AppPayments";
 
 // Ad account setup — the onboarding branch.
 //
@@ -41,6 +42,7 @@ type Phase = "loading" | "choose" | "confirm" | "provisioning" | "linking" | "do
 
 export default function OnboardingPage() {
   const router = useRouter();
+  const inApp = useInAndroidApp();
   const [options, setOptions] = useState<BillingOptions | null>(null);
   const [account, setAccount] = useState<AdAccount | BillingStatus | null>(null);
   const [phase, setPhase] = useState<Phase>("loading");
@@ -337,7 +339,7 @@ export default function OnboardingPage() {
             <Button onClick={() => router.push("/dashboard/campaigns/new")}>
               Create your first ad
             </Button>
-            {account.billingMode === "platform" && (
+            {account.billingMode === "platform" && !inApp && (
               <Button variant="outline" onClick={() => router.push("/dashboard/wallet")}>
                 Top up balance
               </Button>
