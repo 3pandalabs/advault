@@ -1,0 +1,213 @@
+/* Home page only (imported by app/page.tsx). Everything is prefixed `av-` so
+   none of it can leak into the dashboard. Motion is decoration: every
+   animation is switched off under prefers-reduced-motion at the bottom. */
+
+.av-display {
+  font-family: var(--font-display), ui-sans-serif, system-ui, sans-serif;
+  letter-spacing: -0.035em;
+}
+
+/* Amber-to-rose shimmer on the accent words. */
+.av-shimmer {
+  background: linear-gradient(100deg, #fbbf24 0%, #fb7185 35%, #a78bfa 62%, #fbbf24 100%);
+  background-size: 250% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: av-shimmer 6s ease-in-out infinite;
+}
+@keyframes av-shimmer {
+  0%, 100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+}
+
+/* Hand-drawn underline. */
+.av-scribble { position: relative; display: inline-block; }
+.av-scribble svg {
+  position: absolute; left: 0; right: 0; bottom: -0.12em; width: 100%; height: 0.3em; overflow: visible;
+}
+.av-scribble path {
+  stroke-dasharray: 420; stroke-dashoffset: 420;
+  animation: av-draw 1.3s 0.4s cubic-bezier(.65,0,.35,1) forwards;
+}
+@keyframes av-draw { to { stroke-dashoffset: 0; } }
+
+/* Blinking "on air" dot. */
+.av-live { animation: av-live 1.4s ease-in-out infinite; }
+@keyframes av-live { 50% { opacity: .25; } }
+
+/* ---------- Hero stage ---------- */
+.av-stage { perspective: 1400px; }
+.av-float { animation: av-float 7s ease-in-out infinite; transform-style: preserve-3d; }
+@keyframes av-float {
+  0%, 100% { transform: rotateX(6deg) rotateY(-12deg) translateY(0); }
+  50% { transform: rotateX(3deg) rotateY(-6deg) translateY(-12px); }
+}
+.av-wide { animation: av-wide 9s ease-in-out infinite; }
+@keyframes av-wide {
+  0%, 100% { transform: rotate(-7deg) translate(-4%, 0); }
+  50% { transform: rotate(-5deg) translate(-6%, -3%); }
+}
+
+/* Rotating sample ads: each layer runs the same cycle, shifted by its slot. */
+.av-rot {
+  opacity: 0;
+  animation: av-rot var(--rot-dur, 20s) linear infinite;
+  animation-delay: var(--rot-delay, 0s);
+}
+@keyframes av-rot {
+  0% { opacity: 0; }
+  2% { opacity: 1; }
+  20% { opacity: 1; }
+  22% { opacity: 0; }
+  100% { opacity: 0; }
+}
+/* Text never overlaps the next slot's text. */
+.av-rot-text { animation-name: av-rot-text; }
+@keyframes av-rot-text {
+  0%, 2% { opacity: 0; transform: translateY(10px) scale(.96); }
+  4.5% { opacity: 1; transform: translateY(0) scale(1); }
+  18.5% { opacity: 1; transform: translateY(0) scale(1); }
+  20%, 100% { opacity: 0; transform: translateY(-6px) scale(1); }
+}
+/* Progress bar fills across each slot. */
+.av-rot-bar { animation-name: av-rot-bar; transform-origin: left; }
+@keyframes av-rot-bar {
+  0% { opacity: 1; transform: scaleX(0); }
+  20% { opacity: 1; transform: scaleX(1); }
+  20.01%, 100% { opacity: 0; transform: scaleX(1); }
+}
+.av-kenburns { animation: av-kenburns 8s ease-out infinite alternate; }
+@keyframes av-kenburns { from { transform: scale(1.14); } to { transform: scale(1); } }
+
+/* "Visit website" button keeps inviting a tap. */
+/* (the element is already positioned; a `position` here would beat Tailwind's layered `absolute`) */
+.av-pulse::after {
+  content: ""; position: absolute; inset: -4px; border-radius: 999px;
+  border: 2px solid #fbbf24; opacity: 0;
+  animation: av-ring 2.2s ease-out infinite;
+}
+@keyframes av-ring {
+  0% { transform: scale(.92); opacity: .9; }
+  100% { transform: scale(1.22); opacity: 0; }
+}
+
+.av-chip { animation: av-chip 6s ease-in-out infinite; }
+.av-chip-2 { animation-delay: -2s; }
+.av-chip-3 { animation-delay: -4s; }
+@keyframes av-chip {
+  0%, 100% { transform: translateY(0) rotate(-2deg); }
+  50% { transform: translateY(-10px) rotate(2deg); }
+}
+
+/* Radar sweep + pings (hero card and the neighbourhood map). */
+.av-ping { transform-origin: center; transform-box: fill-box; animation: av-ping 2.6s ease-out infinite; }
+.av-ping-2 { animation-delay: -.9s; }
+.av-ping-3 { animation-delay: -1.7s; }
+@keyframes av-ping {
+  0% { transform: scale(.3); opacity: .9; }
+  100% { transform: scale(2.6); opacity: 0; }
+}
+.av-sweep { transform-origin: 50% 50%; animation: av-sweep 4s linear infinite; }
+@keyframes av-sweep { to { transform: rotate(360deg); } }
+
+/* ---------- Marquee ---------- */
+.av-marquee { mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent); }
+.av-marquee-track { display: flex; width: max-content; animation: av-marquee 40s linear infinite; }
+.av-marquee:hover .av-marquee-track { animation-play-state: paused; }
+@keyframes av-marquee { to { transform: translateX(-50%); } }
+
+/* ---------- Photos in, ad out ---------- */
+.av-photo { transition: transform .4s cubic-bezier(.2,.8,.2,1); }
+.av-machine:hover .av-photo:nth-child(1) { transform: rotate(-12deg) translate(-8px, -6px); }
+.av-machine:hover .av-photo:nth-child(2) { transform: rotate(3deg) translateY(-12px); }
+.av-machine:hover .av-photo:nth-child(3) { transform: rotate(14deg) translate(8px, -4px); }
+.av-flow {
+  background-image: linear-gradient(90deg, rgba(251,191,36,.9) 40%, transparent 40%);
+  background-size: 16px 3px;
+  background-repeat: repeat-x;
+  animation: av-flow .9s linear infinite;
+}
+.av-flow-v {
+  background-image: linear-gradient(180deg, rgba(251,191,36,.9) 40%, transparent 40%);
+  background-size: 3px 16px;
+  background-repeat: repeat-y;
+  animation: av-flow-v .9s linear infinite;
+}
+@keyframes av-flow { to { background-position: 16px 0; } }
+@keyframes av-flow-v { to { background-position: 0 16px; } }
+.av-spark { animation: av-spark 2.4s ease-in-out infinite; }
+@keyframes av-spark {
+  0%, 100% { transform: scale(1) rotate(0deg); filter: drop-shadow(0 0 0 rgba(251,191,36,0)); }
+  50% { transform: scale(1.08) rotate(8deg); filter: drop-shadow(0 0 18px rgba(251,191,36,.6)); }
+}
+/* Captions appear word by word, like the real ads. */
+.av-word { opacity: 0; display: inline-block; animation: av-word 6s ease-out infinite; animation-delay: var(--w, 0s); }
+@keyframes av-word {
+  0% { opacity: 0; transform: translateY(6px) scale(.9); }
+  6%, 80% { opacity: 1; transform: translateY(0) scale(1); }
+  90%, 100% { opacity: 0; transform: translateY(0) scale(1); }
+}
+
+/* ---------- Ad gallery ---------- */
+.av-reel { transition: transform .35s cubic-bezier(.2,.8,.2,1), box-shadow .35s; }
+.av-reel:hover { transform: translateY(-8px) rotate(-.6deg); box-shadow: 0 30px 60px -30px rgba(251,191,36,.45); }
+
+/* ---------- Neighbourhood map ---------- */
+.av-hex { transition: fill .3s, opacity .3s; }
+.av-hex-on { animation: av-hex 3.2s ease-in-out infinite; animation-delay: var(--d, 0s); }
+@keyframes av-hex {
+  0%, 100% { fill: rgba(251,191,36,.22); }
+  50% { fill: rgba(251,191,36,.45); }
+}
+
+/* ---------- Bento tiles ---------- */
+.av-tile { transition: transform .35s cubic-bezier(.2,.8,.2,1), border-color .35s; }
+.av-tile:hover { transform: translateY(-6px); border-color: rgba(251,191,36,.35); }
+
+/* ---------- Timeline ---------- */
+.av-dash {
+  background-image: linear-gradient(90deg, rgba(255,255,255,.25) 50%, transparent 50%);
+  background-size: 14px 2px;
+  animation: av-dash 1.2s linear infinite;
+}
+@keyframes av-dash { to { background-position: 14px 0; } }
+
+/* ---------- Glows ---------- */
+.av-glow {
+  background:
+    radial-gradient(60% 80% at 12% 0%, rgba(251,191,36,.35), transparent 60%),
+    radial-gradient(60% 80% at 88% 100%, rgba(139,92,246,.4), transparent 60%),
+    radial-gradient(50% 60% at 50% 50%, rgba(244,63,94,.18), transparent 70%),
+    #0c0a12;
+}
+.av-ring-border {
+  position: relative; border-radius: 1.5rem; padding: 1px;
+  background: conic-gradient(from var(--a, 0deg), rgba(251,191,36,.7), rgba(139,92,246,.6), rgba(244,63,94,.5), rgba(251,191,36,.7));
+  animation: av-spin-border 8s linear infinite;
+}
+@property --a { syntax: "<angle>"; inherits: false; initial-value: 0deg; }
+@keyframes av-spin-border { to { --a: 360deg; } }
+.av-btn-shine { position: relative; overflow: hidden; }
+.av-btn-shine::before {
+  content: ""; position: absolute; top: 0; left: -60%; width: 40%; height: 100%;
+  background: linear-gradient(100deg, transparent, rgba(255,255,255,.6), transparent);
+  transform: skewX(-20deg);
+  animation: av-shine 3.5s ease-in-out infinite;
+}
+@keyframes av-shine { 0%, 60% { left: -60%; } 100% { left: 130%; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .av-shimmer, .av-scribble path, .av-live, .av-float, .av-wide, .av-kenburns,
+  .av-pulse::after, .av-chip, .av-ping, .av-sweep, .av-marquee-track, .av-flow,
+  .av-flow-v, .av-spark, .av-hex-on, .av-dash, .av-ring-border, .av-btn-shine::before {
+    animation: none !important;
+  }
+  .av-scribble path { stroke-dashoffset: 0; }
+  .av-ping { opacity: 0; }
+  /* One fixed ad instead of the slideshow. */
+  .av-rot { animation: none !important; }
+  .av-rot[data-first] { opacity: 1; }
+  .av-rot-bar[data-first] { transform: scaleX(.4); }
+  .av-word { animation: none !important; opacity: 1; }
+}
