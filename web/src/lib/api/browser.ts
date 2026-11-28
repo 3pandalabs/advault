@@ -224,6 +224,9 @@ export type Realty = {
 };
 
 export type Campaign = {
+  /** "Find my business on Google" (0051): the place picked; only the id is stored. */
+  googlePlaceId?: string | null;
+  showGoogleRating?: boolean;
   /** The ad account it was launched into; null until launch. */
   adAccountId: string | null;
   spendMinorToDate: number;
@@ -598,6 +601,8 @@ export type CampaignResults =
       };
       /** Conservative "focus on them?" cards (api lib/adMetrics/suggestions.ts); often []. */
       suggestions?: ResultsSuggestion[];
+      /** "Leads from your website" from this ad (api lib/leads); absent on an older API. */
+      websiteLeads?: { quote: number; callback: number; booking: number; total: number } | null;
       lastSyncedAt: string | null;
     };
 export type ResultsSuggestion = {
@@ -703,6 +708,10 @@ export function createCampaign(input: {
   badges?: { ids: BadgeId[]; licenseNumber?: string | null; attested: boolean } | null;
   categoryExtras?: CategoryExtras | null;
   beforeAfter?: { pairs: { beforeAssetId: string; afterAssetId: string }[]; attested: boolean } | null;
+  /** "Find my business on Google": only the place_id is stored. */
+  googlePlaceId?: string | null;
+  /** "Show my Google rating in the ad" (fetched fresh when the ad is made). */
+  showGoogleRating?: boolean;
 }) {
   return api<Campaign>("/campaigns", { method: "POST", body: JSON.stringify(input) });
 }
@@ -918,7 +927,7 @@ export function setBadges(campaignId: string, body: { ids: BadgeId[]; licenseNum
 /** One-click SiteVault website for a campaign with no website. */
 export function createWebsite(
   campaignId: string,
-  input: { phone: string; city: string; hours?: string; slug?: string; attest: true },
+  input: { phone: string; city: string; hours?: string; slug?: string; attest: true; placeId?: string },
 ) {
   // With the $10 website fee: siteUrl null, pendingSite + a checkout to send them to.
   return api<{
@@ -1705,3 +1714,72 @@ export function getWebsiteEditor() {
     editorUrl: string | null;
   }>("/website/editor");
 }
+
+// ---------------------------------------------------------------------------
+// Leads inbox (api routes/leads.ts): quote / call-back / booking requests from
+// the owner's SiteVault website.
+
+export type LeadKind = "quote" | "callback" | "booking";
+export type LeadStatus = "new" | "requested" | "contacted" | "confirmed" | "declined" | "done";
+export type Lead = {
+  id: string;
+  kind: LeadKind;
+  status: LeadStatus;
+  siteSlug: string;
+  name: string;
+  phone: string;
+  email: string | null;
+  message: string | null;
+  bestTime: string | null;
+  photoUrls: string[];
+  booking: { service: string; durationMin: number; start: string; end: string; timezone: string } | null;
+  source: { referrerHost?: string; utmSource?: string; utmCampaign?: string } | null;
+  campaignId: string | null;
+  reviewRequestedAt: string | null;
+  createdAt: string;
+};
+
+export function listLeads(filters: { kind?: LeadKind; status?: LeadStatus } = {}) {
+  const q = new URLSearchParams();
+  if (filters.kind) q.set("kind", filters.kind);
+  if (filters.status) q.set("status", filters.status);
+  const qs = q.toString();
+  return api<{ leads: Lead[]; newCount: number }>(`/leads${qs ? `?${qs}` : ""}`);
+}
+export const getNewLeadCount = () => api<{ new: number }>("/leads/count");
+export const setLeadStatus = (id: string, status: LeadStatus) =>
+  api<{ lead: Lead }>(`/leads/${id}/status`, { method: "POST", body: JSON.stringify({ status }) });
+export const getLeadReviewLinks = () => api<{ links: Record<string, string | null> }>("/leads/review-links");
+export const requestLeadReview = (id: string) => api<void>(`/leads/${id}/review-request`, { method: "POST" });
+
+/** The signed Confirm / Decline link in a booking email (no sign-in needed). */
+export type LeadLinkPreview = { action: "confirm" | "decline"; status: LeadStatus; name: string; service: string | null; when: string | null };
+export const previewLeadLink = (token: string) =>
+  api<LeadLinkPreview>("/leads/link", { method: "POST", body: JSON.stringify({ token }) });
+export const applyLeadLink = (token: string) =>
+  api<{ status: LeadStatus }>("/leads/link/apply", { method: "POST", body: JSON.stringify({ token }) });
+
+// ---------------------------------------------------------------------------
+// "Find my business on Google" (api routes/places.ts). Optional: hidden when
+// the API has no Places key (enabled: false, or an older API).
+
+export type PlaceCandidate = { placeId: string; name: string; address: string };
+export type PlaceDetails = {
+  placeId: string;
+  name: string;
+  address: string;
+  zip: string | null;
+  city: string | null;
+  phone: string | null;
+  website: string | null;
+  primaryType: string | null;
+  hours: string | null;
+  rating: number | null;
+  ratingCount: number | null;
+  mapsUrl: string | null;
+  ratingEligible: boolean;
+};
+export const getPlacesEnabled = () => api<{ enabled: boolean }>("/places/enabled");
+export const searchPlaces = (query: string) =>
+  api<{ results: PlaceCandidate[] }>("/places/search", { method: "POST", body: JSON.stringify({ query }) });
+export const getPlaceDetails = (placeId: string) => api<PlaceDetails>(`/places/${encodeURIComponent(placeId)}`);

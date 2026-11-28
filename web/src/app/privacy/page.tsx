@@ -32,6 +32,16 @@ import { LegalPage } from "@/components/legal/LegalPage";
 //     terms_acceptances (api/src/lib/compliance, migration 0043): append-only,
 //     kept after account deletion with ip_address / user_agent blanked by
 //     lib/accountDeletion.ts; reports are ad_reports (routes/reports.ts)
+//   - "Requests from your website" is the leads table (api migration 0050,
+//     lib/leads, routes/sitevaultLeads.ts + routes/leads.ts): name, phone,
+//     optional email / message / best time / photo links / booking time and the
+//     ad-source tags SiteVault sends; deleted with the owner's account
+//     (lib/accountDeletion.ts); customer emails only for booking confirm /
+//     decline and one owner-requested review ask (lib/leads/templates.ts)
+//   - "Your Google business listing" is campaigns.google_place_id (migration
+//     0051, lib/places): only the place id is stored; name, address, phone,
+//     website, hours and rating are fetched for the owner and not kept; the
+//     ad's rating line is fetched fresh at render time
 //
 // The Limited Use paragraph under "Google account data" is required near-verbatim
 // by the Google API Services User Data Policy. Do not paraphrase it.
@@ -48,7 +58,7 @@ export default function PrivacyPage() {
   return (
     <LegalPage
       title="Privacy Policy"
-      effective="25 November 2026"
+      effective="27 November 2026"
       summary="We collect what we need to make your ad and run your campaign, and nothing else. We do not sell your data, we do not track you around the internet, and this site sets no cookies at all."
     >
       <h2>Who we are</h2>
@@ -167,6 +177,27 @@ export default function PrivacyPage() {
           being abused; AdVault&rsquo;s database keeps no copy of the message.
         </li>
         <li>
+          <strong>Requests from your website</strong> — when someone uses &ldquo;Request a
+          quote&rdquo;, &ldquo;Call me back&rdquo; or &ldquo;Book&rdquo; on your SiteVault
+          website, SiteVault sends us what they typed so we can show it on your Leads page and
+          email it to you: their name and phone number, and if they gave them, their email,
+          message, best time to call, links to photos they added, and the booking&rsquo;s
+          service and time. We also keep which site it came from and whether the visitor
+          arrived from your AdVault ad (the ad&rsquo;s campaign number in the link), so your
+          results can show leads from your ad. We only email that person about their own
+          request: when you confirm or decline their booking, and once if you tap &ldquo;Ask
+          for a review&rdquo;.
+        </li>
+        <li>
+          <strong>Your Google business listing</strong> — if you use &ldquo;Find your business
+          on Google&rdquo;, we send the name and town you type to Google to find it, show you
+          the name, address, phone, website, opening hours and star rating Google has, and fill
+          them into your form, where you can change them. We save only Google&rsquo;s ID for
+          the business you picked. If you tick &ldquo;Show my Google rating in the ad&rdquo;,
+          we look the rating up again when your ad is made; we never use reviews&rsquo; text
+          or Google&rsquo;s photos.
+        </li>
+        <li>
           <strong>Visits from an AdVault ad</strong> — when you arrive on this site by
           clicking one of our ads (the link carries the ad&rsquo;s campaign number), we add
           one to a count for that ad, that day and that page. The count holds no IP address,
@@ -194,9 +225,10 @@ export default function PrivacyPage() {
           <strong>No card or bank details</strong>, as above.
         </li>
         <li>
-          <strong>Nothing about your own customers.</strong> AdVault targets areas — pin
+          <strong>Nothing about the people who see your ad.</strong> AdVault targets areas — pin
           codes and a radius — not individuals. We hold no list of the people who see or
-          click your ad, and we cannot identify them.
+          click your ad, and we cannot identify them. The only details we hold about your
+          customers are the requests they choose to send from your website (above).
         </li>
         <li>
           <strong>No location tracking.</strong> The only location we hold is the area you
@@ -375,6 +407,14 @@ export default function PrivacyPage() {
             <td>To run the ad, and to host the video the ad plays</td>
           </tr>
           <tr>
+            <td>Google (Maps Platform: Places)</td>
+            <td>The business name and town you type into &ldquo;Find your business on Google&rdquo;</td>
+            <td>
+              Only if you use it: to find your business and fill in your details. When you
+              chose to show your rating in the ad, we ask Google for it again when the ad is made
+            </td>
+          </tr>
+          <tr>
             <td>Mercury (our bank)</td>
             <td>Your business name, as the label on the payment card we use for your ads</td>
             <td>
@@ -401,7 +441,10 @@ export default function PrivacyPage() {
               AdVault and SiteVault while signed in, the two apps pass a one-time sign-in code
               (it works once, for 60 seconds, and holds your account ID and email, never your
               password) so you arrive signed in; when you sign up on SiteVault, it
-              asks us to create your account here, and tells us when you make your first website
+              asks us to create your account here, and tells us when you make your first website.
+              If you picked your business on Google, we also send SiteVault that business&rsquo;s
+              Google ID. Requests people send from your website (quotes, call backs, bookings)
+              come to us from SiteVault so they can show on your Leads page
             </td>
           </tr>
           <tr>
@@ -434,7 +477,10 @@ export default function PrivacyPage() {
               To send a password-reset email when you ask for one, from
               passwordReset@3pandalabs.com; to send service emails about your own account from
               advault@3pandalabs.com (a welcome when you sign up, when your ad account is ready,
-              when your ad is ready, and when your ad budget is running low); or to deliver your
+              when your ad is ready, and when your ad budget is running low); to email you each
+              request from your website, and to email the person who sent it when you confirm or
+              decline their booking or ask them for a review, from sitevault@3pandalabs.com (their
+              name and email, and the booking details or your review link); or to deliver your
               contact-form message to us. We send no marketing email
             </td>
           </tr>
@@ -481,6 +527,14 @@ export default function PrivacyPage() {
           number are erased at once. Because the account is shared, this also ends your
           SiteVault sign-in; your SiteVault website itself is removed separately (see
           SiteVault&rsquo;s privacy page).
+        </li>
+        <li>
+          <strong>Requests from your website</strong> (leads) — for as long as your account is
+          open; deleted when you delete your account.
+        </li>
+        <li>
+          <strong>The Google ID of your business</strong> — with the campaign it was picked
+          for, until you delete the campaign or your account. Nothing else from Google is kept.
         </li>
         <li>
           <strong>Uploaded photos</strong> (including photos sent by WhatsApp) — until you

@@ -64,6 +64,13 @@ type CountsRow = {
   internal_mrr_minor_usd: number;
   internal_add_on_revenue_minor_inr: number;
   internal_add_on_revenue_minor_usd: number;
+  leads_total: number;
+  leads_30d: number;
+  leads_quote_30d: number;
+  leads_callback_30d: number;
+  leads_booking_30d: number;
+  leads_from_ads_30d: number;
+  leads_unmatched: number;
 };
 
 type DatabaseRow = {
@@ -168,7 +175,18 @@ export async function metricsRoutes(app: FastifyInstance) {
         (select coalesce(sum(amount_minor), 0) from subscriptions where status in ('active','past_due') and not cancel_at_period_end and (included_until is null or included_until <= now()) and currency_code = 'INR' and user_id in (select id from users where is_internal))::int as internal_mrr_minor_inr,
         (select coalesce(sum(amount_minor), 0) from subscriptions where status in ('active','past_due') and not cancel_at_period_end and (included_until is null or included_until <= now()) and currency_code = 'USD' and user_id in (select id from users where is_internal))::int as internal_mrr_minor_usd,
         (select coalesce(sum(amount_minor),0) from purchases where currency_code = 'INR' and status in ('paid','producing','delivered') and user_id in (select id from users where is_internal))::int as internal_add_on_revenue_minor_inr,
-        (select coalesce(sum(amount_minor),0) from purchases where currency_code = 'USD' and status in ('paid','producing','delivered') and user_id in (select id from users where is_internal))::int as internal_add_on_revenue_minor_usd
+        (select coalesce(sum(amount_minor),0) from purchases where currency_code = 'USD' and status in ('paid','producing','delivered') and user_id in (select id from users where is_internal))::int as internal_add_on_revenue_minor_usd,
+        -- Leads from customers' SiteVault sites (0050, lib/leads). Real
+        -- customers only (admins, test customers, internal and marked-test
+        -- accounts excluded, like revenue); a lead no account matched is
+        -- counted on its own (leads_unmatched, a work item: link the owner).
+        (select count(*) from leads where user_id not in (select id from users where role = 'admin' or test_owner_id is not null or is_internal or marked_test))::int as leads_total,
+        (select count(*) from leads where created_at > now() - interval '30 days' and user_id not in (select id from users where role = 'admin' or test_owner_id is not null or is_internal or marked_test))::int as leads_30d,
+        (select count(*) from leads where kind = 'quote' and created_at > now() - interval '30 days' and user_id not in (select id from users where role = 'admin' or test_owner_id is not null or is_internal or marked_test))::int as leads_quote_30d,
+        (select count(*) from leads where kind = 'callback' and created_at > now() - interval '30 days' and user_id not in (select id from users where role = 'admin' or test_owner_id is not null or is_internal or marked_test))::int as leads_callback_30d,
+        (select count(*) from leads where kind = 'booking' and created_at > now() - interval '30 days' and user_id not in (select id from users where role = 'admin' or test_owner_id is not null or is_internal or marked_test))::int as leads_booking_30d,
+        (select count(*) from leads where campaign_id is not null and created_at > now() - interval '30 days' and user_id not in (select id from users where role = 'admin' or test_owner_id is not null or is_internal or marked_test))::int as leads_from_ads_30d,
+        (select count(*) from leads where user_id is null)::int as leads_unmatched
     `);
 
     const database = await db.execute<DatabaseRow>(sql`
@@ -285,6 +303,14 @@ export async function metricsRoutes(app: FastifyInstance) {
         accountsSitevaultOnly: usage.sitevaultOnly,
         accountsUsingBoth: usage.both,
         accountsUsingNeither: usage.neither,
+        // Leads inbox (lib/leads): real customers' leads; unmatched = no owner found.
+        leadsTotal: c.leads_total,
+        leadsLast30Days: c.leads_30d,
+        leadsQuotesLast30Days: c.leads_quote_30d,
+        leadsCallbacksLast30Days: c.leads_callback_30d,
+        leadsBookingsLast30Days: c.leads_booking_30d,
+        leadsFromAdsLast30Days: c.leads_from_ads_30d,
+        leadsUnmatched: c.leads_unmatched,
       },
       traffic: {
         // Rolling 60 minutes, in-process — see metrics/collector.ts. Resets on

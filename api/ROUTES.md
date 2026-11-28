@@ -89,6 +89,53 @@ Server to server from the SiteVault Worker, bearer `SITEVAULT_INTERNAL_TOKEN`
 | POST | `/internal/sitevault/accounts` | `{ email, password (8–200), createdAt?, sitevaultUsedAt? }` (ISO). **201** `{ ok, userId, email }`, a new user with `signup_app = 'sitevault'` (bcrypt, like every account). **409** `email_exists` with the existing `userId`: nothing on that account changes, never its password. SiteVault links that id only after the person proved the SiteVault password for the same email (lazy move); a fresh sign-up is told to sign in. `createdAt` keeps an older SiteVault account's date; `sitevaultUsedAt` stamps its first website. Future times are clamped to now. |
 | POST | `/internal/sitevault/usage` | `{ userId, at? }` → `{ ok }`: stamps `sitevault_first_used_at` (only fills NULL or moves earlier). 404 `not_found` for an unknown or deleted account. |
 
+## Leads inbox (2026-11-27, migration 0050, `lib/leads`)
+
+"Request a quote", "Call me back" and booking requests from a customer's
+SiteVault site. Internal routes: `routes/sitevaultLeads.ts`, bearer
+`SITEVAULT_INTERNAL_TOKEN`, 401 before validation. Owner identity on the
+read/update routes is `advaultUserId` and/or `email` (one is required, 400
+otherwise); a lead id not owned by it is 404. Status values: `new` (quotes,
+call-backs start here), `requested` (bookings start here), `contacted`,
+`confirmed`, `declined`, `done`.
+
+| Method | Path | Notes |
+|---|---|---|
+| POST | `/internal/sitevault/leads` | `{ slug, kind: quote / callback / booking, name, phone, email?, message?, bestTime?, photoUrls?: https[] (max 10), booking?: { service, durationMin (5-720), start (ISO with offset), timezone (IANA) }, source?: { referrerHost?, utmSource?, utmCampaign? }, ownerEmail?, advaultUserId?, idempotencyKey (e.g. "<slug>:<random>") }` (blank strings = absent). **201** `{ leadId }`; **200** with the same `leadId` on a replay of `(slug, idempotencyKey)` (no second email). **409** `{ error: "slot_taken" }` when a booking overlaps (half-open) a booking of that slug in `requested` / `new` / `contacted` / `confirmed`, checked under a per-slug advisory lock in the insert's transaction. **400** on validation (`booking` required for kind booking). Owner = `advaultUserId`, else `ownerEmail`, else the site link we keep (`purchases.website_slug` / `site_offer_slug`, `campaigns.landing_url` / `sitevault_pending_url` on `<slug>.3pandasite.com`); none = stored with `user_id` NULL + ntfy ops alert. Campaign attribution: `source.utmCampaign` = a campaign id of that owner (every launch tags `utm_campaign=<id>`, lib/googleAds/utm). Emails the owner (account email, else `ownerEmail`; never `*.invalid`; max 20/hour per site) from sitevault@3pandalabs.com "SiteVault", Reply-To = the customer; bookings carry signed Confirm / Decline links (`/leads/action?t=`). |
+| GET | `/internal/sitevault/leads/busy` | `?slug&from&to` (ISO, `from < to`, max 120 days) → `{ busy: [{ start, end }] }` (bookings holding a slot). |
+| GET | `/internal/sitevault/leads` | `?slug?&advaultUserId?&email?&kind?&status?` → `{ leads: [{ id, kind, status, siteSlug, name, phone, email, message, bestTime, photoUrls, booking: { service, durationMin, start, end, timezone } or null, source, campaignId, reviewRequestedAt, createdAt }] }` (newest first, max 500). |
+| POST | `/internal/sitevault/leads/:id/status` | `{ status, advaultUserId?, email? }` → **204**. A booking moved to confirmed / declined emails the customer (real email only), once per status. |
+| POST | `/internal/sitevault/leads/:id/review-request` | `{ reviewUrl (https), advaultUserId?, email? }` → **204**; **400** `no_customer_email`; **409** `review_already_requested` (once per lead, ever); **503** `mailer_unavailable` (claim released). |
+
+Owner (session, `routes/leads.ts`): `GET /leads?kind&status` → `{ leads, newCount }`;
+`GET /leads/count` → `{ new }` (nav badge: `new` + `requested`); `POST /leads/:id/status {status}`
+→ `{ lead }`; `GET /leads/review-links` → `{ links: { <slug>: url or null } }` (SiteVault
+`GET /api/internal/sites/<slug>/review-link` `{ reviewUrl }` or `{ url }`; 404 = no link);
+`POST /leads/:id/review-request` (link from SiteVault: 409 `no_review_link`, 502
+`sitevault_unavailable`, then as above). Public, token in the body: `POST /leads/link {token}`
+→ `{ action, status, name, service, when }` (preview only) and `POST /leads/link/apply {token}`
+→ `{ status }` (the web page's button). Token = HMAC-SHA256 keyed with `JWT_SECRET`, prefix
+`3pl-lead-v1.`, lead id + action + expiry (14 days); repeat taps are no-ops; a `done` booking is
+never changed by a link. `GET /campaigns/:id/results` carries `websiteLeads { quote, callback,
+booking, total }` for the range. `/metrics` `counts.leads*` (real customers only;
+`leadsUnmatched`). Account deletion deletes the user's leads (and unmatched leads under its email).
+
+## Find my business on Google (2026-11-27, migration 0051, `lib/places`)
+
+Session routes (`routes/places.ts`), 30 calls/hour per user, hidden when
+`GOOGLE_PLACES_API_KEY` is unset (503 `places_not_configured`):
+`GET /places/enabled` → `{ enabled }`; `POST /places/search { query }` →
+`{ results: [{ placeId, name, address }] }` (Text Search, mask
+`places.id,places.displayName,places.formattedAddress`, 5 results);
+`GET /places/:placeId` → `{ placeId, name, address, zip, city, phone, website, primaryType,
+hours, rating, ratingCount, mapsUrl, ratingEligible }` (Place Details, mask
+`id,displayName,formattedAddress,nationalPhoneNumber,websiteUri,regularOpeningHours,primaryType,rating,userRatingCount,googleMapsUri`; `no-store`).
+Only `campaigns.google_place_id` is stored (`POST/PATCH /campaigns` `googlePlaceId`,
+`showGoogleRating`; `POST /campaigns/:id/website` `placeId`). SiteVault gets `placeId` in the
+site create and the builder draft; the builder draft also re-fetches phone / town / hours for
+it. The renderer adds "★ 4.8 on Google (120 reviews)" to the template end card only when
+`show_google_rating` and a FRESH lookup says 4.0+ with 5+ reviews.
+
 ## Assets
 
 | Method | Path | Notes |

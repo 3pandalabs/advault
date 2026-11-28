@@ -14,6 +14,7 @@ import {
   uploadAsset,
   uploadCreativeVideo,
   type Asset,
+  type PlaceDetails,
 } from "@/lib/api/browser";
 import { Button } from "@/components/ui/button";
 import { Card, CardDescription, CardTitle } from "@/components/ui/card";
@@ -45,6 +46,8 @@ import { CategoryExtrasFields, NeighborPriceField } from "@/components/CategoryE
 import { categoryKey } from "@/lib/categories/key";
 import { BADGE_DETAIL, badgeOptions, badgeViolation } from "@/lib/categories/badges";
 import { WhatsAppPrompt } from "@/components/WhatsAppOptIn";
+import { FindOnGoogle } from "@/components/FindOnGoogle";
+import { categoryFromPlaceType, splitUsAddress } from "@/lib/places";
 import { EXTRAS_DETAIL, extrasFor, extrasProblem, parseZips, type CategoryExtras } from "@/lib/categories/extras";
 
 import {
@@ -252,6 +255,27 @@ export default function NewCampaignPage() {
     addressState: "",
     addressZip: "",
   });
+  // "Find your business on Google" (optional): only the place id is saved.
+  const [place, setPlace] = useState<PlaceDetails | null>(null);
+  const [showRating, setShowRating] = useState(false);
+  function fillFromPlace(d: PlaceDetails) {
+    setPlace(d);
+    setShowRating(false);
+    const cat = categoryFromPlaceType(d.primaryType);
+    if (cat) setCategoryChoice(cat);
+    const addr = splitUsAddress(d.address);
+    setForm((f) => ({
+      ...f,
+      businessName: d.name || f.businessName,
+      landingUrl: d.website ?? f.landingUrl,
+      zipInput: d.zip && !f.zipInput.trim() ? d.zip : f.zipInput,
+      // Real estate: the office / listing address the radius is drawn around.
+      street: f.street || addr.street,
+      city: f.city || d.city || addr.city,
+      addressState: f.addressState || addr.state,
+      addressZip: f.addressZip || d.zip || "",
+    }));
+  }
   // The category dropdown; "Other" reveals the free-text box (form.businessCategory).
   const [categoryChoice, setCategoryChoice] = useState<string>("");
   const [audienceFilters, setAudienceFilters] = useState<AudienceFilters>({});
@@ -419,6 +443,8 @@ export default function NewCampaignPage() {
         badges: badgeDraft.ids.length > 0 ? { ...badgeSel, attested: badgeDraft.attested } : null,
         categoryExtras: Object.keys(extrasToSave).length > 0 ? extrasToSave : null,
         beforeAfter: pairs.length > 0 ? { pairs, attested: baAttested } : null,
+        googlePlaceId: place?.placeId ?? null,
+        showGoogleRating: Boolean(place?.ratingEligible && showRating),
         targetAddress: housing
           ? {
               street: form.street.trim(),
@@ -998,6 +1024,35 @@ export default function NewCampaignPage() {
           </CardDescription>
 
           <div className="mt-5 space-y-4">
+            <div>
+              <FindOnGoogle
+                initialName={form.businessName || profile.businessName}
+                onPick={fillFromPlace}
+                picked={place ? { name: place.name, address: place.address } : null}
+                onClear={() => {
+                  setPlace(null);
+                  setShowRating(false);
+                }}
+              />
+              {place?.ratingEligible && place.rating !== null && place.ratingCount !== null && (
+                <label className="mt-2 flex items-start gap-2 text-sm text-zinc-300">
+                  <input
+                    type="checkbox"
+                    className="mt-1 h-4 w-4 shrink-0 accent-amber-400"
+                    checked={showRating}
+                    onChange={(e) => setShowRating(e.target.checked)}
+                  />
+                  <span>
+                    Show my Google rating in the ad
+                    <span className="block text-xs text-zinc-500">
+                      &ldquo;★ {place.rating.toFixed(1)} on Google ({place.ratingCount} reviews)&rdquo;, checked again when
+                      your ad is made. Only the stars and the count, never anyone&apos;s review.
+                    </span>
+                  </span>
+                </label>
+              )}
+            </div>
+
             <div>
               <Label htmlFor="name">Campaign name</Label>
               <Input id="name" value={form.name} onChange={set("name")} required />

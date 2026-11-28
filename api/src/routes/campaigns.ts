@@ -15,6 +15,7 @@ import { reevaluateCompliance } from "../lib/compliance/index.js";
 import { takenDownRefusal } from "../lib/compliance/policy.js";
 import { beforeAfterInputSchema } from "../lib/beforeAfter/policy.js";
 import { badgesInputSchema, checkBadges } from "./badges.js";
+import { PLACE_ID_RE } from "../lib/places/index.js";
 import { categoryExtrasSchema, checkCategoryExtras } from "./categoryExtras.js";
 import { checkBeforeAfter } from "./beforeAfter.js";
 import { adScheduleSchema, normalizeAdSchedule } from "../lib/schedule/policy.js";
@@ -96,6 +97,11 @@ const campaignFields = z.object({
   adSchedule: adScheduleSchema.nullish(),
   // Real estate only: listing/open-house ad or agent ad (lib/realty).
   realty: realtySchema.nullish(),
+  // "Find my business on Google" (lib/places): ONLY the place_id is stored.
+  googlePlaceId: z.string().regex(PLACE_ID_RE).nullish(),
+  // "Show my Google rating in the ad": fetched fresh at render time, and only
+  // shown from 4.0 stars with 5+ reviews (lib/places adRatingLine).
+  showGoogleRating: z.boolean().optional(),
 });
 
 // The create schema: the fields, the inputs that shape the FIRST ad, and the

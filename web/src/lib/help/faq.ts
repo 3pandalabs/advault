@@ -45,6 +45,10 @@ export const FAQ = [
     a: "Uploading your own video isn't open to everyone right now. Send us a message from the Contact us page and we'll help. We check every video before it runs, including that it has no copyrighted music.",
   },
   {
+    q: "Where do quote requests and bookings from my website go?",
+    a: "To your Leads page and your email. When someone asks for a quote, a call back or a booking on your website, we email you right away and it shows under Leads, where you can call or email them, confirm or decline a booking (we email them your answer), and ask a happy customer for a review. Leads that came from your AdVault ad are counted on its results.",
+  },
+  {
     q: "I'm a real estate agent. Is that allowed?",
     a: "Yes. US housing ads follow Google's fair-housing rules, so we show your listing to people within a distance of the property instead of by ZIP code, age or gender. We set that up for you.",
   },

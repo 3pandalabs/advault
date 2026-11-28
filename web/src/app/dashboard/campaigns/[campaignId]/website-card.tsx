@@ -15,11 +15,14 @@ import {
   type Campaign,
   type PendingSite,
   type SiteLinkState,
+  getPlaceDetails,
+  type PlaceDetails,
 } from "@/lib/api/browser";
 import { Card, CardDescription, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { AppPaymentsNotice, useInAndroidApp } from "@/components/AppPayments";
 import { Input } from "@/components/ui/input";
+import { FindOnGoogle } from "@/components/FindOnGoogle";
 import { SITEVAULT_ACCOUNT_URL, siteVaultSlug } from "@/lib/sitevault";
 import { SuggestionChips } from "@/components/SuggestionChips";
 import { openingHoursSuggestions, townFromAddress } from "@/lib/suggestions";
@@ -148,6 +151,27 @@ export function WebsiteCard({
   const [city, setCity] = useState(campaign.targetAddress?.city ?? "");
   const town = townFromAddress(campaign.targetAddress);
   const [hours, setHours] = useState("");
+  // "Find your business on Google" on the quick form: fills phone, town and
+  // hours (the owner can change them); only the place id goes to the API.
+  const [place, setPlace] = useState<PlaceDetails | null>(null);
+  const [placeBusy, setPlaceBusy] = useState(false);
+  function fillFromPlace(d: PlaceDetails) {
+    setPlace(d);
+    if (d.phone) setPhone(d.phone);
+    if (d.city) setCity(d.city);
+    if (d.hours) setHours(d.hours);
+  }
+  async function useSavedPlace() {
+    if (!campaign.googlePlaceId) return;
+    setPlaceBusy(true);
+    try {
+      fillFromPlace(await getPlaceDetails(campaign.googlePlaceId));
+    } catch {
+      // Not configured or unreachable: the owner types them in.
+    } finally {
+      setPlaceBusy(false);
+    }
+  }
   const [attest, setAttest] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -361,6 +385,7 @@ export function WebsiteCard({
         hours: hours.trim() || undefined,
         slug: slug.trim() || undefined,
         attest: true,
+        placeId: place?.placeId,
       });
       setEditUrl(res.editUrl);
       setMadeHere(true);
@@ -670,6 +695,19 @@ export function WebsiteCard({
             {websiteFee ? ` It's ${websiteFee} once; Pro (visitor stats) stays included while your AdVault plan runs.` : ""}{" "}
             We just need two things:
           </p>
+          {campaign.googlePlaceId && !place ? (
+            <Button type="button" variant="outline" size="sm" onClick={useSavedPlace} disabled={busy || placeBusy}>
+              {placeBusy ? "Loading…" : "Fill in from my Google listing"}
+            </Button>
+          ) : (
+            <FindOnGoogle
+              initialName={campaign.businessName}
+              initialTown={city}
+              onPick={fillFromPlace}
+              picked={place ? { name: place.name, address: place.address } : null}
+              onClear={() => setPlace(null)}
+            />
+          )}
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="text-sm">
               <span className="mb-1 block text-zinc-300">Business phone</span>

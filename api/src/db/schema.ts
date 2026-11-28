@@ -523,6 +523,11 @@ export const campaigns = pgTable(
     // A made but unpaid SiteVault site (0024, $10 website fee). It becomes
     // landing_url once the fee is paid and SiteVault has published it.
     sitevaultPendingUrl: text("sitevault_pending_url"),
+    // "Find my business on Google" (0051, lib/places): ONLY the place_id is
+    // kept (Google allows caching it); other Places fields are re-fetched.
+    googlePlaceId: text("google_place_id"),
+    // "Show my Google rating in the ad": the renderer fetches it fresh.
+    showGoogleRating: boolean("show_google_rating").notNull().default(false),
     // The ad video goes on the SiteVault site at launch, not when the site is
     // made (0026, lib/siteVideo). Wanted = launch asked for it.
     siteVideoWanted: boolean("site_video_wanted").notNull().default(false),
@@ -1614,5 +1619,51 @@ export const offerChanges = pgTable(
   (t) => [
     index("idx_offer_changes_campaign").on(t.campaignId, t.createdAt),
     check("offer_changes_kind_check", sql`${t.kind} in ('offer','base')`),
+  ],
+);
+
+// Leads inbox (0050, lib/leads): quote / call-back / booking requests sent
+// from a customer's SiteVault site. user_id NULL = SiteVault named no owner we
+// could match (stored, ops alerted). Deleted with the account.
+export type LeadKind = "quote" | "callback" | "booking";
+/** A booking starts "requested" (the SiteVault contract), every other kind "new". */
+export type LeadStatus = "new" | "requested" | "contacted" | "confirmed" | "declined" | "done";
+export type LeadSource = { referrerHost?: string; utmSource?: string; utmCampaign?: string };
+
+export const leads = pgTable(
+  "leads",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id").references(() => users.id, { onDelete: "cascade" }),
+    ownerEmail: text("owner_email"),
+    siteSlug: text("site_slug").notNull(),
+    kind: text("kind").$type<LeadKind>().notNull(),
+    status: text("status").$type<LeadStatus>().notNull().default("new"),
+    name: text("name").notNull(),
+    phone: text("phone").notNull(),
+    email: text("email"),
+    message: text("message"),
+    bestTime: text("best_time"),
+    photoUrls: jsonb("photo_urls").$type<string[]>().notNull().default([]),
+    bookingService: text("booking_service"),
+    bookingDurationMin: integer("booking_duration_min"),
+    bookingStart: timestamp("booking_start", { withTimezone: true }),
+    bookingEnd: timestamp("booking_end", { withTimezone: true }),
+    bookingTimezone: text("booking_timezone"),
+    source: jsonb("source").$type<LeadSource>(),
+    campaignId: uuid("campaign_id").references(() => campaigns.id, { onDelete: "set null" }),
+    idempotencyKey: text("idempotency_key").notNull(),
+    ownerEmailedAt: timestamp("owner_emailed_at", { withTimezone: true }),
+    customerEmailedStatus: text("customer_emailed_status"),
+    reviewRequestedAt: timestamp("review_requested_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("leads_slug_idempotency_key").on(t.siteSlug, t.idempotencyKey),
+    index("idx_leads_user").on(t.userId, t.createdAt),
+    index("idx_leads_site_slug").on(t.siteSlug, t.createdAt),
+    check("leads_kind_check", sql`${t.kind} in ('quote','callback','booking')`),
+    check("leads_status_check", sql`${t.status} in ('new','requested','contacted','confirmed','declined','done')`),
   ],
 );

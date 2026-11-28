@@ -2,6 +2,7 @@ import { ownVideoForNewSite } from "../lib/siteVideo/index.js";
 import { and, desc, eq, inArray, isNotNull, isNull, ne } from "drizzle-orm";
 import type { FastifyBaseLogger, FastifyInstance } from "fastify";
 import { z } from "zod";
+import { PLACE_ID_RE, placeDetails, placesConfigured } from "../lib/places/index.js";
 import { requireAdmin, requireAuth } from "../auth/plugin.js";
 import { db } from "../db/index.js";
 import { assets, campaigns, creatives, purchases, users } from "../db/schema.js";
@@ -70,6 +71,9 @@ const websiteInput = z.object({
   slug: z.string().trim().max(80).optional(),
   // The advertiser confirms they run the business: their site is public.
   attest: z.literal(true),
+  // "Find my business on Google" on the form (lib/places): saved on the
+  // campaign (place_id only) and passed to SiteVault.
+  placeId: z.string().regex(PLACE_ID_RE).optional(),
 });
 
 async function campaignPhotos(campaignId: string): Promise<Photo[]> {
@@ -369,6 +373,10 @@ export async function websiteRoutes(app: FastifyInstance) {
         version: WEBSITE_OWNERSHIP_VERSION,
         text: WEBSITE_OWNERSHIP_TEXT,
       });
+      if (body.placeId && body.placeId !== campaign.googlePlaceId) {
+        await db.update(campaigns).set({ googlePlaceId: body.placeId, updatedAt: new Date() }).where(eq(campaigns.id, campaign.id));
+      }
+      const placeId = body.placeId ?? campaign.googlePlaceId ?? undefined;
       const admin = await isAdminUser(req.userId!);
       // $10 website fee (null for admins / at_cost: made and published at once, as before).
       const fee = await websiteFeeFor(req.userId!);
@@ -396,6 +404,8 @@ export async function websiteRoutes(app: FastifyInstance) {
           ownerEmail: isUndeliverableEmail(owner?.email) ? undefined : owner?.email,
           // Admin test site on SiteVault: no one-per-phone rule, never claims the number.
           ownerAdmin: admin ? "1" : undefined,
+          // The Google place the owner picked (SiteVault accepts an optional placeId).
+          placeId,
         },
         photos,
         // No photos means they used their own video: it goes on the site now
@@ -454,14 +464,19 @@ export async function websiteRoutes(app: FastifyInstance) {
       const housing = isHousingCategory(campaign.businessCategory);
       const { sticker } = await campaignAd(campaign.id);
       const photos = await campaignPhotos(campaign.id);
-      const city = campaign.targetAddress ? `${campaign.targetAddress.city}, ${campaign.targetAddress.state}` : "";
+      // "Find my business on Google" (lib/places): fresh details for the
+      // picked place fill what the campaign doesn't have (phone, town, hours).
+      // Re-fetched, never stored; any problem = the builder just asks.
+      const place = campaign.googlePlaceId && placesConfigured() ? await placeDetails(campaign.googlePlaceId).catch(() => null) : null;
+      const city = campaign.targetAddress ? `${campaign.targetAddress.city}, ${campaign.targetAddress.state}` : place?.city ?? "";
       const draft = await createSitevaultDraft(
         {
           campaignId: campaign.id,
           businessName: campaign.businessName,
           category: sitevaultCategory(campaign.businessCategory),
-          phone: owner?.phone ?? undefined,
+          phone: owner?.phone ?? place?.phone ?? undefined,
           city: city || undefined,
+          hours: place?.hours ?? undefined,
           offer: offerBanner(campaign.offerDetails),
           serviceArea: housing || !city ? undefined : `Within ${campaign.radiusMiles} miles of ${city}`,
           services: servicesFromSticker(sticker),
@@ -470,6 +485,7 @@ export async function websiteRoutes(app: FastifyInstance) {
           ownerAdvaultUserId: req.userId!,
           ownerEmail: linkEmail || undefined,
           ownerAdmin: admin ? "1" : undefined,
+          placeId: campaign.googlePlaceId ?? undefined,
         },
         photos,
         photos.length === 0 ? await ownVideoForNewSite(campaign.id) : null,

@@ -48,6 +48,8 @@ import { falOmni } from "../lib/ai/cinematic/index.js";
 import { enhancePhotos } from "./enhance.js";
 import { plainPhotoIndexes } from "../lib/beforeAfter/policy.js";
 import { defaultVoiceFor } from "../lib/script/schema.js";
+import { adRatingLine } from "../lib/places/index.js";
+import { withEndCardLine } from "../lib/places/endCard.js";
 import { DEFAULT_FAL_VOICE, synthesizeVoice, voiceProvider } from "../lib/ai/voice/index.js";
 import {
   creativeThumbnailKey,
@@ -459,11 +461,15 @@ async function processJob(job: RenderJob): Promise<void> {
 
     // The template ad (demo look) when enabled; the ffmpeg layout otherwise,
     // and whenever the template fails.
+    // "★ 4.8 on Google (120 reviews)" on the end card when the owner ticked it
+    // and the rating, fetched fresh now, is 4.0+ with 5+ reviews (lib/places).
+    // Any problem = no line. Template only (the ffmpeg layout has no end-card line).
+    const googleLine = TEMPLATE_ENABLED ? await adRatingLine(creative.googlePlaceId, creative.showGoogleRating) : null;
     const templated = TEMPLATE_ENABLED
       ? await renderTemplate(
           {
             workDir,
-            script,
+            script: googleLine ? withEndCardLine(script, googleLine) : script,
             aspectRatio,
             imagePaths,
             clipPaths,

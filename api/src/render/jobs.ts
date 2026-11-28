@@ -195,6 +195,9 @@ export async function loadCreativeForRender(creativeId: string) {
       businessName: campaigns.businessName,
       businessCategory: campaigns.businessCategory,
       landingUrl: campaigns.landingUrl,
+      // "Show my Google rating in the ad" (lib/places): fetched fresh below.
+      googlePlaceId: campaigns.googlePlaceId,
+      showGoogleRating: campaigns.showGoogleRating,
       // A taken-down ad (lib/compliance) is never rendered again, including
       // by reclaimStalled's automatic restart.
       complianceStatus: campaigns.complianceStatus,

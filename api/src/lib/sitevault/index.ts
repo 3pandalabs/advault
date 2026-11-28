@@ -73,6 +73,8 @@ export type WebsiteFields = {
   ownerEmail?: string;
   /** "1": the owner is an AdVault admin making a test site. */
   ownerAdmin?: string;
+  /** The Google place_id the owner picked ("Find my business on Google", lib/places). Optional. */
+  placeId?: string;
 };
 
 export type Photo = { bytes: Buffer; contentType: string };
@@ -472,5 +474,29 @@ export async function resolveSitevaultSite(slug: string): Promise<string | null>
     return body.siteUrl ?? null;
   } catch {
     return null;
+  }
+}
+
+/**
+ * The site's "Leave us a review" link (SiteVault `GET /api/internal/sites/<slug>/review-link`,
+ * 2026-11-27): `{ reviewUrl: string | null }`. null = the owner set none;
+ * undefined = SiteVault can't say (down, not configured, older Worker).
+ * Only an https link is ever returned.
+ */
+export async function fetchSitevaultReviewLink(slug: string): Promise<string | null | undefined> {
+  const token = process.env.SITEVAULT_INTERNAL_TOKEN;
+  if (!token) return undefined;
+  try {
+    const res = await fetch(`${SITEVAULT_URL}/api/internal/sites/${encodeURIComponent(slug)}/review-link`, {
+      headers: { authorization: `Bearer ${token}`, accept: "application/json" },
+      signal: AbortSignal.timeout(8_000),
+    });
+    if (res.status === 404) return null;
+    if (!res.ok) return undefined;
+    const body = (await res.json().catch(() => null)) as { reviewUrl?: unknown; url?: unknown } | null;
+    const url = body?.reviewUrl ?? body?.url ?? null;
+    return typeof url === "string" && /^https:\/\//i.test(url) ? url : null;
+  } catch {
+    return undefined;
   }
 }
