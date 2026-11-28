@@ -10,6 +10,7 @@ import {
   offerChanges,
   whatsappMessages,
   campaigns,
+  leads,
   passwordResetTokens,
   sessions,
   subscriptions,
@@ -122,9 +123,10 @@ export async function deleteAccount(userId: string): Promise<DeleteResult> {
   const now = new Date();
 
   const result = await db.transaction(async (tx) => {
-    const locked = await tx.execute(sql`select deleted_at from users where id = ${userId} for update`);
-    const row = locked.rows[0] as { deleted_at: Date | null } | undefined;
+    const locked = await tx.execute(sql`select deleted_at, email from users where id = ${userId} for update`);
+    const row = locked.rows[0] as { deleted_at: Date | null; email: string | null } | undefined;
     if (!row || row.deleted_at) return null;
+    const oldEmail = row.email?.toLowerCase() ?? null;
 
     await tx
       .update(campaigns)
@@ -148,6 +150,11 @@ export async function deleteAccount(userId: string): Promise<DeleteResult> {
     // WhatsApp transcript (phone, what they typed, voice-note transcripts;
     // 0047) and any offer change not yet at Google (lib/offerSwap).
     await tx.delete(whatsappMessages).where(eq(whatsappMessages.userId, userId));
+    // Leads from their SiteVault site (lib/leads): their customers' names,
+    // phones, emails, messages and photo links. Also any lead stored before an
+    // owner was matched, under the email being anonymised.
+    await tx.delete(leads).where(eq(leads.userId, userId));
+    if (oldEmail) await tx.delete(leads).where(and(isNull(leads.userId), eq(leads.ownerEmail, oldEmail)));
     await tx
       .update(offerChanges)
       .set({ status: "cancelled", updatedAt: now })

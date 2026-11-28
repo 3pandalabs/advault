@@ -56,6 +56,9 @@ const PUBLIC = new Set<string>([
   "POST /track/visit",
   // The web contact form.
   "POST /contact",
+  // The signed Confirm / Decline link in a booking email (token in the body).
+  "POST /leads/link",
+  "POST /leads/link/apply",
 ]);
 
 type Route = { method: HTTPMethods; url: string };

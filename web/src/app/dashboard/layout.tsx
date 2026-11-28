@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { backToAdmin, clearTokens, getMe, getTokens, setTestAsCustomer, type Me } from "@/lib/api/browser";
+import { backToAdmin, clearTokens, getMe, getNewLeadCount, getTokens, setTestAsCustomer, type Me } from "@/lib/api/browser";
 import { TEST_PRICE_DISPLAY } from "@/lib/testMode";
 import { WordmarkName, WordmarkTag } from "@/components/Wordmark";
 import { Button } from "@/components/ui/button";
@@ -38,6 +38,15 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       })
       .finally(() => setChecked(true));
   }, [router]);
+
+  // "N new leads" on the Leads tab (api routes/leads.ts). An older API = no badge.
+  const [newLeads, setNewLeads] = useState(0);
+  useEffect(() => {
+    if (!me) return;
+    getNewLeadCount()
+      .then((r) => setNewLeads(r.new))
+      .catch(() => setNewLeads(0));
+  }, [me]);
 
   const [turningOff, setTurningOff] = useState(false);
   // Admin "Test as customer": switch back from the banner on any page.
@@ -111,6 +120,20 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               className="rounded-lg px-3 py-2 text-zinc-300 hover:bg-white/10"
             >
               Website
+            </Link>
+            <Link
+              href="/dashboard/leads"
+              className="rounded-lg px-3 py-2 text-zinc-300 hover:bg-white/10"
+            >
+              Leads
+              {newLeads > 0 && (
+                <span
+                  className="ml-1.5 rounded-full bg-amber-400 px-1.5 py-0.5 text-xs font-semibold text-zinc-950"
+                  aria-label={`${newLeads} new`}
+                >
+                  {newLeads > 99 ? "99+" : newLeads}
+                </span>
+              )}
             </Link>
             {/* "This month" (/dashboard/offer) is hidden: monthly offers belong to
                 the offer/managed plans, which aren't sold right now (only Keep it

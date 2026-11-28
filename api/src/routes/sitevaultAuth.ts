@@ -25,7 +25,7 @@ import { changePassword, confirmPasswordReset, requestPasswordReset } from "../l
 
 const DUMMY_HASH = "$2a$10$invalidinvalidinvalidinvalidinvalidinvalidinvalidinvalidiu";
 
-function bearerOk(header: string | undefined): boolean {
+export function bearerOk(header: string | undefined): boolean {
   const expected = process.env.SITEVAULT_INTERNAL_TOKEN;
   if (!expected) return false;
   const got = Buffer.from((header ?? "").replace(/^Bearer\s+/i, ""));

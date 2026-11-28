@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import {
   ApiError,
@@ -378,6 +379,23 @@ export function ResultsCard({
             {viewRate && <Stat label="View rate" value={viewRate} hint="of times shown were watched" />}
             {clickRate && <Stat label="Click rate" value={clickRate} hint="of times shown got a tap" />}
           </div>
+
+          {r.websiteLeads && (
+            <div className="mt-4 rounded-lg border border-white/10 p-3">
+              <h3 className="text-sm font-semibold text-zinc-100">Leads from your website</h3>
+              <p className="mt-0.5 text-xs text-zinc-500">People who came from this ad and then asked you for something.</p>
+              <div className="mt-2 grid grid-cols-3 gap-2">
+                <Stat label="Quotes" value={count.format(r.websiteLeads.quote)} />
+                <Stat label="Call backs" value={count.format(r.websiteLeads.callback)} />
+                <Stat label="Bookings" value={count.format(r.websiteLeads.booking)} />
+              </div>
+              {r.websiteLeads.total > 0 && (
+                <Link href="/dashboard/leads" className="mt-2 inline-block text-xs text-amber-300 underline">
+                  See your leads
+                </Link>
+              )}
+            </div>
+          )}
 
           <div className="mt-4 grid gap-2 sm:grid-cols-2">
             <Sparkline values={r.trend.map((d) => d.views)} label="Views per day" format={(n) => count.format(n)} />

@@ -36,6 +36,19 @@ export const TOPICS: HelpTopic[] = [
     keys: ["schedule", "hours", "days hours", "day show", "time show", "weekend", "evening", "when show", "time day"],
     links: [ADS],
   },
+  {
+    id: "leads",
+    ...faq("Where do quote requests"),
+    keys: ["lead", "leads", "quote request", "booking", "bookings", "book", "appointment", "call back", "callback", "enquiry", "inquiry", "review", "reviews"],
+    links: [{ label: "Leads", href: "/dashboard/leads" }],
+  },
+  {
+    id: "google-listing",
+    q: "Can you fill in my details from Google?",
+    a: "Yes, if you like. When you make a new ad or a website, tap \"Find your business on Google\", type your name and town and pick your business. We fill in your name, address, phone, website and hours, and you can change any of it. If you have 4 stars or more from at least 5 reviews, you can choose to show it in your ad.",
+    keys: ["google listing", "google maps", "google business", "find my business", "fill in", "prefill", "rating", "stars"],
+    links: [{ label: "New ad", href: "/dashboard/campaigns/new" }],
+  },
   { id: "once", ...faq("Can I pay just once"), keys: ["pay once", "just once", "one time", "onetime", "single payment", "without subscription"], links: [PLAN] },
   {
     id: "contract",

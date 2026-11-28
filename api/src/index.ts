@@ -44,6 +44,9 @@ import { offerRoutes } from "./routes/offers.js";
 import { youtubeRoutes } from "./routes/youtube.js";
 import { sitevaultAuthRoutes } from "./routes/sitevaultAuth.js";
 import { signinHandoffRoutes } from "./routes/signinHandoff.js";
+import { sitevaultLeadRoutes } from "./routes/sitevaultLeads.js";
+import { leadRoutes } from "./routes/leads.js";
+import { placeRoutes } from "./routes/places.js";
 import { db } from "./db/index.js";
 
 const app = Fastify({
@@ -171,6 +174,11 @@ await app.register(contactRoutes);
 await app.register(siteVisitRoutes);
 // SiteVault checks AdVault logins here (same email + password on both).
 await app.register(sitevaultAuthRoutes, { db });
+// Leads from customers' SiteVault sites (lib/leads): internal store + the owner's inbox.
+await app.register(sitevaultLeadRoutes, { db });
+await app.register(leadRoutes, { db });
+// "Find my business on Google" (lib/places; hidden when GOOGLE_PLACES_API_KEY is unset).
+await app.register(placeRoutes);
 // Registered last and on its own, because it is the only route in this app
 // that spends an advertiser's money. Keeping it visibly separate in this list
 // is deliberate — see routes/launch.ts.

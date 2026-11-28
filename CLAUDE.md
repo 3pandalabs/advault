@@ -1518,6 +1518,43 @@ is ready." (campaign page, onboarding, launch's `billing_setup_pending`, FAQ):
 keep it true. Tests: `lib/customerEmails/*.test.ts` (PGlite). Reset tokens are personal data: `lib/accountDeletion.ts`
 deletes them with the account.
 
+## Leads inbox and "Find my business on Google" (2026-11-27, migrations 0050 / 0051)
+
+Routes and codes: `api/ROUTES.md` "Leads inbox" and "Find my business on Google".
+
+- **Leads** (`lib/leads`, `routes/sitevaultLeads.ts` internal, `routes/leads.ts`
+  owner + the public signed link, web `/dashboard/leads` and `/leads/action`).
+  SiteVault posts quote / call-back / booking requests from customers' sites;
+  `leads` holds the customer's name, phone and optional email / message /
+  photo links / booking time, so it is personal data: `lib/accountDeletion.ts`
+  deletes it with the owner's account, and the privacy page describes it.
+  Bookings start `requested`, other kinds `new` (SiteVault contract).
+  Idempotent on `(site_slug, idempotency_key)` (201 new, 200 replay); booking
+  overlap is checked under `pg_advisory_xact_lock(hashtext('leads:' || slug))`
+  inside the insert's transaction (keep the lock AND the re-check of the key
+  inside it). Owner unknown = stored with `user_id` NULL + ntfy, never dropped.
+  Emails go from sitevault@3pandalabs.com (owner: "SiteVault", Reply-To the
+  customer; customer: "<business> via SiteVault", Reply-To the owner) and are
+  NEVER sent to `*.invalid`. The customer only ever gets: booking confirmed /
+  declined (once per status) and ONE review ask the owner pressed for. They
+  share the gateway's `advault` quota (15/day): raise it before leads go live.
+  Confirm / Decline in the owner's email = `/leads/action?t=` (web), which
+  previews first and applies only on a tap (mail scanners prefetch links).
+  Attribution: a lead's `source.utmCampaign` that is one of the owner's
+  campaign ids (the existing `utm_campaign=<id>` launch tag; `utm_source`
+  stays `youtube`) sets `leads.campaign_id`, shown as "Leads from your
+  website" on the results card. Tests: `routes/sitevaultLeads.test.ts`
+  (PGlite), `lib/leads/policy.test.ts`.
+- **Google Places** (`lib/places`, `routes/places.ts`, `components/FindOnGoogle.tsx`):
+  optional, hidden unless `GOOGLE_PLACES_API_KEY` is set (advault-api; the
+  renderer too for the rating line). Google's terms: store ONLY
+  `campaigns.google_place_id`; everything else is shown to prefill the owner's
+  own fields and re-fetched when needed (builder draft, render time). Never
+  review text, never Maps photos. The rating line ("★ 4.8 on Google (120
+  reviews)", attributed) is offered only at 4.0+ with 5+ reviews and re-checked
+  fresh at render (template end card only). Keep the field masks narrow: they
+  set the SKU. Tests: `lib/places/places.test.ts`.
+
 ## The panda helper (2026-11-24, `web/src/lib/help`)
 
 `PandaHelper` (root layout; hidden on /auth, /oauth and admin pages) looks like

@@ -351,6 +351,20 @@
       "when": 1795506300000,
       "tag": "0049_customer_emails",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1795506400000,
+      "tag": "0050_leads",
+      "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "7",
+      "when": 1795506500000,
+      "tag": "0051_google_place",
+      "breakpoints": true
     }
   ]
 }

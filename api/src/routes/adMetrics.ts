@@ -9,6 +9,8 @@ import { allCampaignMetrics, campaignMetrics, ownerCampaignStats } from "../lib/
 import { loadResults } from "../lib/adMetrics/results.js";
 import { clampRangeDays, isoDaysAgo } from "../lib/adMetrics/policy.js";
 import { loadOwnedCampaign } from "../lib/ownership.js";
+import { campaignLeadCounts } from "../lib/leads/index.js";
+import type { Db } from "../lib/sharedAccount/index.js";
 import type { Currency } from "../lib/pricing/index.js";
 
 // Ad performance analytics. Both routes read campaign_daily_metrics only —
@@ -67,7 +69,14 @@ export async function adMetricsRoutes(app: FastifyInstance) {
       const campaign = await loadOwnedCampaign(campaignId, req.userId!, reply);
       if (!campaign) return;
       if (!campaign.googleCampaignResourceName) return { campaignId, launched: false, range };
-      return { campaignId, launched: true, ...(await loadResults(campaign, range)) };
+      // "Leads from your website" (lib/leads): quote / call-back / booking
+      // requests whose visitor came from this ad (utm_campaign), same range.
+      const since = range === "all" ? null : new Date(Date.now() - (range === "7d" ? 7 : 30) * 86_400_000);
+      const [results, websiteLeads] = await Promise.all([
+        loadResults(campaign, range),
+        campaignLeadCounts(db as unknown as Db, campaignId, since).catch(() => null),
+      ]);
+      return { campaignId, launched: true, ...results, websiteLeads };
     },
   );
 
